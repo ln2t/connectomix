@@ -10,24 +10,6 @@ import sys
 
 # CLASSES
 
-
-class BColors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-    RED = '\033[31m'
-    GREEN = '\033[32m'
-    YELLOW = '\033[33m'
-    ERROR = BOLD + RED
-    INFO = BOLD + GREEN
-    WARNING = BOLD + YELLOW
-
-
 class Report:
     """
     A class to create, update, modify and save reports with pretty stuff
@@ -115,48 +97,6 @@ class Report:
 
 # FUNCTIONS
 
-
-def msg_info(msg):
-    now = datetime.now()
-    time_stamp = now.strftime("(%Y-%m-%d-%H-%M-%S) ")
-    print(f"{BColors.INFO}INFO{BColors.ENDC} " + time_stamp + msg, flush=True)
-
-
-def msg_error(msg):
-    now = datetime.now()
-    time_stamp = now.strftime("(%Y-%m-%d-%H-%M-%S) ")
-    print(f"{BColors.ERROR}ERROR{BColors.ENDC} " + time_stamp + msg, flush=True)
-
-
-def msg_warning(msg):
-    now = datetime.now()
-    time_stamp = now.strftime("(%Y-%m-%d-%H-%M-%S) ")
-    print(f"{BColors.WARNING}WARNING{BColors.ENDC} " + time_stamp + msg, flush=True)
-
-
-def printProgressBar (iteration, total, prefix = '', suffix = 'Complete', decimals = 4, length = 100, fill = '█', printEnd = "\r"):
-    """
-    Call in a loop to create terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
-        length      - Optional  : character length of bar (Int)
-        fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
-    """
-    complete_prefix = f"{BColors.OKCYAN}Progress {BColors.ENDC}" + prefix
-    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-    print(f'\r{complete_prefix} |{bar}| {percent}% {suffix}', end = printEnd, flush="True")
-    # Print New Line on Complete
-    if iteration == total:
-        print()
-
-
 def run(command, env={}):
     """Execute command as in a terminal
 
@@ -189,6 +129,340 @@ def run(command, env={}):
             break
     if process.returncode != 0:
         raise Exception("Non zero return code: %d" % process.returncode)
+
+
+def arguments_manager(version):
+    """
+    Wrapper to define and read arguments for main function call
+    Args:
+        version: version to output when calling with -h
+
+    Returns:
+        args as read from command line call
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description = 'Entrypoint script.')
+    parser.add_argument('bids_dir', help='The directory with the input '
+                                         'dataset formatted according to '
+                                         'the BIDS standard.')
+    parser.add_argument('output_dir', help='The directory where the output '
+                                           'files will be stored.')
+    parser.add_argument('analysis_level', help='Level of the analysis that '
+                                               'will be performed. '
+                                               'Multiple participant level '
+                                               'analyses can be run '
+                                               'independently (in parallel)'
+                                               ' using the same '
+                                               'output_dir.',
+                        choices = ['participant',
+                                   'group'])
+    parser.add_argument('--participant_label', help='The label(s) of the participant(s) that should be analyzed. The label corresponds to sub-<participant_label> from the BIDS spec (so it does not include "sub-"). If this parameter is not provided all subjects should be analyzed. Multiple participants can be specified with a space separated list.', nargs = "+")
+    parser.add_argument('--skip_bids_validator', help='Whether or not to perform BIDS dataset validation', action='store_true')
+    parser.add_argument('--fmriprep_dir', help='Path of the fmriprep derivatives. If ommited, set to bids_dir/derivatives/fmriprep')
+    parser.add_argument('--task', help='Name of the task to be used. If omitted, will search for \'restingstate\'.')
+    parser.add_argument('--sessions', help='Name of the session to consider. If omitted, will loop over all sessions.', nargs = "+")
+    parser.add_argument('--space', help='Name of the space to be used. Must be associated with fmriprep output.')
+    parser.add_argument('--denoising_strategy', help='Names of the denoising strategy to consider. If omitted, set to \'simple\'. Examples are \'simple\', \'scrubbing\', \'compcor\', \'ica_aroma\'')
+    parser.add_argument('--seeds_file',
+                        help='Optional. Path to a .tsv file from which the nodes to compute the connectome will be loaded. The .tsv file should have four columns, without header. The first one contains the node name (a string) and the three others are the x,y,z coordinates in MNI space of the correspondings node. If omitted, it will load the msdl probabilitic atlas (see nilearn documentations for more info). ')
+    parser.add_argument('-v', '--version', action='version', version='BIDS-App example version {}'.format(version))
+
+    return parser.parse_args()
+
+
+def get_space(args, layout):
+    """
+    Get space (and res, if any) and checks if present in layout (rawdata and derivatives)
+    Args:
+        args: return from arguments_manager
+        layout: BIDS layout
+
+    Returns:
+        string for space entity
+    """
+    from .shellprints import msg_info, msg_error
+    import sys
+    if args.space:
+        space = args.space
+    else:
+        space = 'MNI152NLin2009cAsym'
+        msg_info('Defaulting to space %s' % space)
+
+    # check if space arg has res modifier
+    res = None
+    if ":" in space:
+        res = space.split(":")[1].split('-')[1]
+        space = space.split(":")[0]
+
+    # space in fmriprep output?
+    spaces = layout.get_spaces(scope='derivatives')
+    if space not in spaces:
+        msg_error("Selected space %s is invalid. Valid spaces are %s" % (args.space, spaces))
+        sys.exit(1)
+
+    #todo: check if combination space+res is in fmriprep output
+
+    return space, res
+
+
+
+def setup_output_dir(args, version, layout):
+    import os
+    from pathlib import Path  # to create dirs
+    # create output dir
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    # initiate dataset_description file for outputs
+    dataset_description = os.path.join(args.output_dir,
+                                       'dataset_description.json')
+    with open(dataset_description, 'w') as ds_desc:
+        # todo: get the correct BIDS version
+        ds_desc.write(('{"Name": "connectomix", "BIDSVersion": "x.x.x", '
+                       '"DatasetType": "derivative", "GeneratedBy": '
+                       '[{"Name": "connectomix"}, {"Version": "%s"}]}')
+                      % version.rstrip('\n'))
+        ds_desc.close()
+
+    layout.add_derivatives(args.output_dir)  # add output dir as BIDS derivatives in layout
+
+    return layout
+
+
+def setup_subject_output_paths(output_dir, subject_label, space, res, session, strategy):
+    """
+    Setup various paths for subject output. Also creates subject output dir.
+    Args:
+        output_dir: str, cvrmap output dir
+        subject_label: str, subject label
+        space: str, space entity
+        res: int or str, resolution entity
+        session: str, session entity
+        args: output of arguments_manager
+
+    Returns:
+        dict with various output paths (str)
+
+    """
+    from pathlib import Path  # to create dirs
+    import os
+
+    # create output_dir/sub-XXX directory
+
+    ses_str = ''
+    res_str = ''
+    if session is not None:
+        ses_str = 'ses-' + session
+    if res is not None:
+        res_str = '_res-' + res
+    strategy_str = '_desc-' + strategy
+
+    subject_output_dir = os.path.join(output_dir,
+                                      "sub-" + subject_label, ses_str)
+    ses_str = '_' + ses_str
+
+    Path(subject_output_dir).mkdir(parents=True, exist_ok=True)
+
+    # directory for figures
+    figures_dir = os.path.join(subject_output_dir, 'figures')
+    Path(figures_dir).mkdir(parents=True, exist_ok=True)
+
+    # directory for extras
+    extras_dir = os.path.join(subject_output_dir, 'extras')
+    Path(extras_dir).mkdir(parents=True, exist_ok=True)
+
+    # set paths for various outputs
+    outputs = {}
+
+    subject_prefix = os.path.join(subject_output_dir,
+                                      "sub-" + subject_label + ses_str)
+
+    prefix = subject_prefix + "_space-" + space + res_str + strategy_str
+
+    report_extension = '.html'
+    data_extension = '.tsv'
+    figures_extension = '.svg'
+
+    # report is in root of derivatives (fmriprep-style), not in subject-specific directory
+
+    outputs['report'] = os.path.join(output_dir,
+                                     "sub-" + subject_label + '_report' + report_extension)
+
+    # principal outputs
+    outputs['data'] = prefix + '_data' + data_extension
+
+    # supplementary data (extras)
+    outputs['timeseries'] = os.path.join(extras_dir, "sub-" + subject_label
+                                         + ses_str + "_space-" + space
+                                         + res_str + strategy_str
+                                         + '_timeseries' + data_extension)
+
+    # figures (for the report)
+    outputs['matrix'] = os.path.join(figures_dir, 'sub-' + subject_label
+                                     + '_matrix' + figures_extension)
+    outputs['connectome'] = os.path.join(figures_dir, 'sub-' + subject_label
+                                         + '_connectome' + figures_extension)
+
+    return outputs
+
+
+def get_version ():
+    """
+    Print version from git info
+    Returns:
+    __version__
+    """
+    from os.path import join, dirname, realpath
+    # version = open(join(dirname(realpath(__file__)), '..', '..', '..', '.git',
+    #                        'HEAD')).read()
+    version = open(join(dirname(realpath(__file__)), '..', '..', 'VERSION')).read()
+
+    return version
+
+def get_subjects_to_analyze(args, layout):
+    """
+    Generate list of subjects to analyze given the options and available subjects
+    Args:
+        args: return from arguments_manager
+        layout: BIDS layout
+    Returns:
+        list of subjects to loop over
+    """
+    from .shellprints import msg_error
+    import sys
+    if args.participant_label:  # only for a subset of subjects
+        subjects_to_analyze = args.participant_label
+        # in that case we must ensure the subjects exist in the layout:
+        for subj in subjects_to_analyze:
+            if subj not in layout.get_subjects():
+                msg_error("Subject %s in not included in the "
+                          "bids database." % subj)
+                sys.exit(1)
+    else:  # for all subjects
+        subjects_to_analyze = sorted(layout.get_subjects())
+    return subjects_to_analyze
+
+
+def get_fmriprep_dir(args):
+    """
+    Get and check existence of fmriprep dir from options or default
+    Args:
+        args: return from arguments_manager
+
+    Returns:
+        path to fmriprep dir
+    """
+    from os.path import join, isdir
+    from .shellprints import msg_error
+    #  fmriprep dir definition
+    if args.fmriprep_dir:
+        fmriprep_dir = args.fmriprep_dir
+    else:
+        fmriprep_dir = join(args.bids_dir, "derivatives", "fmriprep")
+    # exists?
+    if not isdir(fmriprep_dir):
+        msg_error("fmriprep dir %s not found." % fmriprep_dir)
+
+    return fmriprep_dir
+
+
+def get_sessions(args, layout):
+    """
+    Set the sessions to analyze. If argument "sessions" is specified, checks that they exist.
+    Otherwise, select all available sessions in dataset.
+    :param args: return from arguments_manager
+    :param layout: BIDS layout
+    :return: list of strings definind sessions to analyze
+    """
+    from .shellprints import msg_error
+    sessions = [None]
+    if args.sessions:
+        for ses in args.sessions:
+            if ses not in layout.get_sessions():
+                msg_error("Selected session %s is not in the BIDS dataset. "
+                          "Available session are %s." % (ses,
+                                                       layout.get_sessions()))
+                sys.exit(1)
+        sessions = args.sessions
+    else:
+        if len(layout.get_sessions()) != 0:
+            sessions =  layout.get_sessions()
+    return sessions
+
+
+def get_seeds(args):
+    """
+    Get the seeds to compute networks from.
+    :param args: return from arguments_manager
+    :return: dict defining the seeds with their type, labels, coordinates and radius.
+    """
+    import numpy as np
+    import csv
+    from .shellprints import msg_error
+    seeds = dict()
+    if args.seeds_file:
+        if not os.path.isfile(args.seeds_file):
+            msg_error('Node file %s not found.' % args.seeds_file)
+            sys.exit(1)
+        seeds['type'] = 'customseeds'
+        seeds['radius'] = 5
+        with open(args.seeds_file) as file:
+            tsv_file = csv.reader(file, delimiter="\t")
+            seeds['labels'] = []
+            seeds['coordinates'] = []
+            for line in tsv_file:
+                seeds['labels'].append(line[0])
+                seeds['coordinates'].append(np.array(line[1:4], dtype=int))
+            # todo: add checks that what we are reading make sense
+    else:
+        seeds['type'] = 'msdl_atlas'
+    return seeds
+
+def get_strategy(args):
+    """
+    Get denoising strategies from options or set it to default
+    :param args: return from arguments_manager
+    :return: list of string, with strategies to apply
+    """
+    from .shellprints import msg_error
+    available_strategies = ['simple', 'scrubbing', 'compcor',
+                            'ica_aroma']
+    # those are the four standard strategies directly available in nilearn
+    if args.denoising_strategy:
+        if args.denoising_strategy not in available_strategies:
+            msg_error('Selected strategy %s is not available. Available strategies are %s.' % (args.denoising_strategy, available_strategies))
+            sys.exit(1)
+        strategies = args.denoising_strategy
+    else:
+        strategies = ['simple']
+
+    return strategies
+
+def get_task(args, layout):
+    """
+    Get and check task option or set to default
+    Args:
+        args: return from arguments_manager
+        layout: BIDS layout
+
+    Returns:
+        string for task entity
+    """
+    from .shellprints import msg_error
+    import sys
+    if args.task:
+        task = args.task
+    else:
+        # fall back to default value
+        task = "restingstate"
+
+    if task not in layout.get_tasks():
+        msg_error("Selected task %s is not in the BIDS dataset. "
+                  "Available tasks are %s." % (args.task,
+                                               layout.get_tasks()))
+        sys.exit(1)
+
+    return task
+
 
 
 def nested_dict(n, type):
@@ -272,6 +546,7 @@ def get_timeseries(layout, filter, strategy, seeds):
     # imports
 
     from nilearn.interfaces.fmriprep import load_confounds_strategy
+    from .shellprints import msg_error
 
     filter.update({'suffix': "bold"})
     if strategy == 'ica_aroma':
@@ -316,6 +591,7 @@ def get_connectome(layout, filter, strategy, seeds):
     import numpy as np
     from nilearn import plotting
     from nilearn.maskers import NiftiMapsMasker, NiftiSpheresMasker
+    from .shellprints import msg_error
 
     filter.update({'suffix': "bold"})
     if strategy == 'ica_aroma':
