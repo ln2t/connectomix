@@ -532,45 +532,61 @@ def get_masker_labels_coords(seeds):
 
     return masker, labels, coordinates
 
-def get_timeseries(layout, filter, strategy, seeds):
+def get_fmri_preproc(layout, bids_filter):
     """
-    Compute connectomes and graphs of nodes for various denoising strategies. Results (mostly: figures) are saved as png in output_dir, and stuff is also added in the report.
-
-    :param layout: BIDS layout containing the fmriprep outputs
-    :param filter: dict to be used as a BIDS filter to select participants data
-    :param strategy: str setting the denoising strategy
-    :param seeds: dict to set regions to use as seeds. If seeds['type'] = 'msdl_atlas', will use probabilistic mdsl atlas. Other wise: will read labels, coordinates and radius fields.
-    :return: dict with three fields: correlation, covariance and precision
+    Selects preprocessing fmri file for
+     current subject, space, resolution (if any), task and session
+    :param layout: BIDSlayout
+    :param bids_filter: dict
+    :return: str, path to fmri file
     """
-
-    # imports
-
-    from nilearn.interfaces.fmriprep import load_confounds_strategy
     from .shellprints import msg_error
-
-    filter.update({'suffix': "bold"})
-    if strategy == 'ica_aroma':
-        filter.update({'desc': "smoothAROMAnonaggr"})
-        options_for_load_confounds_strategy = {'denoise_strategy': strategy}
+    _filter = bids_filter.copy()
+    _filter.update({'desc': "preproc"})
+    fmri_files = layout.derivatives['fMRIPrep'].get(**bids_filter, desc='preproc', extension='.nii.gz')
+    if len(fmri_files) == 1:
+        fmri_file = fmri_files[0]
     else:
-        filter.update({'desc': "preproc"})
-        options_for_load_confounds_strategy = {'denoise_strategy': strategy, 'motion': 'basic'}
-    try:
-        fmri_files = layout.get(**filter, extension='.nii.gz')[0]
-    except IndexError:
         msg_error('fmri file not found!')
         sys.exit(1)
-    confounds, sample_mask = load_confounds_strategy(fmri_files, **options_for_load_confounds_strategy)
+    return fmri_file
 
-    masker, labels, coords = get_masker_labels_coords(seeds)
+def get_connectivity_measures(fmri_file, denoise_strategy, seeds):
+    from nilearn.connectome import ConnectivityMeasure
+    import numpy as np
 
-    try:
-        time_series = masker.fit_transform(fmri_files, confounds=confounds)
-    except:
-        msg_error('There is a problem with series %s. Check QC of these data!' % fmri_files)
-        sys.exit(1)
+    _timeseries, _labels, _coords = get_timeseries(fmri_file, denoise_strategy, seeds)
+    _correlation_matrix = ConnectivityMeasure(kind='correlation').fit_transform([_timeseries])[0]
+    np.fill_diagonal(_correlation_matrix, 0)  # for visual purposes
 
-    return time_series, labels, coords
+    results = dict()
+    results['data'] = _correlation_matrix
+    results['graphics'] = get_graphics(_correlation_matrix, 'correlation' + ' - ' + denoise_strategy, _labels, _coords)
+    results['timeseries'] = _timeseries
+
+    return results
+
+def get_timeseries(fmri_file, strategy, seeds):
+    """
+    Compute connectomes and graphs of nodes for various denoising strategies.
+    Results (mostly: figures) are saved as png in output_dir, and stuff is also added in the report.
+
+    :param fmri_file: str, path to fmri file to analyze
+    :param strategy: str, setting the denoising strategy
+    :param seeds: dict, to set regions to use as seeds. If seeds['type'] = 'msdl_atlas', will use probabilistic
+    mdsl atlas. Otherwise: will read labels, coordinates and radius fields.
+    :return: dict, with three fields: correlation, covariance and precision
+    """
+
+    from nilearn.interfaces.fmriprep import load_confounds_strategy
+
+    options_for_load_confounds_strategy = {'denoise_strategy': strategy, 'motion': 'basic'}
+    _confounds, _ = load_confounds_strategy(fmri_file, **options_for_load_confounds_strategy)
+
+    _masker, _labels, _coords = get_masker_labels_coords(seeds)
+    time_series = _masker.fit_transform(fmri_file, confounds=_confounds)
+
+    return time_series, _labels, _coords
 
 def get_connectome(layout, filter, strategy, seeds):
     """

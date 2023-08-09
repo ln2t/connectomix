@@ -25,6 +25,7 @@ def main():
     fmriprep_dir = get_fmriprep_dir(args)
 
     msg_info("Indexing BIDS dataset...")
+
     layout = bidslayout(args.bids_dir, validate=not args.skip_bids_validator)
     layout.add_derivatives(fmriprep_dir)
     subjects_to_analyze = get_subjects_to_analyze(args, layout)
@@ -32,7 +33,7 @@ def main():
     space, res = get_space(args, layout)
     task = get_task(args, layout)
     seeds = get_seeds(args)
-    strategy = get_strategy(args)
+    denoise_strategies = get_strategy(args)
     layout = setup_output_dir(args, __version__, layout)
     output_dir = layout.derivatives['connectomix'].root
 
@@ -51,71 +52,68 @@ def main():
 
             sessions = []
             for session in all_sessions:
-                if session in layout.get_sessions(subject=subject_label) or session is None:
+                if session in layout.get_sessions(subject=subject_label):
                     sessions.append(session)
-
-            msg_info('Found the following sessions for this subject: %s' % sessions)
+                    msg_info('Found the following sessions for this subject: %s' % sessions)
+                if session is None:
+                    sessions = [None]
 
             for session in sessions:
-                filter = dict(subject=subject_label, return_type='filename',
+                bids_filter = dict(subject=subject_label, return_type='filename',
                               space=space, res=res, task=task, session=session)
 
-                outputs = setup_subject_output_paths(output_dir, subject_label,
-                                                     space, res, session, strategy)
+                # get fmri preprocessed by fmriprep
+                fmri_preproc = get_fmri_preproc(layout, bids_filter)
 
                 results = dict()
-                results[strategy] = dict()
 
-                # results[strategy] = get_connectome(layout, filter, strategy, seeds)
+                for denoise_strategy in denoise_strategies:
 
-                results[strategy]['timeseries'], labels, coords = get_timeseries(layout, filter, strategy, seeds)
+                    results[denoise_strategy] = get_connectivity_measures(fmri_preproc, denoise_strategy, seeds)
 
-                correlation_matrix = ConnectivityMeasure(kind='correlation').fit_transform([results[strategy]['timeseries']])[0]
-                np.fill_diagonal(correlation_matrix, 0)  # for visual purposes
+                    outputs = setup_subject_output_paths(output_dir, subject_label,
+                                                         space, res, session, denoise_strategy)
 
-                results[strategy]['data'] = correlation_matrix
-                results[strategy]['graphics'] = get_graphics(correlation_matrix, 'correlation' + ' - ' + strategy, labels, coords)
+                    # save a couple of nice images
+                    for item in ['matrix', 'connectome']:
+                        results[denoise_strategy]['graphics'][item].savefig(outputs[item])
 
-                # save a couple of nice images
-                for item in ['matrix', 'connectome']:
-                    results[strategy]['graphics'][item].savefig(outputs[item])
+                    # save the matrix data and timeseries
+                    for item in ['data', 'timeseries']:
+                        np.savetxt(outputs[item], results[denoise_strategy][item], delimiter='\t')
 
-                # save the matrix data and timeseries
-                for item in ['data', 'timeseries']:
-                    np.savetxt(outputs[item], results[strategy][item], delimiter='\t')
+            # now we build the report. We want one col for each denoise_strategy
 
-            # now we build the report. We want one col for each strategy
-
-            # strategy_html_headers = '<span style="padding-left:150px">simple</span><span style="padding-left:300px">scrubbing</span><span style="padding-left:300px">compcor</span><span style="padding-left:300px">ica-aroma</span>'
+            # denoise_strategy_html_headers = '<span style="padding-left:150px">simple</span><span style="padding-left:300px">scrubbing</span><span style="padding-left:300px">compcor</span><span style="padding-left:300px">ica-aroma</span>'
             # report.add_section(title='Carpet plots')
             # for item in quantities_of_interest:
             #     report.add_subsection(title=item)
-            #     # report.add_sentence(sentence=strategy_html_headers)
-            #     for strategy in strategies:
-            #         report.add_png(outputs[(strategy, item, 'carpet')])
+            #     # report.add_sentence(sentence=denoise_strategy_html_headers)
+            #     for denoise_strategy in strategies:
+            #         report.add_png(outputs[(denoise_strategy, item, 'carpet')])
             #
             # report.add_section(title='Connectome plots')
             # for item in quantities_of_interest:
             #     report.add_subsection(title=item)
-            #     # report.add_sentence(sentence=strategy_html_headers)
-            #     for strategy in strategies:
-            #         report.add_png(outputs[(strategy, item, 'connectome')])
+            #     # report.add_sentence(sentence=denoise_strategy_html_headers)
+            #     for denoise_strategy in strategies:
+            #         report.add_png(outputs[(denoise_strategy, item, 'connectome')])
             #
             # if include_3D_plot_flag:
             #     report.add_section(title='Connectome 3D views')
             #     for item in quantities_of_interest:
             #         report.add_subsection(title=item)
-            #         # report.add_sentence(sentence=strategy_html_headers)
-            #         for strategy in strategies:
-            #             report.append(results[strategy][item]['view']._repr_html_())
+            #         # report.add_sentence(sentence=denoise_strategy_html_headers)
+            #         for denoise_strategy in strategies:
+            #             report.append(results[denoise_strategy][item]['view']._repr_html_())
             #
             # report.add_section(title='Carpet plots for provided nodes')
-            # for strategy in strategies:
-            #     report.add_png(os.path.join(subject_figure_dir, strategy + '_' + 'nodes_plot.png'))
+            # for denoise_strategy in strategies:
+            #     report.add_png(os.path.join(subject_figure_dir, denoise_strategy + '_' + 'nodes_plot.png'))
             #
             # report.add_section(title='Connectome plots for provided nodes')
-            # for strategy in strategies:
-            #     report.add_png(outputs[('nodes_connectome', strategy)])
+            # for denoise_strategy in strategies:
+            #     report.add_png(outputs[('nodes_connectome', denoise_strategy)])
             #
             # report.finish()
 
@@ -123,7 +121,7 @@ def main():
     elif args.analysis_level == "group":
 
         time_series = dict()
-        filter = dict(suffix='timeseries', extension='.tsv', return_type='filename')
+        bids_filter = dict(suffix='timeseries', extension='.tsv', return_type='filename')
         msg_warning('Datasets without session not supported yet.')
 
         group_output_dir = os.path.join(output_dir, 'group')
@@ -134,7 +132,7 @@ def main():
             msg_warning('This tool should not be used if you have run several denoising strategies and the outputs are coexisting in the derivative folder.')
             for subject in layout.derivatives['connectomix'].get_subjects(session=session):
                 try:
-                    series_fn = layout.derivatives['connectomix'].get(**filter, subject=subject, session=session, desc=seeds['type'])[0]
+                    series_fn = layout.derivatives['connectomix'].get(**bids_filter, subject=subject, session=session, desc=seeds['type'])[0]
                 except:
                     msg_warning('No series found for subject %s, skipping.' % subject)
                     continue
