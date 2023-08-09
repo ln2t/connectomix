@@ -54,9 +54,11 @@ def main():
             for session in all_sessions:
                 if session in layout.get_sessions(subject=subject_label):
                     sessions.append(session)
-                    msg_info('Found the following sessions for this subject: %s' % session)
                 if session is None:
                     sessions = [None]
+            sessions = sorted(sessions)
+            if sessions[0] is not None:
+                msg_info('Found the following sessions for this subject: %s' % sessions)
 
             for session in sessions:
                 bids_filter = dict(subject=subject_label, return_type='filename',
