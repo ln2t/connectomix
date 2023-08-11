@@ -275,7 +275,7 @@ def setup_subject_output_paths(output_dir, subject_label, space, res, session, s
     subject_prefix = os.path.join(subject_output_dir,
                                       "sub-" + subject_label + ses_str)
 
-    prefix = subject_prefix + "_space-" + space + res_str + strategy_str
+    prefix = subject_prefix + res_str + strategy_str
 
     report_extension = '.html'
     data_extension = '.tsv'
@@ -291,7 +291,7 @@ def setup_subject_output_paths(output_dir, subject_label, space, res, session, s
 
     # supplementary data (extras)
     outputs['timeseries'] = os.path.join(extras_dir, "sub-" + subject_label
-                                         + ses_str + "_space-" + space
+                                         + ses_str
                                          + res_str + strategy_str
                                          + '_timeseries' + data_extension)
 
