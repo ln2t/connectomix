@@ -64,8 +64,10 @@ def main():
                 bids_filter = dict(subject=subject_label, return_type='filename',
                               space=space, res=res, task=task, session=session)
 
-                # get fmri preprocessed by fmriprep
+                # get fmri preprocessed and mask by fmriprep
                 fmri_preproc = get_fmri_preproc(layout, bids_filter)
+                if seeds['type'] == 'all_voxels':
+                    seeds['mask'] = get_fmri_mask(layout, bids_filter)
 
                 results = dict()
 
@@ -77,7 +79,11 @@ def main():
                                                          space, res, session, denoise_strategy)
 
                     # save a couple of nice images
-                    for item in ['matrix', 'connectome']:
+                    item = 'matrix'
+                    results[denoise_strategy]['graphics'][item].savefig(outputs[item])
+
+                    if not seeds['type'] == 'all_voxels':
+                        item = 'connectome'
                         results[denoise_strategy]['graphics'][item].savefig(outputs[item])
 
                     # save the matrix data and timeseries

@@ -394,25 +394,49 @@ def get_seeds(args):
     """
     import numpy as np
     import csv
-    from .shellprints import msg_error
+    from .shellprints import msg_error, msg_info
     seeds = dict()
     if args.seeds_file:
-        if not os.path.isfile(args.seeds_file):
-            msg_error('Node file %s not found.' % args.seeds_file)
-            sys.exit(1)
-        seeds['type'] = 'customseeds'
-        seeds['radius'] = 5
-        with open(args.seeds_file) as file:
-            tsv_file = csv.reader(file, delimiter="\t")
-            seeds['labels'] = []
-            seeds['coordinates'] = []
-            for line in tsv_file:
-                seeds['labels'].append(line[0])
-                seeds['coordinates'].append(np.array(line[1:4], dtype=int))
-            # todo: add checks that what we are reading make sense
+        if args.seeds_file == 'msdl':
+            seeds['type'] = 'msdl_atlas'
+            msg_info('Seeds set to regions of MSDL atlas')
+        else:
+            if not os.path.isfile(args.seeds_file):
+                msg_error('Node file %s not found.' % args.seeds_file)
+                sys.exit(1)
+            else:
+                seeds['type'] = 'customseeds'
+                seeds['radius'] = 5
+                with open(args.seeds_file) as file:
+                    tsv_file = csv.reader(file, delimiter="\t")
+                    seeds['labels'] = []
+                    seeds['coordinates'] = []
+                    for line in tsv_file:
+                        seeds['labels'].append(line[0])
+                        seeds['coordinates'].append(np.array(line[1:4], dtype=int))
+                    # todo: add checks that what we are reading make sense
     else:
-        seeds['type'] = 'msdl_atlas'
+        seeds['type'] = 'all_voxels'
     return seeds
+
+def get_fmri_mask(layout, bids_filter):
+    """
+    Get appropriate mask in fMRIPrep derivatives
+    :param layout: BIDS layout
+    :param bids_filter: dict
+    :return: niimg for BOLD mask
+    """
+    from .shellprints import msg_error
+    mask_files = layout.derivatives['fMRIPrep'].get(**bids_filter, desc='brain', suffix='mask', extension='.nii.gz')
+    if len(mask_files) == 1:
+        mask_file = mask_files[0]
+    else:
+        msg_error('mask file not found!')
+        sys.exit(1)
+
+    from nilearn.image import load_img
+
+    return load_img(mask_file)
 
 def get_strategy(args):
     """
@@ -491,8 +515,11 @@ def get_graphics(data, title, labels, coords):
     from matplotlib import pyplot as plt
     matrix = plotting.plot_matrix(data, figure=(10, 8), labels=labels,
                                   vmax=0.8, vmin=-0.8, title=title,
-                                  reorder=False)  # save with carpet.figure.savefig(path)
-    connectome = plotting.plot_connectome(data, coords, title=title)  # save with connectome.savefig(path)
+                                  reorder=True)  # save with carpet.figure.savefig(path)
+    if coords is None:
+        connectome = None
+    else:
+        connectome = plotting.plot_connectome(data, coords, title=title)  # save with connectome.savefig(path)
     #view = plotting.view_connectome(data, coords,
     #                                title=title)  # put in html by inserting the string view._repr_html_()
 
@@ -552,7 +579,19 @@ def get_connectivity_measures(fmri_file, denoise_strategy, seeds):
     from nilearn.connectome import ConnectivityMeasure
     import numpy as np
 
-    _timeseries, _labels, _coords = get_timeseries(fmri_file, denoise_strategy, seeds)
+    if seeds['type'] == 'all_voxels':
+        from nilearn.masking import apply_mask
+        from nilearn.image import resample_img
+        resampling_factor = 10
+        _img = resample_img(fmri_file, target_affine=resampling_factor * np.identity(3))
+        _mask = resample_img(seeds['mask'], target_affine=resampling_factor * np.identity(3), interpolation='nearest')
+
+        _timeseries = apply_mask(_img, _mask)
+        _labels = [' ' for i in range(_timeseries.shape[1])]
+        _coords = None
+    else:
+        _timeseries, _labels, _coords = get_timeseries(fmri_file, denoise_strategy, seeds)
+
     _correlation_matrix = ConnectivityMeasure(kind='correlation').fit_transform([_timeseries])[0]
     np.fill_diagonal(_correlation_matrix, 0)  # for visual purposes
 
