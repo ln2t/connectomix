@@ -381,7 +381,9 @@ def get_graphics(data, title, labels, coords):
     if labels is None:
         labels = [' ' for i in range(data.shape[0])]
     matrix = plotting.plot_matrix(data, figure=(10, 8), labels=labels,
-                                  vmax=0.8, vmin=-0.8, title=title,
+                                  title=title,
+                                  vmin=-0.4,
+                                  vmax=0.4,
                                   reorder=True)  # save with carpet.figure.savefig(path)
 
     if coords is None:
@@ -460,12 +462,13 @@ def get_connectivity_measures(fmri_file, denoise_strategy, seeds):
     import numpy as np
 
     _timeseries, _labels, _coords = get_timeseries(fmri_file, denoise_strategy, seeds)
-    _correlation_matrix = ConnectivityMeasure(kind='correlation').fit_transform([_timeseries])[0]
+    kind = 'covariance'
+    _correlation_matrix = ConnectivityMeasure(kind='covariance').fit_transform([_timeseries])[0]
     np.fill_diagonal(_correlation_matrix, 0)  # for visual purposes
 
     results = dict()
     results['data'] = _correlation_matrix
-    results['graphics'] = get_graphics(_correlation_matrix, 'correlation' + ' - ' + denoise_strategy, _labels, _coords)
+    results['graphics'] = get_graphics(_correlation_matrix, kind + ' - ' + denoise_strategy, _labels, _coords)
     results['timeseries'] = _timeseries
 
     return results
