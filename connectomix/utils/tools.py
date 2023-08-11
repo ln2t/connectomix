@@ -76,7 +76,7 @@ def arguments_manager(version):
     parser.add_argument('--task', help='Name of the task to be used. If omitted, will search for \'restingstate\'.')
     parser.add_argument('--sessions', help='Name of the session to consider. If omitted, will loop over all sessions.', nargs = "+")
     parser.add_argument('--space', help='Name of the space to be used. Must be associated with fmriprep output.')
-    parser.add_argument('--denoising_strategy', help='Names of the denoising strategy to consider. If omitted, set to \'simple\'. Examples are \'simple\', \'scrubbing\', \'compcor\', \'ica_aroma\'')
+    parser.add_argument('--denoising_strategies', help='Names of the denoising strategies to consider. If omitted, set to \'simple\'. Examples are \'simple\', \'scrubbing\', \'compcor\', \'ica_aroma\'', nargs = "+")
     parser.add_argument('--seeds_file',
                         help='Optional. Path to a .tsv file from which the nodes to compute the connectome will be loaded. The .tsv file should have four columns, without header. The first one contains the node name (a string) and the three others are the x,y,z coordinates in MNI space of the correspondings node. If omitted, it will load the msdl probabilitic atlas (see nilearn documentations for more info). ')
     parser.add_argument('-v', '--version', action='version', version='BIDS-App example version {}'.format(version))
@@ -312,11 +312,12 @@ def get_strategy(args):
     available_strategies = ['simple', 'scrubbing', 'compcor',
                             'ica_aroma']
     # those are the four standard strategies directly available in nilearn
-    if args.denoising_strategy:
-        if args.denoising_strategy not in available_strategies:
-            msg_error('Selected strategy %s is not available. Available strategies are %s.' % (args.denoising_strategy, available_strategies))
-            sys.exit(1)
-        strategies = [args.denoising_strategy]
+    if args.denoising_strategies:
+        for _strategy in args.denoising_strategies:
+            if _strategy not in available_strategies:
+                msg_error('Selected strategy %s is not available. Available strategies are %s.' % (args.denoising_strategies, available_strategies))
+                sys.exit(1)
+        strategies = args.denoising_strategies
     else:
         strategies = ['simple']
 

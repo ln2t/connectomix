@@ -73,6 +73,8 @@ def main():
 
                 for denoise_strategy in denoise_strategies:
 
+                    msg_info('Running denoising strategy %s' % denoise_strategy)
+
                     results[denoise_strategy] = get_connectivity_measures(fmri_preproc, denoise_strategy, seeds)
 
                     entities = dict()
