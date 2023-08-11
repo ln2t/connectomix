@@ -376,6 +376,9 @@ def get_graphics(data, title, labels, coords):
     """
     from nilearn import plotting
     from matplotlib import pyplot as plt
+
+    if labels is None:
+        labels = [' ' for i in range(data.shape[0])]
     matrix = plotting.plot_matrix(data, figure=(10, 8), labels=labels,
                                   vmax=0.8, vmin=-0.8, title=title,
                                   reorder=True)  # save with carpet.figure.savefig(path)
@@ -394,7 +397,8 @@ def get_masker_labels_coords(seeds):
 
     from nilearn import datasets
     from nilearn import plotting
-    from nilearn.maskers import NiftiMapsMasker, NiftiSpheresMasker
+    from nilearn.maskers import NiftiMapsMasker, NiftiSpheresMasker, NiftiMasker
+    import numpy as np
 
     if seeds['type'] == 'msdl_atlas':
         # we load a probabilistic atlas
@@ -416,6 +420,13 @@ def get_masker_labels_coords(seeds):
             memory='nilearn_cache', memory_level=1, verbose=2)
         labels = seeds['labels']
         coordinates = seeds['coordinates']
+
+    if seeds['type'] == 'all_voxels':
+        resampling_factor = 10
+        masker = NiftiMasker(seeds['mask'], detrend=True, standardize=True,
+                             target_affine=resampling_factor * np.identity(3))
+        labels = None
+        coordinates = None
 
     return masker, labels, coordinates
 
@@ -442,19 +453,7 @@ def get_connectivity_measures(fmri_file, denoise_strategy, seeds):
     from nilearn.connectome import ConnectivityMeasure
     import numpy as np
 
-    if seeds['type'] == 'all_voxels':
-        from nilearn.masking import apply_mask
-        from nilearn.image import resample_img
-        resampling_factor = 10
-        _img = resample_img(fmri_file, target_affine=resampling_factor * np.identity(3))
-        _mask = resample_img(seeds['mask'], target_affine=resampling_factor * np.identity(3), interpolation='nearest')
-
-        _timeseries = apply_mask(_img, _mask)
-        _labels = [' ' for i in range(_timeseries.shape[1])]
-        _coords = None
-    else:
-        _timeseries, _labels, _coords = get_timeseries(fmri_file, denoise_strategy, seeds)
-
+    _timeseries, _labels, _coords = get_timeseries(fmri_file, denoise_strategy, seeds)
     _correlation_matrix = ConnectivityMeasure(kind='correlation').fit_transform([_timeseries])[0]
     np.fill_diagonal(_correlation_matrix, 0)  # for visual purposes
 
