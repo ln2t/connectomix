@@ -76,7 +76,7 @@ def arguments_manager(version):
     parser.add_argument('--task', help='Name of the task to be used. If omitted, will search for \'restingstate\'.')
     parser.add_argument('--sessions', help='Name of the session to consider. If omitted, will loop over all sessions.', nargs = "+")
     parser.add_argument('--space', help='Name of the space to be used. Must be associated with fmriprep output.')
-    parser.add_argument('--denoising_strategies', help='Names of the denoising strategies to consider. If omitted, set to \'simple\'. Examples are \'simple\', \'scrubbing\', \'compcor\', \'ica_aroma\'', nargs = "+")
+    parser.add_argument('--denoising_strategies', help='Names of the denoising strategies to consider. If omitted, set to \'simple\'. Examples are \'simple\', \'scrubbing\', \'compcor\', \'aroma\'', nargs = "+")
     parser.add_argument('--seeds_file',
                         help='Optional. Path to a .tsv file from which the nodes to compute the connectome will be loaded. The .tsv file should have four columns, without header. The first one contains the node name (a string) and the three others are the x,y,z coordinates in MNI space of the correspondings node. If omitted, it will load the msdl probabilitic atlas (see nilearn documentations for more info). ')
     parser.add_argument('-v', '--version', action='version', version='BIDS-App example version {}'.format(version))
@@ -310,7 +310,7 @@ def get_strategy(args):
     """
     from .shellprints import msg_error
     available_strategies = ['simple', 'scrubbing', 'compcor',
-                            'ica_aroma']
+                            'aroma']
     # those are the four standard strategies directly available in nilearn
     if args.denoising_strategies:
         for _strategy in args.denoising_strategies:
@@ -383,6 +383,7 @@ def get_graphics(data, title, labels, coords):
     matrix = plotting.plot_matrix(data, figure=(10, 8), labels=labels,
                                   vmax=0.8, vmin=-0.8, title=title,
                                   reorder=True)  # save with carpet.figure.savefig(path)
+
     if coords is None:
         connectome = None
     else:
@@ -441,7 +442,7 @@ def get_fmri_preproc(layout, bids_filter, strategy):
     """
     from .shellprints import msg_error
 
-    if strategy == 'ica_aroma':
+    if strategy == 'aroma':
         desc = 'smoothAROMAnonaggr'
     else:
         desc = 'preproc'
@@ -483,7 +484,11 @@ def get_timeseries(fmri_file, strategy, seeds):
 
     from nilearn.interfaces.fmriprep import load_confounds_strategy
 
-    options_for_load_confounds_strategy = {'denoise_strategy': strategy, 'motion': 'basic'}
+    if strategy == 'aroma':
+        options_for_load_confounds_strategy = {'denoise_strategy': 'ica_aroma'}
+    else:
+        options_for_load_confounds_strategy = {'denoise_strategy': strategy, 'motion': 'basic'}
+
     _confounds, _ = load_confounds_strategy(fmri_file, **options_for_load_confounds_strategy)
 
     _masker, _labels, _coords = get_masker_labels_coords(seeds)
@@ -513,7 +518,7 @@ def get_connectome(layout, filter, strategy, seeds):
     from .shellprints import msg_error
 
     filter.update({'suffix': "bold"})
-    if strategy == 'ica_aroma':
+    if strategy == 'aroma':
         filter.update({'desc': "smoothAROMAnonaggr"})
         options_for_load_confounds_strategy = {'denoise_strategy': strategy}
     else:
@@ -604,7 +609,7 @@ def get_connectome_bk(layout, filter, strategy, nodes_coords, sphere_radius, nod
 
     filter.update({'suffix': "bold"})
 
-    if strategy == 'ica_aroma':
+    if strategy == 'aroma':
         # filter.update({'space': 'MNI152NLin6Asym'})
         filter.update({'desc': "smoothAROMAnonaggr"})
         options_for_load_confounds_strategy = {'denoise_strategy': strategy}
