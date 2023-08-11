@@ -431,7 +431,7 @@ def get_masker_labels_coords(seeds):
 
     return masker, labels, coordinates
 
-def get_fmri_preproc(layout, bids_filter):
+def get_fmri_preproc(layout, bids_filter, strategy):
     """
     Selects preprocessing fmri file for
      current subject, space, resolution (if any), task and session
@@ -440,9 +440,13 @@ def get_fmri_preproc(layout, bids_filter):
     :return: str, path to fmri file
     """
     from .shellprints import msg_error
-    _filter = bids_filter.copy()
-    _filter.update({'desc': "preproc"})
-    fmri_files = layout.derivatives['fMRIPrep'].get(**bids_filter, desc='preproc', extension='.nii.gz')
+
+    if strategy == 'ica_aroma':
+        desc = 'smoothAROMAnonaggr'
+    else:
+        desc = 'preproc'
+
+    fmri_files = layout.derivatives['fMRIPrep'].get(**bids_filter, desc=desc, extension='.nii.gz')
     if len(fmri_files) == 1:
         fmri_file = fmri_files[0]
     else:

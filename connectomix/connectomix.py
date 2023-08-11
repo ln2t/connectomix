@@ -64,8 +64,6 @@ def main():
                 bids_filter = dict(subject=subject_label, return_type='filename',
                               space=space, res=res, task=task, session=session)
 
-                # get fmri preprocessed and mask by fmriprep
-                fmri_preproc = get_fmri_preproc(layout, bids_filter)
                 if seeds['type'] == 'all_voxels':
                     seeds['mask'] = get_fmri_mask(layout, bids_filter)
 
@@ -74,6 +72,9 @@ def main():
                 for denoise_strategy in denoise_strategies:
 
                     msg_info('Running denoising strategy %s' % denoise_strategy)
+
+                    # get fmri preprocessed and mask by fmriprep
+                    fmri_preproc = get_fmri_preproc(layout, bids_filter, denoise_strategy)
 
                     results[denoise_strategy] = get_connectivity_measures(fmri_preproc, denoise_strategy, seeds)
 
