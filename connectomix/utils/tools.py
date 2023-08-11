@@ -227,80 +227,32 @@ def setup_output_dir(args, version, layout):
 
     return layout
 
-
-def setup_subject_output_paths(output_dir, subject_label, space, res, session, strategy):
+def setup_subject_output_paths(layout, entities):
     """
-    Setup various paths for subject output. Also creates subject output dir.
-    Args:
-        output_dir: str, cvrmap output dir
-        subject_label: str, subject label
-        space: str, space entity
-        res: int or str, resolution entity
-        session: str, session entity
-        args: output of arguments_manager
 
-    Returns:
-        dict with various output paths (str)
+    :param layout: BIDS layout
+    :param entities: dict
+    :return:
     """
-    from pathlib import Path  # to create dirs
-    import os
 
-    # create output_dir/sub-XXX directory
-
-    ses_str = ''
-    res_str = ''
-    if session is not None:
-        ses_str = '_ses-' + session
-    if res is not None:
-        res_str = '_res-' + res
-    strategy_str = '_denoising-' + strategy
-
-    subject_output_dir = os.path.join(output_dir,
-                                      "sub-" + subject_label, ses_str)
-
-    Path(subject_output_dir).mkdir(parents=True, exist_ok=True)
-
-    # directory for figures
-    figures_dir = os.path.join(subject_output_dir, 'figures')
-    Path(figures_dir).mkdir(parents=True, exist_ok=True)
-
-    # directory for extras
-    extras_dir = os.path.join(subject_output_dir, 'extras')
-    Path(extras_dir).mkdir(parents=True, exist_ok=True)
-
-    # set paths for various outputs
+    _layout = layout.derivatives['connectomix']
     outputs = {}
 
-    subject_prefix = os.path.join(subject_output_dir,
-                                      "sub-" + subject_label + ses_str)
+    patterns = dict()
+    patterns['report'] = 'sub-{subject}[_ses-{session}]_denoising-{denoising}_report.html'  # purposely at root
+    patterns['data'] = 'sub-{subject}/sub-{subject}[_ses-{session}]_denoising-{denoising}_data.tsv'
+    patterns['timeseries'] = 'sub-{subject}/extras/sub-{subject}[_ses-{session}]_denoising-{denoising}_timeseries.tsv'
+    patterns['connectome'] = 'sub-{subject}/figures/sub-{subject}[_ses-{session}]_denoising-{denoising}_connectome.svg'
+    patterns['matrix'] = 'sub-{subject}/figures/sub-{subject}[_ses-{session}]_denoising-{denoising}_matrix.svg'
 
-    prefix = subject_prefix + res_str + strategy_str
+    from os.path import dirname
+    from pathlib import Path
 
-    report_extension = '.html'
-    data_extension = '.tsv'
-    figures_extension = '.svg'
-
-    # report is in root of derivatives (fmriprep-style), not in subject-specific directory
-    outputs['report'] = os.path.join(output_dir,
-                                     "sub-" + subject_label + '_report' + report_extension)
-
-    # principal outputs
-    outputs['data'] = prefix + '_data' + data_extension
-
-    # supplementary data (extras)
-    outputs['timeseries'] = os.path.join(extras_dir, "sub-" + subject_label
-                                         + ses_str
-                                         + res_str + strategy_str
-                                         + '_timeseries' + data_extension)
-
-    # figures (for the report)
-    outputs['matrix'] = os.path.join(figures_dir, 'sub-' + subject_label
-                                     + '_matrix' + figures_extension)
-    outputs['connectome'] = os.path.join(figures_dir, 'sub-' + subject_label
-                                         + '_connectome' + figures_extension)
+    for item in ['report', 'data', 'timeseries', 'connectome', 'matrix']:
+        outputs[item] = _layout.build_path(entities, patterns[item], validate=False)
+        Path(dirname(outputs[item])).mkdir(parents=True, exist_ok=True)
 
     return outputs
-
 
 def get_version ():
     """

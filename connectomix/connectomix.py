@@ -75,8 +75,13 @@ def main():
 
                     results[denoise_strategy] = get_connectivity_measures(fmri_preproc, denoise_strategy, seeds)
 
-                    outputs = setup_subject_output_paths(output_dir, subject_label,
-                                                         space, res, session, denoise_strategy)
+                    entities = dict()
+                    entities['subject'] = subject_label
+                    entities['space'] = space
+                    entities['res'] = res
+                    entities['session'] = session
+                    entities['denoising'] = denoise_strategy
+                    outputs = setup_subject_output_paths(layout, entities)
 
                     # save a couple of nice images
                     item = 'matrix'
