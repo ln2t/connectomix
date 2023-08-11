@@ -251,14 +251,13 @@ def setup_subject_output_paths(output_dir, subject_label, space, res, session, s
     ses_str = ''
     res_str = ''
     if session is not None:
-        ses_str = 'ses-' + session
+        ses_str = '_ses-' + session
     if res is not None:
         res_str = '_res-' + res
     strategy_str = '_desc-' + strategy
 
     subject_output_dir = os.path.join(output_dir,
                                       "sub-" + subject_label, ses_str)
-    ses_str = '_' + ses_str
 
     Path(subject_output_dir).mkdir(parents=True, exist_ok=True)
 
