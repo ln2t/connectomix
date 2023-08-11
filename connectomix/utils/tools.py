@@ -241,7 +241,6 @@ def setup_subject_output_paths(output_dir, subject_label, space, res, session, s
 
     Returns:
         dict with various output paths (str)
-
     """
     from pathlib import Path  # to create dirs
     import os
@@ -254,7 +253,7 @@ def setup_subject_output_paths(output_dir, subject_label, space, res, session, s
         ses_str = '_ses-' + session
     if res is not None:
         res_str = '_res-' + res
-    strategy_str = '_desc-' + strategy
+    strategy_str = '_denoising-' + strategy
 
     subject_output_dir = os.path.join(output_dir,
                                       "sub-" + subject_label, ses_str)
@@ -282,7 +281,6 @@ def setup_subject_output_paths(output_dir, subject_label, space, res, session, s
     figures_extension = '.svg'
 
     # report is in root of derivatives (fmriprep-style), not in subject-specific directory
-
     outputs['report'] = os.path.join(output_dir,
                                      "sub-" + subject_label + '_report' + report_extension)
 
