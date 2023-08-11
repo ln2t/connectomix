@@ -8,93 +8,6 @@ import subprocess  # to call bin outside of python
 from collections import defaultdict
 import sys
 
-# CLASSES
-
-class Report:
-    """
-    A class to create, update, modify and save reports with pretty stuff
-    """
-    def __init__(self, path=None, string=""):
-        """
-        path is the place where the report is written/updated
-        """
-        self.path = path
-        self.string = string
-
-    def init(self, subject, date_and_time, version,
-             cmd, session=None):
-        """
-        Init the report with html headers and various information on the report
-        """
-        with open(self.path, "w") as f:
-            f.write('<!DOCTYPE html>\n')
-            f.write('<html>\n')
-            f.write('<body>\n')
-            f.write('<h1>Connectomix: individual report</h1>\n')
-            f.write('<h2>Summary</h2>\n')
-            f.write('<div>\n')
-            f.write('<ul>\n')
-            f.write(
-                '<li>BIDS participant label: sub-%s</li>\n' % subject)
-            if not session is None:
-                f.write(
-                    '<li>Session: ses-%s</li>\n' % session)
-            f.write('<li>Date and time: %s</li>\n' % date_and_time)
-            f.write('<li>Connectomix version: %s</li>\n' % version)
-            f.write('<li>Command line options:\n')
-            f.write('<pre>\n')
-            f.write('<code>\n')
-            f.write(str(cmd) + '\n')
-            f.write('</code>\n')
-            f.write('</pre>\n')
-            f.write('</li>\n')
-            f.write('</ul>\n')
-            f.write('</div>\n')
-
-    def add_section(self, title):
-        """
-        Add a section to the report
-        """
-        with open(self.path, "a") as f:
-            f.write('<h2>%s</h2>\n' % title)
-
-    def add_subsection(self, title):
-        """
-        Add a subsection to the report
-        """
-        with open(self.path, "a") as f:
-            f.write('<h3>%s</h3>\n' % title)
-
-    def add_sentence(self, sentence):
-        """
-        Add a sentence to the report
-        """
-        with open(self.path, "a") as f:
-            f.write('%s<br>\n' % sentence)
-
-    def add_png(self, path):
-        """
-        Add an image to the report from a path to the png file
-        """
-        with open(self.path, "a") as f:
-            f.write('<img width="400" src = "%s">' % path)
-
-    def append(self, string):
-        """
-        Append string to report
-        """
-        with open(self.path, "a") as f:
-            f.write(string)
-
-
-    def finish(self):
-        """
-        Writes the last lines of the report to finish it.
-        """
-        with open(self.path, "a") as f:
-            f.write('</body>\n')
-            f.write('</html>\n')
-
 # FUNCTIONS
 
 def run(command, env={}):
@@ -204,7 +117,6 @@ def get_space(args, layout):
     #todo: check if combination space+res is in fmriprep output
 
     return space, res
-
 
 
 def setup_output_dir(args, version, layout):
@@ -435,7 +347,6 @@ def get_task(args, layout):
         sys.exit(1)
 
     return task
-
 
 
 def nested_dict(n, type):

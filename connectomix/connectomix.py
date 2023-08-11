@@ -95,40 +95,7 @@ def main():
                     for item in ['data', 'timeseries']:
                         np.savetxt(outputs[item], results[denoise_strategy][item], delimiter='\t')
 
-            # now we build the report. We want one col for each denoise_strategy
-
-            # denoise_strategy_html_headers = '<span style="padding-left:150px">simple</span><span style="padding-left:300px">scrubbing</span><span style="padding-left:300px">compcor</span><span style="padding-left:300px">ica-aroma</span>'
-            # report.add_section(title='Carpet plots')
-            # for item in quantities_of_interest:
-            #     report.add_subsection(title=item)
-            #     # report.add_sentence(sentence=denoise_strategy_html_headers)
-            #     for denoise_strategy in strategies:
-            #         report.add_png(outputs[(denoise_strategy, item, 'carpet')])
-            #
-            # report.add_section(title='Connectome plots')
-            # for item in quantities_of_interest:
-            #     report.add_subsection(title=item)
-            #     # report.add_sentence(sentence=denoise_strategy_html_headers)
-            #     for denoise_strategy in strategies:
-            #         report.add_png(outputs[(denoise_strategy, item, 'connectome')])
-            #
-            # if include_3D_plot_flag:
-            #     report.add_section(title='Connectome 3D views')
-            #     for item in quantities_of_interest:
-            #         report.add_subsection(title=item)
-            #         # report.add_sentence(sentence=denoise_strategy_html_headers)
-            #         for denoise_strategy in strategies:
-            #             report.append(results[denoise_strategy][item]['view']._repr_html_())
-            #
-            # report.add_section(title='Carpet plots for provided nodes')
-            # for denoise_strategy in strategies:
-            #     report.add_png(os.path.join(subject_figure_dir, denoise_strategy + '_' + 'nodes_plot.png'))
-            #
-            # report.add_section(title='Connectome plots for provided nodes')
-            # for denoise_strategy in strategies:
-            #     report.add_png(outputs[('nodes_connectome', denoise_strategy)])
-            #
-            # report.finish()
+                    build_report(outputs, entities, args, __version__)
 
     # running group level
     elif args.analysis_level == "group":
