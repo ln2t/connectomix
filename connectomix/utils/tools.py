@@ -316,7 +316,7 @@ def get_strategy(args):
         if args.denoising_strategy not in available_strategies:
             msg_error('Selected strategy %s is not available. Available strategies are %s.' % (args.denoising_strategy, available_strategies))
             sys.exit(1)
-        strategies = args.denoising_strategy
+        strategies = [args.denoising_strategy]
     else:
         strategies = ['simple']
 
