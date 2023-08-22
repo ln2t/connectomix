@@ -151,11 +151,11 @@ def setup_subject_output_paths(layout, entities):
     outputs = {}
 
     patterns = dict()
-    patterns['report'] = 'sub-{subject}[_ses-{session}]_denoising-{denoising}_report.html'  # purposely at root
-    patterns['data'] = 'sub-{subject}/sub-{subject}[_ses-{session}]_denoising-{denoising}_data.tsv'
-    patterns['timeseries'] = 'sub-{subject}/extras/sub-{subject}[_ses-{session}]_denoising-{denoising}_timeseries.tsv'
-    patterns['connectome'] = 'sub-{subject}/figures/sub-{subject}[_ses-{session}]_denoising-{denoising}_connectome.svg'
-    patterns['matrix'] = 'sub-{subject}/figures/sub-{subject}[_ses-{session}]_denoising-{denoising}_matrix.svg'
+    patterns['report'] = 'sub-{subject}[_ses-{session}]_desc-{denoising}_report.html'  # purposely at root
+    patterns['data'] = 'sub-{subject}/sub-{subject}[_ses-{session}]_desc-{denoising}_data.tsv'
+    patterns['timeseries'] = 'sub-{subject}/extras/sub-{subject}[_ses-{session}]_desc-{denoising}_timeseries.tsv'
+    patterns['connectome'] = 'sub-{subject}/figures/sub-{subject}[_ses-{session}]_desc-{denoising}_connectome.svg'
+    patterns['matrix'] = 'sub-{subject}/figures/sub-{subject}[_ses-{session}]_desc-{denoising}_matrix.svg'
 
     from os.path import dirname
     from pathlib import Path
