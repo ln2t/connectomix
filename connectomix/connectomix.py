@@ -33,7 +33,7 @@ def main():
     space, res = get_space(args, layout)
     task = get_task(args, layout)
     seeds = get_seeds(args)
-    denoise_strategies = get_strategy(args)
+    denoise_strategies = get_strategies(args)
     layout = setup_output_dir(args, __version__, layout)
     output_dir = layout.derivatives['connectomix'].root
 

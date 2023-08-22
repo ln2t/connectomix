@@ -76,7 +76,7 @@ def arguments_manager(version):
     parser.add_argument('--task', help='Name of the task to be used. If omitted, will search for \'restingstate\'.')
     parser.add_argument('--sessions', help='Name of the session to consider. If omitted, will loop over all sessions.', nargs = "+")
     parser.add_argument('--space', help='Name of the space to be used. Must be associated with fmriprep output.')
-    parser.add_argument('--denoising_strategies', help='Names of the denoising strategies to consider. If omitted, set to \'simple\'. Examples are \'simple\', \'scrubbing\', \'compcor\', \'aroma\'', nargs = "+")
+    parser.add_argument('--denoising_strategies', help='Names of the denoising strategies to consider. If omitted, set to \'simple\'. Examples are \'simple\', \'scrubbing\', \'compcor\', \'aroma\'. If set to \'all\', loop over all these strategies.', nargs = "+")
     parser.add_argument('--seeds_file',
                         help='Optional. Path to a .tsv file from which the nodes to compute the connectome will be loaded. The .tsv file should have four columns, without header. The first one contains the node name (a string) and the three others are the x,y,z coordinates in MNI space of the correspondings node. If omitted, it will load the msdl probabilitic atlas (see nilearn documentations for more info). ')
     parser.add_argument('-v', '--version', action='version', version='BIDS-App example version {}'.format(version))
@@ -302,22 +302,24 @@ def get_fmri_mask(layout, bids_filter):
 
     return load_img(mask_file)
 
-def get_strategy(args):
+def get_strategies(args):
     """
     Get denoising strategies from options or set it to default
     :param args: return from arguments_manager
     :return: list of string, with strategies to apply
     """
     from .shellprints import msg_error
-    available_strategies = ['simple', 'scrubbing', 'compcor',
-                            'aroma']
+    available_strategies = ['simple', 'scrubbing', 'compcor', 'aroma']
     # those are the four standard strategies directly available in nilearn
     if args.denoising_strategies:
-        for _strategy in args.denoising_strategies:
-            if _strategy not in available_strategies:
-                msg_error('Selected strategy %s is not available. Available strategies are %s.' % (args.denoising_strategies, available_strategies))
-                sys.exit(1)
         strategies = args.denoising_strategies
+        for _strategy in args.denoising_strategies:
+            if _strategy == 'all':
+                strategies = available_strategies
+            else:
+                if _strategy not in available_strategies:
+                    msg_error('Selected strategy %s is not available. Available strategies are %s.' % (args.denoising_strategies, available_strategies))
+                    sys.exit(1)
     else:
         strategies = ['simple']
 
