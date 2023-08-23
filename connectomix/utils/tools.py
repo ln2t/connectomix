@@ -456,7 +456,7 @@ def get_fmri_preproc(layout, bids_filter, strategy):
         fmri_file = fmri_files[0]
     else:
         msg_error('fmri file not found!')
-        sys.exit(1)
+        fmri_file = None
     return fmri_file
 
 def get_connectivity_measures(fmri_file, denoise_strategy, seeds):

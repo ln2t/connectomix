@@ -75,6 +75,8 @@ def main():
 
                     # get fmri preprocessed and mask by fmriprep
                     fmri_preproc = get_fmri_preproc(layout, bids_filter, denoise_strategy)
+                    if fmri_preproc is None:
+                        continue
 
                     results[denoise_strategy] = get_connectivity_measures(fmri_preproc, denoise_strategy, seeds)
 
