@@ -309,7 +309,7 @@ def get_strategies(args):
     :return: list of string, with strategies to apply
     """
     from .shellprints import msg_error
-    available_strategies = ['simple', 'scrubbing', 'compcor', 'aroma']
+    available_strategies = ['simple', 'scrubbing', 'compcor', 'aroma', 'simpleGSR']
     # those are the four standard strategies directly available in nilearn
     if args.denoising_strategies:
         strategies = args.denoising_strategies
@@ -492,7 +492,10 @@ def get_timeseries(fmri_file, strategy, seeds):
     if strategy == 'aroma':
         options_for_load_confounds_strategy = {'denoise_strategy': 'ica_aroma'}
     else:
-        options_for_load_confounds_strategy = {'denoise_strategy': strategy, 'motion': 'basic'}
+        if strategy == 'simpleGSR':
+            options_for_load_confounds_strategy = {'denoise_strategy': 'simple', 'motion': 'full', 'global_signal': 'basic'}
+        else:
+            options_for_load_confounds_strategy = {'denoise_strategy': strategy, 'motion': 'basic'}
 
     _confounds, _ = load_confounds_strategy(fmri_file, **options_for_load_confounds_strategy)
 
