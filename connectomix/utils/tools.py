@@ -495,7 +495,7 @@ def get_timeseries(fmri_file, strategy, seeds):
         if strategy == 'simpleGSR':
             options_for_load_confounds_strategy = {'denoise_strategy': 'simple', 'motion': 'full', 'global_signal': 'basic'}
         else:
-            options_for_load_confounds_strategy = {'denoise_strategy': strategy, 'motion': 'basic'}
+            options_for_load_confounds_strategy = {'denoise_strategy': strategy, 'motion': 'full'}
 
     _confounds, _ = load_confounds_strategy(fmri_file, **options_for_load_confounds_strategy)
 
