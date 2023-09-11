@@ -11,7 +11,7 @@ RUN apt-get install -y python3 pip
 RUN cd /opt && git clone https://github.com/ln2t/connectomix.git
 RUN cd /opt/connectomix && pip install -r /opt/connectomix/requirements.txt
 
-RUN cd /opt/connectomix && git checkout main
+RUN cd /opt/connectomix && git checkout v1.0.0
 RUN pip install -r /opt/connectomix/requirements.txt
 
 # Set entrypoint to entrypoint script
