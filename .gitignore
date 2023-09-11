@@ -3,3 +3,4 @@ venv/*
 .idea/*
 tests/data/*
 nilearn_cache/*
+connectomix/jupyter/*
