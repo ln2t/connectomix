@@ -465,13 +465,17 @@ def get_connectivity_measures(fmri_file, denoise_strategy, seeds):
 
     _timeseries, _labels, _coords = get_timeseries(fmri_file, denoise_strategy, seeds)
     kind = 'covariance'
-    _correlation_matrix = ConnectivityMeasure(kind='covariance').fit_transform([_timeseries])[0]
-    np.fill_diagonal(_correlation_matrix, 0)  # for visual purposes
 
-    results = dict()
-    results['data'] = _correlation_matrix
-    results['graphics'] = get_graphics(_correlation_matrix, kind + ' - ' + denoise_strategy, _labels, _coords)
-    results['timeseries'] = _timeseries
+    if _timeseries is not None:
+        _correlation_matrix = ConnectivityMeasure(kind='covariance').fit_transform([_timeseries])[0]
+        np.fill_diagonal(_correlation_matrix, 0)  # for visual purposes
+
+        results = dict()
+        results['data'] = _correlation_matrix
+        results['graphics'] = get_graphics(_correlation_matrix, kind + ' - ' + denoise_strategy, _labels, _coords)
+        results['timeseries'] = _timeseries
+    else:
+        results = None
 
     return results
 
@@ -488,6 +492,7 @@ def get_timeseries(fmri_file, strategy, seeds):
     """
 
     from nilearn.interfaces.fmriprep import load_confounds_strategy
+    from .shellprints import msg_warning
 
     if strategy == 'aroma':
         options_for_load_confounds_strategy = {'denoise_strategy': 'ica_aroma'}
@@ -500,7 +505,12 @@ def get_timeseries(fmri_file, strategy, seeds):
     _confounds, _ = load_confounds_strategy(fmri_file, **options_for_load_confounds_strategy)
 
     _masker, _labels, _coords = get_masker_labels_coords(seeds)
-    time_series = _masker.fit_transform(fmri_file, confounds=_confounds)
+
+    try:
+        time_series = _masker.fit_transform(fmri_file, confounds=_confounds)
+    except ValueError:
+        msg_warning('There is an issue with this strategy, no confounds were loaded. Skipping.')
+        time_series = None
 
     return time_series, _labels, _coords
 

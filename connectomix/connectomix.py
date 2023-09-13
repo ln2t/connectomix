@@ -80,6 +80,9 @@ def main():
 
                     results[denoise_strategy] = get_connectivity_measures(fmri_preproc, denoise_strategy, seeds)
 
+                    if results[denoise_strategy] is None:
+                        continue
+
                     entities = dict()
                     entities['subject'] = subject_label
                     entities['space'] = space
