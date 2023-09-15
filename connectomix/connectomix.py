@@ -50,6 +50,10 @@ def main():
 
             msg_info("Running for participant %s" % subject_label)
 
+            if subject_label not in layout.derivatives['fMRIPrep'].get_subjects():
+                msg_warning('Subject to present in fMRIPrep derivatives, skipping.')
+                continue
+
             sessions = []
             for session in all_sessions:
                 if session in layout.get_sessions(subject=subject_label):
