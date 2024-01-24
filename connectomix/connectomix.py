@@ -158,6 +158,9 @@ def main():
                 df.loc[df['subject'] == _sub, _strategy] = np.mean(_data)
         df.set_index('subject', inplace=True)
 
+        table_group_filename = os.path.join(group_level_dir, "means_by_strategy.tsv")
+        df.to_csv(table_group_filename, sep='\t')
+
         fig = go.Figure()
 
         for _strategy in strategies:
