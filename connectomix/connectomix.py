@@ -112,49 +112,110 @@ def main():
     # running group level
     elif args.analysis_level == "group":
 
-        time_series = dict()
-        bids_filter = dict(suffix='timeseries', extension='.tsv', return_type='filename')
-        msg_warning('Datasets without session not supported yet.')
+        msg_info("Starting group analysis tools")
 
-        group_output_dir = os.path.join(output_dir, 'group')
-        Path(group_output_dir).mkdir(parents=True, exist_ok=True)
+        import os
 
-        for session in layout.derivatives['connectomix'].get_sessions():
-            time_series[session] = dict()
-            msg_warning('This tool should not be used if you have run several denoising strategies and the outputs are coexisting in the derivative folder.')
-            for subject in layout.derivatives['connectomix'].get_subjects(session=session):
-                try:
-                    series_fn = layout.derivatives['connectomix'].get(**bids_filter, subject=subject, session=session, desc=seeds['type'])[0]
-                except:
-                    msg_warning('No series found for subject %s, skipping.' % subject)
-                    continue
-                time_series[session][subject] = np.genfromtxt(series_fn, delimiter='\t')
+        group_level_dir = os.path.join(args.output_dir, 'group')
 
-            time_series_stack = []
+        from pathlib import Path  # to create dirs
+        # create output dir
+        Path(group_level_dir).mkdir(parents=True, exist_ok=True)
 
-            for key in time_series[session].keys():
-                time_series_stack.append(time_series[session][key])
+        import pandas as pd
+        from plotly import graph_objects as go
+        from os.path import join
 
+        n_subjects = len(layout.derivatives['connectomix'].get_subjects())
+        if n_subjects > 0:
+            msg_info("Number of subject(s) found: %s" % n_subjects)
+        else:
+            msg_error("No subject found in derivative folder, abording.")
+            exit(1)
 
-            measure = ConnectivityMeasure(kind='tangent')
-            connectivities = measure.fit(time_series_stack)
-            group_connectivity = measure.mean_
-            data = measure.fit_transform(time_series_stack)[0]
-            np.fill_diagonal(data, 0)  # for visual purposes
-            graphics = get_graphics(data, 'Group connectome, ses-%s' % session, seeds['labels'], seeds['coordinates'])
-            graphics['matrix']
+        data_filter = dict(return_type='filename', extension='.nii.gz')
+        strategies = layout.derivatives['connectomix'].get_desc()
 
-            group_prefix = os.path.join(group_output_dir, 'ses-%s' % session)
+        means = dict()
+        for _strategy in strategies:
+            means[_strategy] = []
+            _list = layout.derivatives['connectomix'].get(return_type='filename', extension='.tsv', suffix='data', desc=_strategy)
+            for _file in _list:
+                _pd = pd.read_csv(_file, sep='\t', header=None)
+                _data = _pd.values
+                means[_strategy].append(np.mean(_data))
 
-            outputs_fn = dict()
-            # save the graphics
-            for item in ['matrix', 'connectome']:
-                outputs_fn[item] = group_prefix + '_' + item + '.png'
-                graphics[item].savefig(outputs_fn[item])
+        subs = layout.derivatives['connectomix'].get_subjects()
+        df = pd.DataFrame(columns=strategies)
+        df['subject'] = []
 
-            # save the matrix data and timeseries
-            outputs_fn['data'] = group_prefix + '_data.tsv'
-            np.savetxt(outputs_fn['data'], data, delimiter='\t')
+        for _sub in subs:
+            df.loc[len(df), 'subject'] = _sub
+            for _strategy in strategies:
+                _file = layout.derivatives['connectomix'].get(return_type='filename', subject=_sub, extension='.tsv', suffix='data', desc=_strategy)[0]
+                _pd = pd.read_csv(_file, sep='\t', header=None)
+                _data = _pd.values
+                df.loc[df['subject'] == _sub, _strategy] = np.mean(_data)
+        df.set_index('subject', inplace=True)
+
+        fig = go.Figure()
+
+        for _strategy in strategies:
+               fig.add_trace(go.Violin(y=df[_strategy],
+                                    name=_strategy,
+                                    box_visible=False,
+                                    meanline_visible=False,
+                                    points='all', showlegend=False))
+
+        fig.update_layout(title="Mean Functional Connectivity by Denoising Strategy", yaxis_title="mean FC")
+        # fig.show()
+
+        fig_group_filename = os.path.join(group_level_dir, "denoising_compare.svg")
+        fig.write_image(fig_group_filename)
+
+        # time_series = dict()
+        # bids_filter = dict(suffix='timeseries', extension='.tsv', return_type='filename')
+        # msg_warning('Datasets without session not supported yet.')
+        #
+        # group_output_dir = os.path.join(output_dir, 'group')
+        # Path(group_output_dir).mkdir(parents=True, exist_ok=True)
+        #
+        # for session in layout.derivatives['connectomix'].get_sessions():
+        #     time_series[session] = dict()
+        #     msg_warning('This tool should not be used if you have run several denoising strategies and the outputs are coexisting in the derivative folder.')
+        #     for subject in layout.derivatives['connectomix'].get_subjects(session=session):
+        #         try:
+        #             series_fn = layout.derivatives['connectomix'].get(**bids_filter, subject=subject, session=session, desc=seeds['type'])[0]
+        #         except:
+        #             msg_warning('No series found for subject %s, skipping.' % subject)
+        #             continue
+        #         time_series[session][subject] = np.genfromtxt(series_fn, delimiter='\t')
+        #
+        #     time_series_stack = []
+        #
+        #     for key in time_series[session].keys():
+        #         time_series_stack.append(time_series[session][key])
+        #
+        #
+        #     measure = ConnectivityMeasure(kind='tangent')
+        #     connectivities = measure.fit(time_series_stack)
+        #     group_connectivity = measure.mean_
+        #     data = measure.fit_transform(time_series_stack)[0]
+        #     np.fill_diagonal(data, 0)  # for visual purposes
+        #     graphics = get_graphics(data, 'Group connectome, ses-%s' % session, seeds['labels'], seeds['coordinates'])
+        #     graphics['matrix']
+        #
+        #     group_prefix = os.path.join(group_output_dir, 'ses-%s' % session)
+        #
+        #     outputs_fn = dict()
+        #     # save the graphics
+        #     for item in ['matrix', 'connectome']:
+        #         outputs_fn[item] = group_prefix + '_' + item + '.png'
+        #         graphics[item].savefig(outputs_fn[item])
+        #
+        #     # save the matrix data and timeseries
+        #     outputs_fn['data'] = group_prefix + '_data.tsv'
+        #     np.savetxt(outputs_fn['data'], data, delimiter='\t')
 
     msg_info("The End!")
 
