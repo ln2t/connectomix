@@ -291,16 +291,17 @@ def get_fmri_mask(layout, bids_filter):
     :return: niimg for BOLD mask
     """
     from .shellprints import msg_error
+    from nilearn.image import load_img
+
     mask_files = layout.derivatives['fMRIPrep'].get(**bids_filter, desc='brain', suffix='mask', extension='.nii.gz')
     if len(mask_files) == 1:
         mask_file = mask_files[0]
+        output = load_img(mask_file)
     else:
         msg_error('mask file not found!')
-        sys.exit(1)
+        output = None
 
-    from nilearn.image import load_img
-
-    return load_img(mask_file)
+    return output
 
 def get_strategies(args):
     """

@@ -70,6 +70,8 @@ def main():
 
                 if seeds['type'] == 'all_voxels':
                     seeds['mask'] = get_fmri_mask(layout, bids_filter)
+                    if seeds['mask'] is None:
+                        continue
 
                 results = dict()
 
