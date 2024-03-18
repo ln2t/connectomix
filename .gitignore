@@ -4,3 +4,13 @@ venv/*
 tests/data/*
 nilearn_cache/*
 connectomix/jupyter/*
+
+data/*
+test_data/*
+jupyter/*
+.DS_Store
+dist/*
+build/*
+.coverage
+*.pyc
+connectomix.egg-info/*

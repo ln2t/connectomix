@@ -8,7 +8,7 @@ Created: August 2022
 
 # imports
 from bids import BIDSLayout as bidslayout  # to handle BIDS data
-from utils import *  # custom utilities
+from .utils import *  # custom utilities
 from pathlib import Path  # to create dirs
 
 import numpy as np
