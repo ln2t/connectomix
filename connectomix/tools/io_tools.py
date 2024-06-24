@@ -1,52 +1,15 @@
-#!/usr/bin/env python3
+"""
+Various input/output tools
+"""
 
-# IMPORTS
-
-from datetime import datetime
-import os  # to interact with dirs (join paths etc)
-import subprocess  # to call bin outside of python
-from collections import defaultdict
 import sys
-
-# FUNCTIONS
-
-def run(command, env={}):
-    """Execute command as in a terminal
-
-    Also prints any output of the command into the python shell
-    Inputs:
-        command: string
-            the command (including arguments and options) to be executed
-        env: to add stuff in the environment before running the command
-
-    Returns:
-        nothing
-    """
-
-    # Update env
-    merged_env = os.environ
-    merged_env.update(env)
-
-    # Run command
-    process = subprocess.Popen(command, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, shell=True,
-                               env=merged_env)
-
-    # Read whatever is printed by the command and print it into the
-    # python console
-    while True:
-        line = process.stdout.readline()
-        line = str(line, 'utf-8')[:-1]
-        print(line)
-        if line == '' and process.poll() != None:
-            break
-    if process.returncode != 0:
-        raise Exception("Non zero return code: %d" % process.returncode)
-
+import os
+from collections import defaultdict
 
 def arguments_manager(version):
     """
-    Wrapper to define and read arguments for main function call
+        Wrapper to define and read arguments for main function call
+
     Args:
         version: version to output when calling with -h
 
@@ -54,8 +17,8 @@ def arguments_manager(version):
         args as read from command line call
     """
     import argparse
-
-    parser = argparse.ArgumentParser(description = 'Entrypoint script.')
+    #  Deal with arguments
+    parser = argparse.ArgumentParser()
     parser.add_argument('bids_dir', help='The directory with the input '
                                          'dataset formatted according to '
                                          'the BIDS standard.')
@@ -68,20 +31,76 @@ def arguments_manager(version):
                                                'independently (in parallel)'
                                                ' using the same '
                                                'output_dir.',
-                        choices = ['participant',
-                                   'group'])
-    parser.add_argument('--participant_label', help='The label(s) of the participant(s) that should be analyzed. The label corresponds to sub-<participant_label> from the BIDS spec (so it does not include "sub-"). If this parameter is not provided all subjects should be analyzed. Multiple participants can be specified with a space separated list.', nargs = "+")
-    parser.add_argument('--skip_bids_validator', help='Whether or not to perform BIDS dataset validation', action='store_true')
-    parser.add_argument('--fmriprep_dir', help='Path of the fmriprep derivatives. If ommited, set to bids_dir/derivatives/fmriprep')
-    parser.add_argument('--task', help='Name of the task to be used. If omitted, will search for \'restingstate\'.')
-    parser.add_argument('--sessions', help='Name of the session to consider. If omitted, will loop over all sessions.', nargs = "+")
-    parser.add_argument('--space', help='Name of the space to be used. Must be associated with fmriprep output.')
-    parser.add_argument('--denoising_strategies', help='Names of the denoising strategies to consider. If omitted, set to \'simple\'. Examples are \'simple\', \'scrubbing\', \'compcor\', \'aroma\'. If set to \'all\', loop over all these strategies.', nargs = "+")
-    parser.add_argument('--seeds_file',
-                        help='Optional. Path to a .tsv file from which the nodes to compute the connectome will be loaded. The .tsv file should have four columns, without header. The first one contains the node name (a string) and the three others are the x,y,z coordinates in MNI space of the correspondings node. If omitted, it will load the msdl probabilitic atlas (see nilearn documentations for more info). ')
-    parser.add_argument('-v', '--version', action='version', version='BIDS-App example version {}'.format(version))
-
+                        choices=['participant', 'group'])
+    parser.add_argument('--participant_label',
+                        help='The label(s) of the participant(s) that should be analyzed. '
+                             'The label corresponds to sub-<participant_label> from the BIDS spec '
+                             '(so it does not include "sub-"). If this parameter is not provided all subjects '
+                             'should be analyzed. Multiple participants can be specified with a space separated list.',
+                        nargs="+")
+    parser.add_argument('--fmriprep_dir',
+                        help='Path of the fmriprep derivatives. If ommited, set to bids_dir/derivatives/fmriprep')
+    parser.add_argument('--task', help='Name of the task to be used. If omitted, will search for \'gas\'.')
+    parser.add_argument('-v', '--version', action='version', version='cvrmap version {}'.format(version))
+    parser.add_argument('--config',
+                        help='Path to json file fixing the pipeline parameters. '
+                             'If omitted, default values will be used.')
     return parser.parse_args()
+
+def get_fmriprep_dir(args):
+    """
+        Get and check existence of fmriprep dir from options or default
+
+    Args:
+        args: return from arguments_manager
+
+    Returns:
+        path to fmriprep dir
+    """
+    from os.path import join, isdir
+    from .shell_tools import msg_error
+    import sys
+    #  fmriprep dir definition
+    if args.fmriprep_dir:
+        fmriprep_dir = args.fmriprep_dir
+    else:
+        fmriprep_dir = join(args.bids_dir, "derivatives", "fmriprep")
+    # exists?
+    if not isdir(fmriprep_dir):
+        msg_error("fmriprep dir %s not found." % fmriprep_dir)
+        sys.exit(1)
+
+    return fmriprep_dir
+
+def read_config_file(file=None):
+    """
+        Read config file
+
+    Args:
+        file, path to json file
+    Returns:
+        dict, with various values/np.arrays for the parameters used in main script
+    """
+    config = {}
+
+    if file:
+        import json
+        from .shell_tools import msg_info
+
+        msg_info('Reading parameters from user-provided configuration file %s' % file)
+
+        with open(file, 'r') as f:
+            config_json = json.load(f)
+
+        keys = ['model', 'trials_type', 'contrasts',
+                'tasks', 'first_level_options', 'concatenation_pairs']
+
+        for key in keys:
+            if key in config_json.keys():
+                config[key] = config_json[key]
+
+        config['first_level_options']['signal_scaling'] = tuple(config['first_level_options']['signal_scaling'])
+    return config
 
 
 def get_space(args, layout):
@@ -94,7 +113,7 @@ def get_space(args, layout):
     Returns:
         string for space entity
     """
-    from .shellprints import msg_info, msg_error
+    from .shell_tools import msg_info, msg_error
     import sys
     if args.space:
         space = args.space
@@ -188,7 +207,7 @@ def get_subjects_to_analyze(args, layout):
     Returns:
         list of subjects to loop over
     """
-    from .shellprints import msg_error
+    from .shell_tools import msg_error
     import sys
     if args.participant_label:  # only for a subset of subjects
         subjects_to_analyze = args.participant_label
@@ -203,29 +222,6 @@ def get_subjects_to_analyze(args, layout):
     return subjects_to_analyze
 
 
-def get_fmriprep_dir(args):
-    """
-    Get and check existence of fmriprep dir from options or default
-    Args:
-        args: return from arguments_manager
-
-    Returns:
-        path to fmriprep dir
-    """
-    from os.path import join, isdir
-    from .shellprints import msg_error
-    #  fmriprep dir definition
-    if args.fmriprep_dir:
-        fmriprep_dir = args.fmriprep_dir
-    else:
-        fmriprep_dir = join(args.bids_dir, "derivatives", "fmriprep")
-    # exists?
-    if not isdir(fmriprep_dir):
-        msg_error("fmriprep dir %s not found." % fmriprep_dir)
-
-    return fmriprep_dir
-
-
 def get_sessions(args, layout):
     """
     Set the sessions to analyze. If argument "sessions" is specified, checks that they exist.
@@ -234,7 +230,7 @@ def get_sessions(args, layout):
     :param layout: BIDS layout
     :return: list of strings definind sessions to analyze
     """
-    from .shellprints import msg_error
+    from .shell_tools import msg_error
     sessions = [None]
     if args.sessions:
         for ses in args.sessions:
@@ -258,7 +254,7 @@ def get_seeds(args):
     """
     import numpy as np
     import csv
-    from .shellprints import msg_error, msg_info
+    from .shell_tools import msg_error, msg_info
     seeds = dict()
     if args.seeds_file:
         if args.seeds_file == 'msdl':
@@ -290,7 +286,7 @@ def get_fmri_mask(layout, bids_filter):
     :param bids_filter: dict
     :return: niimg for BOLD mask
     """
-    from .shellprints import msg_error
+    from .shell_tools import msg_error
     from nilearn.image import load_img
 
     mask_files = layout.derivatives['fMRIPrep'].get(**bids_filter, desc='brain', suffix='mask', extension='.nii.gz')
@@ -309,7 +305,7 @@ def get_strategies(args):
     :param args: return from arguments_manager
     :return: list of string, with strategies to apply
     """
-    from .shellprints import msg_error
+    from .shell_tools import msg_error
     available_strategies = ['simple', 'scrubbing', 'compcor', 'aroma', 'simpleGSR']
     # those are the four standard strategies directly available in nilearn
     if args.denoising_strategies:
@@ -336,7 +332,7 @@ def get_task(args, layout):
     Returns:
         string for task entity
     """
-    from .shellprints import msg_error
+    from .shell_tools import msg_error
     import sys
     if args.task:
         task = args.task
@@ -445,7 +441,7 @@ def get_fmri_preproc(layout, bids_filter, strategy):
     :param bids_filter: dict
     :return: str, path to fmri file
     """
-    from .shellprints import msg_error
+    from .shell_tools import msg_error
 
     if strategy == 'aroma':
         desc = 'smoothAROMAnonaggr'
@@ -493,7 +489,7 @@ def get_timeseries(fmri_file, strategy, seeds):
     """
 
     from nilearn.interfaces.fmriprep import load_confounds_strategy
-    from .shellprints import msg_warning
+    from .shell_tools import msg_warning
 
     if strategy == 'aroma':
         options_for_load_confounds_strategy = {'denoise_strategy': 'ica_aroma'}
@@ -534,7 +530,7 @@ def get_connectome(layout, filter, strategy, seeds):
     import numpy as np
     from nilearn import plotting
     from nilearn.maskers import NiftiMapsMasker, NiftiSpheresMasker
-    from .shellprints import msg_error
+    from .shell_tools import msg_error
 
     filter.update({'suffix': "bold"})
     if strategy == 'aroma':
