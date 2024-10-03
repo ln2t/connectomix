@@ -5,224 +5,361 @@ Author: Antonin Rovai
 
 Created: August 2022
 """
-
-# imports
-from bids import BIDSLayout as bidslayout  # to handle BIDS data
-from .utils import *  # custom utilities
-from pathlib import Path  # to create dirs
-
+import os
+import argparse
+import json
+import pandas as pd
 import numpy as np
+import shutil
+import warnings
+from nilearn.image import resample_img, load_img
+from nilearn.plotting import plot_matrix, plot_carpet
+from nilearn.input_data import NiftiLabelsMasker
 from nilearn.connectome import ConnectivityMeasure
+from nilearn.decomposition import CanICA
+from nilearn.regions import RegionExtractor
+from bids import BIDSLayout
+from pathlib import Path
+from nireports.assembler.report import Report
+import matplotlib.pyplot as plt
 
-no_session_flag = 4.2  # used to for dummy value of session variable
+# Define the version number
+__version__ = "1.0.0"
 
-def main():
+# Helper function to load the configuration file
+def load_config(config_path):
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    return config
 
-    __version__ = get_version()
-    msg_info("Version: %s" % __version__)
+# Helper function to select confounds
+def select_confounds(confounds_file):
+    confounds = pd.read_csv(confounds_file, delimiter='\t')
+    selected_confounds = confounds[['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']]
+    return selected_confounds
 
-    args = arguments_manager(__version__)
-    fmriprep_dir = get_fmriprep_dir(args)
+# Helper function to read the repetition time (TR) from a JSON file
+def get_repetition_time(json_file):
+    with open(json_file, 'r') as f:
+        metadata = json.load(f)
+    return metadata.get('RepetitionTime', None)
 
-    msg_info("Indexing BIDS dataset...")
+# Helper function to generate a dataset_description.json file
+def create_dataset_description(output_dir):
+    description = {
+        "Name": "connectomix",
+        "BIDSVersion": "1.6.0",
+        "PipelineDescription": {
+            "Name": "connectomix",
+            "Version": __version__,
+            "CodeURL": "https://github.com/arovai/connectomix"
+        }
+    }
+    with open(output_dir / "dataset_description.json", 'w') as f:
+        json.dump(description, f, indent=4)
 
-    layout = bidslayout(args.bids_dir, validate=not args.skip_bids_validator)
-    layout.add_derivatives(fmriprep_dir)
-    subjects_to_analyze = get_subjects_to_analyze(args, layout)
-    all_sessions = get_sessions(args, layout)
-    space, res = get_space(args, layout)
-    task = get_task(args, layout)
-    seeds = get_seeds(args)
-    denoise_strategies = get_strategies(args)
-    layout = setup_output_dir(args, __version__, layout)
-    output_dir = layout.derivatives['connectomix'].root
+# Helper function to resample all functional images to a reference image
+def resample_to_reference(func_files, reference_img, preprocessing_dir):
+    resampled_files = []
+    for func_file in func_files:
+        #todo: build filename with "resampled" at a place where it makes more sense for BIDS parsing.
+        resampled_path = preprocessing_dir / f"resampled_{Path(func_file).name}"
+        resampled_files.append(str(resampled_path))
+        if not os.path.isfile(resampled_path):
+            img = load_img(func_file)
+            #todo: check if resampling is necessary by comparing affine and grid. If not, just copy the file.
+            resampled_img = resample_img(img, target_affine=reference_img.affine, target_shape=reference_img.shape[:3], interpolation='nearest')
+            resampled_img.to_filename(resampled_path)
+    return resampled_files
 
-    # print some summary before running
-    msg_info("Bids directory: %s" % layout.root)
-    msg_info("Fmriprep directory: %s" % fmriprep_dir)
-    msg_info("Subject(s) to analyse: %s" % subjects_to_analyze)
-    if not res is None:
-        msg_info("Selected resolution: %s" % res)
+# Helper function to create a summary table of regions or components
+def create_summary_table(atlas_labels=None):
+    if atlas_labels is not None:
+        summary_df = pd.DataFrame({"Region Name": atlas_labels})
+    else:
+        summary_df = pd.DataFrame()
+    return summary_df
 
-    if args.analysis_level == "participant":
+# Helper function to generate a Nireports report using reportlets
+def generate_report(output_dir, report_filename, atlas_results, config):
+    report = Report(title=f"Connectomix Report: {report_filename}")
 
-        for subject_label in subjects_to_analyze:
+    # Add sections for each atlas and connectivity type
+    for atlas_name, connectivity_results in atlas_results.items():
+        report.add_subheader(atlas_name)
+        for connectivity_type, result in connectivity_results.items():
+            report.add_subsubheader(f"Connectivity Type: {connectivity_type}")
+            report.add_carpet(result['carpet_plot_path'], title=f"Time Series Carpet Plot ({atlas_name}, {connectivity_type})")
+            report.add_image(result['conn_matrix_plot_path'], title=f"Connectivity Matrix ({atlas_name}, {connectivity_type})")
+            report.add_dataframe(result['summary_table'], title=f"Region Information ({atlas_name}, {connectivity_type})")
 
-            msg_info("Running for participant %s" % subject_label)
+    # Save the final report
+    report_path = output_dir / f"{report_filename}_report.html"
+    report.save(report_path)
+    print(f"Report saved to {report_path}")
 
-            if subject_label not in layout.derivatives['fMRIPrep'].get_subjects():
-                msg_warning('Subject to present in fMRIPrep derivatives, skipping.')
-                continue
+# Extract time series based on specified method
+def extract_timeseries(func_file, confounds_file, t_r, method, method_options):
+    confounds = select_confounds(confounds_file)
 
-            sessions = []
-            for session in all_sessions:
-                if session in layout.get_sessions(subject=subject_label):
-                    sessions.append(session)
-                if session is None:
-                    sessions = [None]
-            sessions = sorted(sessions)
-            if sessions[0] is not None:
-                msg_info('Found the following sessions for this subject: %s' % sessions)
+    # Set filter options based on the config file
+    high_pass = method_options.get('high_pass', None)
+    low_pass = method_options.get('low_pass', None)
 
-            for session in sessions:
-                bids_filter = dict(subject=subject_label, return_type='filename',
-                              space=space, res=res, task=task, session=session)
+    # Atlas-based extraction
+    if method == 'atlas':
+        atlas_img = method_options['atlas_path']
+        masker = NiftiLabelsMasker(
+            atlas_img=atlas_img,
+            standardize=True,
+            detrend=True,
+            high_pass=high_pass,
+            low_pass=low_pass,
+            t_r=t_r
+        )
+    
+    # ROI-based extraction
+    elif method == 'roi':
+        coords = method_options['roi_coords']
+        radius = method_options['radius']
+        masker = NiftiSpheresMasker(
+            seeds=coords,
+            radius=radius,
+            standardize=True,
+            detrend=True,
+            high_pass=high_pass,
+            low_pass=low_pass,
+            t_r=t_r
+        )
 
-                if seeds['type'] == 'all_voxels':
-                    seeds['mask'] = get_fmri_mask(layout, bids_filter)
-                    if seeds['mask'] is None:
-                        continue
+    # ICA-based extraction
+    elif method == 'ica':
+        extractor = RegionExtractor(
+            method_options['component_images'],
+            threshold=method_options.get('threshold', 0.5),
+            standardize=True,
+            detrend=True,
+            min_region_size=method_options.get('min_region_size', 50),
+            high_pass=high_pass,
+            low_pass=low_pass,
+            t_r=t_r
+        )
+        extractor.fit()
+        masker = NiftiLabelsMasker(labels_img=extractor.regions_img_, standardize=True, detrend=True)
+        print(f"Number of ICA-based components extracted: {extractor.regions_img_.shape[-1]}")
 
-                results = dict()
+    else:
+        raise ValueError(f"Unknown method: {method}")
 
-                for denoise_strategy in denoise_strategies:
+    timeseries = masker.fit_transform(func_file, confounds=confounds.values)
+    return timeseries
 
-                    msg_info('Running denoising strategy %s' % denoise_strategy)
+# Compute CanICA component images
+def compute_canica_components(func_filenames, output_dir):
+    # Build path to save canICA components
+    canica_filename = output_dir / "canICA_components.nii.gz"
+    
+    # If has not yet been computed, compute canICA components
+    if not os.path.isfile(canica_filename):
+        canica = CanICA(
+            n_components=20,
+            memory="nilearn_cache",
+            memory_level=2,
+            verbose=10,
+            mask_strategy="whole-brain-template",
+            random_state=0,
+            standardize="zscore_sample",
+            n_jobs=2,
+        )
+        canica.fit(func_filenames)
+        
+        # Save image to output filename
+        canica.components_img_.to_filename(canica_filename)
+    return canica_filename
 
-                    # get fmri preprocessed and mask by fmriprep
-                    fmri_preproc = get_fmri_preproc(layout, bids_filter, denoise_strategy)
-                    if fmri_preproc is None:
-                        continue
+# Main function to run connectomix
+def main(bids_dir, derivatives_dir, fmriprep_dir, config_file):
+    # Print version information
+    print(f"Running connectomix version {__version__}")
 
-                    results[denoise_strategy] = get_connectivity_measures(fmri_preproc, denoise_strategy, seeds)
+    # Prepare output directory
+    output_dir = Path(derivatives_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save a copy of the config file to the output directory
+    shutil.copy(config_file, output_dir / "config.json")
+    print(f"Configuration file saved to {output_dir / 'config.json'}")
+    
+    # Create the dataset_description.json file
+    create_dataset_description(output_dir)
 
-                    if results[denoise_strategy] is None:
-                        continue
+    # Load the configuration file
+    config = load_config(config_file)
 
-                    entities = dict()
-                    entities['subject'] = subject_label
-                    entities['space'] = space
-                    entities['res'] = res
-                    entities['session'] = session
-                    entities['denoising'] = denoise_strategy
-                    outputs = setup_subject_output_paths(layout, entities)
+    # Create a BIDSLayout to parse the BIDS dataset
+    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, output_dir])
 
-                    # save a couple of nice images
-                    item = 'matrix'
-                    results[denoise_strategy]['graphics'][item].savefig(outputs[item])
+    # Select the functional files and confound files for the given participant
+    func_files = layout.derivatives['fMRIPrep'].get(
+        suffix='bold',
+        extension='nii.gz',
+        return_type='filename',
+        space='MNI152NLin2009cAsym',
+        desc='preproc',
+        session='1',
+        task='restingstate',
+        run=None
+    )
+    confound_files = layout.derivatives['fMRIPrep'].get(
+        suffix='timeseries',
+        extension='tsv',
+        return_type='filename',
+        session='1',
+        task='restingstate',
+        run=None
+    )
+    json_files = layout.derivatives['fMRIPrep'].get(
+        suffix='bold',
+        extension='json',
+        return_type='filename',
+        space='MNI152NLin2009cAsym',
+        desc='preproc',
+        session='1',
+        task='restingstate',
+        run=None
+    )
 
-                    if not seeds['type'] == 'all_voxels':
-                        item = 'connectome'
-                        results[denoise_strategy]['graphics'][item].savefig(outputs[item])
+    if not func_files:
+        raise FileNotFoundError("No functional files found")
+    if not confound_files:
+        raise FileNotFoundError("No confound files found")
+    if len(func_files) != len(confound_files):
+        raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and confound_files {len(confound_files)}")
 
-                    # save the matrix data and timeseries
-                    for item in ['data', 'timeseries']:
-                        np.savetxt(outputs[item], results[denoise_strategy][item], delimiter='\t')
+    print(f"Found {len(func_files)} functional files")
 
-                    build_report(outputs, entities, args, __version__)
+    # Choose the first functional file as the reference for alignment
+    reference_func_file = load_img(func_files[0])
 
-    # running group level
-    elif args.analysis_level == "group":
+    # Create a preprocessing directory to store aligned files
+    preprocessing_dir = output_dir / "preprocessing"
+    preprocessing_dir.mkdir(parents=True, exist_ok=True)
 
-        msg_info("Starting group analysis tools")
+    # Resample all functional files to the reference image
+    resampled_files = resample_to_reference(func_files, reference_func_file, preprocessing_dir)
+    print("All functional files resampled to match the reference image.")
 
-        import os
+    # Set up connectivity measures
+    connectivity_types = config['connectivity_measure']
+    if isinstance(connectivity_types, str):
+        connectivity_types = [connectivity_types]
 
-        group_level_dir = os.path.join(args.output_dir, 'group')
+    # Compute CanICA components if necessary and store it in the methods options
+    if config['method'] == 'ica':
+        # Create a canICA directory to store component images
+        canica_dir = output_dir / "canICA"
+        canica_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Compute CanICA and export filename in options
+        config['method_options']['component_images'] = compute_canica_components(resampled_files, canica_dir)
 
-        from pathlib import Path  # to create dirs
-        # create output dir
-        Path(group_level_dir).mkdir(parents=True, exist_ok=True)
+    # Iterate through each functional file
+    for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
+        # Extract timeseries
+        method = config['method']
+        method_options = config['method_options']
+        timeseries = extract_timeseries(str(func_file),
+                                        str(confound_file),
+                                        get_repetition_time(json_file),
+                                        method,
+                                        method_options)
 
-        import pandas as pd
-        from plotly import graph_objects as go
-        from os.path import join
+        # Iterate over each connectivity type
+        connectivity_results = {}
+        for connectivity_type in connectivity_types:
+            print(f"Computing connectivity: {connectivity_type}")
+            # Compute connectivity
+            connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
+            conn_matrix = connectivity_measure.fit_transform([timeseries])[0]
+        
+            # Generate the BIDS-compliant filename for the connectivity matrix figure
+            entities = layout.parse_file_entities(func_file)
+            conn_matrix_plot_path = layout['connectomix'].build_path(entities,
+                                                      path_patterns=['sub-{subject}_task-{task}_space-{space}_method-%s_desc-%s_matrix.png' % (method, connectivity_type)],
+                                                      validate=False)
 
-        n_subjects = len(layout.derivatives['connectomix'].get_subjects())
-        if n_subjects > 0:
-            msg_info("Number of subject(s) found: %s" % n_subjects)
-        else:
-            msg_error("No subject found in derivative folder, abording.")
-            exit(1)
+            # Create output paths
+            conn_matrix_plot_path = output_dir / f"sub-{participant}_atlas-{atlas_name}_connectivity-{connectivity_type}_matrix.png"
+            plt.figure(figsize=(10, 10))
+            plot_matrix(conn_matrix, labels=masker.labels_, colorbar=True)
+            plt.savefig(conn_matrix_plot_path)
+            plt.close()
+    
+            # Create carpet plot path
+            carpet_plot_path = output_dir / f"sub-{participant}_atlas-{atlas_name}_connectivity-{connectivity_type}_carpet_plot.png"
+            plot_carpet(timeseries, title=f"Carpet Plot ({atlas_name}, {connectivity_type})", figure=carpet_plot_path)
+    
+            # Create a summary table
+            summary_table = create_summary_table(atlas_labels=masker.labels_)
+    
+            # Store results for this connectivity type
+            connectivity_results[connectivity_type] = {
+                'timeseries': timeseries,
+                'conn_matrix': conn_matrix,
+                'summary_table': summary_table,
+                'conn_matrix_plot_path': conn_matrix_plot_path,
+                'carpet_plot_path': carpet_plot_path
+            }        
 
-        data_filter = dict(return_type='filename', extension='.nii.gz')
-        strategies = layout.derivatives['connectomix'].get_desc()
+    # Iterate through each atlas and generate results for each connectivity type
+    atlas_results = {}
+    for atlas_path in config['method_options']['atlas_path']:
+        # Extract atlas name from the filename
+        atlas_name = Path(atlas_path).stem
+        print(f"Processing atlas: {atlas_name}")
 
-        means = dict()
-        for _strategy in strategies:
-            means[_strategy] = []
-            _list = layout.derivatives['connectomix'].get(return_type='filename', extension='.tsv', suffix='data', desc=_strategy)
-            for _file in _list:
-                _pd = pd.read_csv(_file, sep='\t', header=None)
-                _data = _pd.values
-                means[_strategy].append(np.mean(_data))
+        # Extract timeseries using the current atlas
+        masker = NiftiLabelsMasker(atlas_img=atlas_path, standardize=True)
+        timeseries = masker.fit_transform(resampled_files, confounds=[select_confounds(c) for c in confound_files])
 
-        subs = layout.derivatives['connectomix'].get_subjects()
-        df = pd.DataFrame(columns=strategies)
-        df['subject'] = []
+        
 
-        for _sub in subs:
-            df.loc[len(df), 'subject'] = _sub
-            for _strategy in strategies:
-                _file = layout.derivatives['connectomix'].get(return_type='filename', subject=_sub, extension='.tsv', suffix='data', desc=_strategy)[0]
-                _pd = pd.read_csv(_file, sep='\t', header=None)
-                _data = _pd.values
-                df.loc[df['subject'] == _sub, _strategy] = np.mean(_data)
-        df.set_index('subject', inplace=True)
+        # Store results for this atlas
+        atlas_results[atlas_name] = connectivity_results
 
-        table_group_filename = os.path.join(group_level_dir, "means_by_strategy.tsv")
-        df.to_csv(table_group_filename, sep='\t')
+    # Generate a single report with sections for each atlas and subsections for each connectivity type
+    report_filename = f"sub-{participant}_task-{layout.parse_file_entities(func_files[0]).get('task', 'unknown')}_space-MNI152_report"
+    generate_report(output_dir, report_filename, atlas_results, config)
 
-        fig = go.Figure()
+# if __name__ == '__main__':
+#     # Argument parser for command-line inputs
+#     parser = argparse.ArgumentParser(description="Connectomix: Functional Connectivity from fMRIPrep outputs")
+#     parser.add_argument('bids_dir', type=str, help='BIDS root directory containing the dataset.')
+#     parser.add_argument('derivatives_dir', type=str, help='Directory where to store the outputs.')
+#     parser.add_argument('participant', type=str, help='Participant label to process (e.g., "sub-01").')
+#     parser.add_argument('--config', type=str, help='Path to the configuration file.', required=True)
 
-        for _strategy in strategies:
-               fig.add_trace(go.Violin(y=df[_strategy],
-                                    name=_strategy,
-                                    box_visible=False,
-                                    meanline_visible=False,
-                                    points='all', showlegend=False))
+#     args = parser.parse_args()
 
-        fig.update_layout(title="Mean Functional Connectivity by Denoising Strategy", yaxis_title="mean FC")
-        # fig.show()
+#     # Run the main function
+#     main(args.bids_dir, args.derivatives_dir, args.participant, args.config, args.fmriprep_dir)
 
-        fig_group_filename = os.path.join(group_level_dir, "denoising_compare.svg")
-        fig.write_image(fig_group_filename)
 
-        # time_series = dict()
-        # bids_filter = dict(suffix='timeseries', extension='.tsv', return_type='filename')
-        # msg_warning('Datasets without session not supported yet.')
-        #
-        # group_output_dir = os.path.join(output_dir, 'group')
-        # Path(group_output_dir).mkdir(parents=True, exist_ok=True)
-        #
-        # for session in layout.derivatives['connectomix'].get_sessions():
-        #     time_series[session] = dict()
-        #     msg_warning('This tool should not be used if you have run several denoising strategies and the outputs are coexisting in the derivative folder.')
-        #     for subject in layout.derivatives['connectomix'].get_subjects(session=session):
-        #         try:
-        #             series_fn = layout.derivatives['connectomix'].get(**bids_filter, subject=subject, session=session, desc=seeds['type'])[0]
-        #         except:
-        #             msg_warning('No series found for subject %s, skipping.' % subject)
-        #             continue
-        #         time_series[session][subject] = np.genfromtxt(series_fn, delimiter='\t')
-        #
-        #     time_series_stack = []
-        #
-        #     for key in time_series[session].keys():
-        #         time_series_stack.append(time_series[session][key])
-        #
-        #
-        #     measure = ConnectivityMeasure(kind='tangent')
-        #     connectivities = measure.fit(time_series_stack)
-        #     group_connectivity = measure.mean_
-        #     data = measure.fit_transform(time_series_stack)[0]
-        #     np.fill_diagonal(data, 0)  # for visual purposes
-        #     graphics = get_graphics(data, 'Group connectome, ses-%s' % session, seeds['labels'], seeds['coordinates'])
-        #     graphics['matrix']
-        #
-        #     group_prefix = os.path.join(group_output_dir, 'ses-%s' % session)
-        #
-        #     outputs_fn = dict()
-        #     # save the graphics
-        #     for item in ['matrix', 'connectome']:
-        #         outputs_fn[item] = group_prefix + '_' + item + '.png'
-        #         graphics[item].savefig(outputs_fn[item])
-        #
-        #     # save the matrix data and timeseries
-        #     outputs_fn['data'] = group_prefix + '_data.tsv'
-        #     np.savetxt(outputs_fn['data'], data, delimiter='\t')
+with open("/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/code/CTL_vs_FDA_config_test.json", "r") as json_file:
+    data = json.load(json_file)
 
-    msg_info("The End!")
+bids_dir = data["bids_dir"]
+fmriprep_dir = data["fmriprep_dir"]
+canica_dir = data["canica_dir"]
+connectomes_dir = data["connectomes_dir"]
+connectomix_dir = data["connectomix_dir"]
+confounds_dir = data["confounds_dir"]
+group1_regex = data["group1_regex"]
+group2_regex = data["group2_regex"]
+group1_label = data["group1_label"]
+group2_label = data["group2_label"]
+seeds_file = data["seeds_file"]
 
-if __name__ == '__main__':
-    main()
+config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix_config_test.json"
+
+main(bids_dir, connectomix_dir, fmriprep_dir, config_file)
