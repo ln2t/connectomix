@@ -219,6 +219,7 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Save a copy of the config file to the output directory
+# Todo: add date and time to copy of config file to avoid clash
     save_copy_of_config(config, output_dir / "config.json")
     print(f"Configuration file saved to {output_dir / 'config.json'}")
     
