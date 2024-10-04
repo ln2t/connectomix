@@ -150,6 +150,7 @@ def extract_timeseries(func_file, confounds_file, t_r, method, method_options):
     return timeseries
 
 # Compute CanICA component images
+# Todo: add file with paths to func files used to compute ICA, generate hash, use hash to name both component IMG and text file.
 def compute_canica_components(func_filenames, output_dir, t_r, options):
     # Build path to save canICA components
     canica_filename = output_dir / "canica_components.nii.gz"
