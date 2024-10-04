@@ -38,6 +38,7 @@ def load_config(config):
     return config
 
 # Helper function to select confounds
+# Todo: allow for more flexible choices from config
 def select_confounds(confounds_file):
     confounds = pd.read_csv(confounds_file, delimiter='\t')
     selected_confounds = confounds[['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']]
