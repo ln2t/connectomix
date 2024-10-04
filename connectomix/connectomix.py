@@ -280,6 +280,7 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     print(f"Found {len(func_files)} functional files")
 
     # Choose the first functional file as the reference for alignment
+# Todo: add possibility to specify path to ref in config file
     reference_func_file = load_img(func_files[0])
 
     # Create a preprocessing directory to store aligned files
@@ -294,6 +295,7 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     connectivity_types = config['connectivity_measure']
     if isinstance(connectivity_types, str):
         connectivity_types = [connectivity_types]
+# Todo: raise error if not list
 
     # Compute CanICA components if necessary and store it in the methods options
     if config['method'] == 'ica':
@@ -301,7 +303,8 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
         canica_dir = output_dir / "canica"
         canica_dir.mkdir(parents=True, exist_ok=True)
         
-        # Compute CanICA and export filename in options
+        # Compute CanICA and export path and extractor in options to be passed to compute time series
+# Todo: adapt arguments here and in definition 
         config['method_options']['components'], config['method_options']['extractor'] = compute_canica_components(resampled_files,
                                                                            canica_dir,
                                                                            get_repetition_time(json_files[0]),
@@ -309,6 +312,7 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
 
     # Iterate through each functional file
     for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
+# Todo: print status like 'processing func file'
         # Extract timeseries
         method = config['method']
         method_options = config['method_options']
@@ -328,6 +332,8 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
         
             # Generate the BIDS-compliant filename for the connectivity matrix and figure
             entities = layout.parse_file_entities(func_file)
+# Todo: create a JSON file with component IMG hash and also path to file.
+# Todo: add subfolder in path patterns, create corresponding directory before saving with a function ensure_path_is_in_existing_dir
             conn_matrix_path = layout.derivatives['connectomix'].build_path(entities,
                                                       path_patterns=['sub-{subject}_task-{task}_space-{space}_method-%s_desc-%s_matrix.npy' % (method, connectivity_type)],
                                                       validate=False)
