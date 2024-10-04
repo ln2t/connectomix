@@ -142,6 +142,7 @@ def extract_timeseries(func_file, confounds_file, t_r, method, method_options):
 
     # ICA-based extraction
     elif method == 'ica':
+# Todo: update here the extractor features high pass, low pass, and tr
         timeseries = method_options["extractor"].transform(func_file, confounds=confounds.values)
 
     else:
@@ -155,6 +156,7 @@ def compute_canica_components(func_filenames, output_dir, t_r, options):
     # Build path to save canICA components
     canica_filename = output_dir / "canica_components.nii.gz"
     
+# Todo: remove this two steps
     # Set filter options based on the config file
     high_pass = options.get('high_pass', None)
     low_pass = options.get('low_pass', None)
@@ -181,6 +183,7 @@ def compute_canica_components(func_filenames, output_dir, t_r, options):
         canica.components_img_.to_filename(canica_filename)
     else:
         print(f"ICA component file {canica_filename} already exist, skipping computation.")
+# Todo: remove high pass, low pass, and tr from these calls or Region extractor.
     extractor = RegionExtractor(
         canica_filename,
         threshold=options.get('threshold', 0.5),
