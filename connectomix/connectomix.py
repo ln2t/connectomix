@@ -19,8 +19,8 @@ from nilearn.connectome import ConnectivityMeasure
 from nilearn.decomposition import CanICA
 from nilearn.regions import RegionExtractor
 from bids import BIDSLayout
+import csv
 from pathlib import Path
-from nireports.assembler.report import Report
 import matplotlib.pyplot as plt
 
 # Define the version number
@@ -80,30 +80,6 @@ def resample_to_reference(func_files, reference_img, preprocessing_dir):
             print(f"Functional file {resampled_path} already exist, skipping resampling.")
     return resampled_files
 
-# Helper function to create a summary table of regions or components
-def create_summary_table(atlas_labels=None):
-    if atlas_labels is not None:
-        summary_df = pd.DataFrame({"Region Name": atlas_labels})
-    else:
-        summary_df = pd.DataFrame()
-    return summary_df
-
-# Helper function to generate a Nireports report using reportlets
-def generate_report(report_filename, connectivity_results, config):
-    report = Report(title=f"Connectomix Report: {report_filename.split('/')[-1]}",
-                    out_dir='/'.join(report_filename.split('/')[:-1]),
-                    run_uuid='dummyuid')
-
-    # Add sections for each connectivity type
-        
-    for connectivity_type, result in connectivity_results.items():
-        report.add_subsubheader(f"Connectivity Type: {connectivity_type}")
-        report.add_image(result['conn_matrix_plot_path'], title=f"Connectivity Matrix ({connectivity_type})")
-
-    # Save the final report
-    report.save(report_filename)
-    print(f"Report saved to {report_filename}")
-
 # Extract time series based on specified method
 def extract_timeseries(func_file, confounds_file, t_r, method, method_options):
     confounds = select_confounds(confounds_file)
@@ -124,14 +100,28 @@ def extract_timeseries(func_file, confounds_file, t_r, method, method_options):
             t_r=t_r
         )
         timeseries = masker.fit_transform(func_file, confounds=confounds.values)
+        # Todo: find labels for atlas
+        labels = None
     
     # ROI-based extraction
     elif method == 'roi':
-        coords = method_options['roi_coords']
+        
+        # Read seed labels and coordinates from file
+        if os.path.isfile(method_options['seeds_file']):
+            with open(method_options['seeds_file']) as seed_file:
+                tsv_file = csv.reader(seed_file, delimiter="\t")
+                labels = []
+                coords = []
+                for line in tsv_file:
+                    labels.append(line[0])
+                    coords.append(np.array(line[1:4], dtype=int))
+        else:
+            raise FileNotFoundError(f"Seeds file {method_options['seeds_file']} not found")
+            
         radius = method_options['radius']
         masker = NiftiSpheresMasker(
             seeds=coords,
-            radius=radius,
+            radius=float(radius),
             standardize=True,
             detrend=True,
             high_pass=high_pass,
@@ -142,28 +132,23 @@ def extract_timeseries(func_file, confounds_file, t_r, method, method_options):
 
     # ICA-based extraction
     elif method == 'ica':
-# Todo: update here the extractor features high pass, low pass, and tr
-        timeseries = method_options["extractor"].transform(func_file, confounds=confounds.values)
-
+        extractor = method_options["extractor"]
+        extractor.high_pass = high_pass
+        extractor.low_pass  = low_pass
+        extractor.t_r = t_r
+        timeseries = extractor.transform(func_file, confounds=confounds.values)
+        labels = None
     else:
         raise ValueError(f"Unknown method: {method}")
 
-    return timeseries
+    return timeseries, labels
 
 # Compute CanICA component images
 # Todo: add file with paths to func files used to compute ICA, generate hash, use hash to name both component IMG and text file.
-def compute_canica_components(func_filenames, output_dir, t_r, options):
+def compute_canica_components(func_filenames, output_dir, options):
     # Build path to save canICA components
     canica_filename = output_dir / "canica_components.nii.gz"
-    
-# Todo: remove this two steps
-    # Set filter options based on the config file
-    high_pass = options.get('high_pass', None)
-    low_pass = options.get('low_pass', None)
-    
-    # Print warning about assuming the same t_r for all files
-    warnings.warn(f"Assuming all files have the same t_r of {t_r} seconds.")
-    
+        
     # If has not yet been computed, compute canICA components
     if not os.path.isfile(canica_filename):
         # Todo: ensure the options in CanICA are adapted
@@ -183,32 +168,50 @@ def compute_canica_components(func_filenames, output_dir, t_r, options):
         canica.components_img_.to_filename(canica_filename)
     else:
         print(f"ICA component file {canica_filename} already exist, skipping computation.")
-# Todo: remove high pass, low pass, and tr from these calls or Region extractor.
     extractor = RegionExtractor(
         canica_filename,
         threshold=options.get('threshold', 0.5),
         standardize=True,
         detrend=True,
-        min_region_size=options.get('min_region_size', 50),
-        high_pass=high_pass,
-        low_pass=low_pass,
-        t_r=t_r
+        min_region_size=options.get('min_region_size', 50)
     )
     extractor.fit()
     print(f"Number of ICA-based components extracted: {extractor.regions_img_.shape[-1]}")
     return canica_filename, extractor
 
-# Helper function to copy config to path
+# Function to copy config to path
 def save_copy_of_config(config, path):
     # If config is a str, assume it is a path and copy
     if isinstance(config, str):
         shutil.copy(config, path)
     # Otherwise, it is a dict and must be dumped to path
     elif isinstance(config, dict):
-        json.dump(config, path)
+        with open(path, "w") as fp:
+            json.dump(config, fp)
     return None
-            
 
+# Function to create directory in which path is located
+def ensure_directory(file_path):
+    """
+    Ensure that the directory for a given file path exists.
+    If it does not exist, create it.
+    
+    Args:
+    file_path (str): The full path to the file, including the filename.
+
+    Example:
+    ensure_directory("/path/to/my/directory/filename.txt")
+    """
+    # Extract the directory path from the given file path
+    directory = os.path.dirname(file_path)
+
+    # Check if the directory exists, if not, create it
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        print(f"Directory {directory} created.")
+    else:
+        print(f"Directory {directory} already exists.")
+ 
 # Main function to run connectomix
 def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Print version information
@@ -229,14 +232,14 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Load the configuration file
     config = load_config(config)
     
-    # Get task, session, run and space from config file
-    task = config.get("task", "restingstate")
-    run = config.get("run", None)
-    session = config.get("session", None)
-    space = config.get("space", 'MNI152NLin2009cAsym')
-
     # Create a BIDSLayout to parse the BIDS dataset
     layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, output_dir])
+    
+    # Get task, session, run and space from config file    
+    task = config.get("task", layout.derivatives['fMRIPrep'].get_tasks())
+    run = config.get("run", layout.derivatives['fMRIPrep'].get_runs())
+    session = config.get("session", layout.derivatives['fMRIPrep'].get_sessions())
+    space = config.get("space", layout.derivatives['fMRIPrep'].get_spaces())   
 
     # Select the functional, confound and metadata files
     func_files = layout.derivatives['fMRIPrep'].get(
@@ -295,7 +298,7 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     connectivity_types = config['connectivity_measure']
     if isinstance(connectivity_types, str):
         connectivity_types = [connectivity_types]
-# Todo: raise error if not list
+        # Todo: raise error if not list
 
     # Compute CanICA components if necessary and store it in the methods options
     if config['method'] == 'ica':
@@ -304,61 +307,78 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
         canica_dir.mkdir(parents=True, exist_ok=True)
         
         # Compute CanICA and export path and extractor in options to be passed to compute time series
-# Todo: adapt arguments here and in definition 
         config['method_options']['components'], config['method_options']['extractor'] = compute_canica_components(resampled_files,
                                                                            canica_dir,
-                                                                           get_repetition_time(json_files[0]),
                                                                            config["method_options"])
 
     # Iterate through each functional file
     for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
-# Todo: print status like 'processing func file'
-        # Extract timeseries
+        # Print status
+        print(f"Processing file {func_file}")
+        
+        
         method = config['method']
         method_options = config['method_options']
-        timeseries = extract_timeseries(str(func_file),
-                                        str(confound_file),
-                                        get_repetition_time(json_file),
-                                        method,
-                                        method_options)
+        
+        
 
+        # Generate the BIDS-compliant filename for the timeseries and save
+        entities = layout.parse_file_entities(func_file)
+        timeseries_path = layout.derivatives['connectomix'].build_path(entities,
+                                                  path_patterns=['sub-{subject}/[ses-{ses}/]sub-{subject}_[ses-{ses}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy' % method],
+                                                  validate=False)
+        ensure_directory(timeseries_path)
+        
+        # Extract timeseries
+        if os.path.isfile(timeseries_path):
+            print(f"Timeseries for {func_file} already exists, skipping computation.")
+            timeseries = np.load(timeseries_path)
+        else:
+            timeseries, labels = extract_timeseries(str(func_file),
+                                            str(confound_file),
+                                            get_repetition_time(json_file),
+                                            method,
+                                            method_options)
+            np.save(timeseries_path, timeseries)
+        
         # Iterate over each connectivity type
-        connectivity_results = {}
         for connectivity_type in connectivity_types:
             print(f"Computing connectivity: {connectivity_type}")
             # Compute connectivity
             connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
             conn_matrix = connectivity_measure.fit_transform([timeseries])[0]
+            
+            # Mask out the major diagonal
+            np.fill_diagonal(conn_matrix, 0)
         
-            # Generate the BIDS-compliant filename for the connectivity matrix and figure
-            entities = layout.parse_file_entities(func_file)
-# Todo: create a JSON file with component IMG hash and also path to file.
-# Todo: add subfolder in path patterns, create corresponding directory before saving with a function ensure_path_is_in_existing_dir
+            # Generate the BIDS-compliant filename for the connectivity matrix and save
+            # Todo: create a JSON file with component IMG hash and also path to file.
+            # Todo: add session and run as optional entities in the path_patterms for each of the outputs. DONE in three places BUT must be tested!
             conn_matrix_path = layout.derivatives['connectomix'].build_path(entities,
-                                                      path_patterns=['sub-{subject}_task-{task}_space-{space}_method-%s_desc-%s_matrix.npy' % (method, connectivity_type)],
+                                                      path_patterns=['sub-{subject}/[ses-{ses}/]sub-{subject}_[ses-{ses}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy' % (method, connectivity_type)],
                                                       validate=False)
-            conn_matrix_plot_path = layout.derivatives['connectomix'].build_path(entities,
-                                                      path_patterns=['sub-{subject}_task-{task}_space-{space}_method-%s_desc-%s_matrix.png' % (method, connectivity_type)],
-                                                      validate=False)
+            ensure_directory(conn_matrix_path)
             np.save(conn_matrix_path, conn_matrix)
+            
+            # Generate the BIDS-compliant filename for the figure, generate the figure and save
+            conn_matrix_plot_path = layout.derivatives['connectomix'].build_path(entities,
+                                                      path_patterns=['sub-{subject}/[ses-{ses}/]sub-{subject}_[ses-{ses}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg' % (method, connectivity_type)],
+                                                      validate=False)
+            ensure_directory(conn_matrix_plot_path)
             plt.figure(figsize=(10, 10))
             #plot_matrix(conn_matrix, labels=masker.labels_, colorbar=True)
-            plot_matrix(conn_matrix, colorbar=True)
+            plot_matrix(conn_matrix, labels=labels, colorbar=True)
             plt.savefig(conn_matrix_plot_path)
             plt.close()
+
+# Group-level analysis
+def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
+    # Print version information
+    print(f"Running connectomix (Group-level) version {__version__}")
+
+    # Placeholder logic for group-level analysis
+    print("Group-level analysis is currently under development.")
     
-            # Store results for this connectivity type
-            connectivity_results[connectivity_type] = {
-                'timeseries': timeseries,
-                'conn_matrix': conn_matrix
-            }        
-
-        # Generate a single report with sections for each atlas and subsections for each connectivity type
-        report_filename = layout.derivatives['connectomix'].build_path(entities,
-                                                  path_patterns=['sub-{subject}_task-{task}_space-{space}_method-%s_report.html' % method],
-                                                  validate=False)
-        generate_report(report_filename, connectivity_results, config)
-
 # if __name__ == '__main__':
 #     # Argument parser for command-line inputs
 #     parser = argparse.ArgumentParser(description="Connectomix: Functional Connectivity from fMRIPrep outputs")
@@ -371,7 +391,6 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
 
 #     # Run the main function
 #     main(args.bids_dir, args.derivatives_dir, args.participant, args.config, args.fmriprep_dir)
-
 
 # with open("/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/code/CTL_vs_FDA_config_test.json", "r") as json_file:
 #     data = json.load(json_file)
@@ -388,13 +407,34 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
 # group2_label = data["group2_label"]
 # seeds_file = data["seeds_file"]
 
-
 bids_dir = "/data/ds005418"
 fmriprep_dir = "/data/ds005418/derivatives/fmriprep_v21.0.4"
 connectomix_dir = "/data/ds005418/derivatives/connectomix_dev"
 
+bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
+fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
+connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_dev"
+
 # config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix_config_test.json"
 
-config = "/data/ds005418/code/connectomix/config.json"
+# config = "/data/ds005418/code/connectomix/config.json"
+
+config = {}
+config["method"] = "ica"
+config["method_options"] = {}
+config["connectivity_measure"] = "correlation"
+config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
+
+config = {}
+config["method"] = "roi"
+config["method_options"] = {}
+config["method_options"]["seeds_file"] = "/home/arovai/git/arovai/connectomix/connectomix/seeds/brain_and_cerebellum_seeds.tsv"
+config["method_options"]["radius"] = "5"
+config["connectivity_measure"] = "correlation"
+config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
 
 main(bids_dir, connectomix_dir, fmriprep_dir, config)
