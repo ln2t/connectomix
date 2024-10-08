@@ -18,10 +18,13 @@ from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure
 from nilearn.decomposition import CanICA
 from nilearn.regions import RegionExtractor
+from nilearn import datasets
 from bids import BIDSLayout
 import csv
 from pathlib import Path
 import matplotlib.pyplot as plt
+from scipy.stats import ttest_ind, ttest_rel
+from statsmodels.stats.multitest import multipletests
 
 # Define the version number
 __version__ = "1.0.0"
@@ -38,10 +41,11 @@ def load_config(config):
     return config
 
 # Helper function to select confounds
-# Todo: allow for more flexible choices from config
-def select_confounds(confounds_file):
+def select_confounds(confounds_file, config):
     confounds = pd.read_csv(confounds_file, delimiter='\t')
-    selected_confounds = confounds[['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']]
+    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
+    selected_confounds = confounds[config.get("confound_columns", default_confound_columns)]
+    # Todo: check that provided columns exist in confounds
     return selected_confounds
 
 # Helper function to read the repetition time (TR) from a JSON file
@@ -65,12 +69,19 @@ def create_dataset_description(output_dir):
         json.dump(description, f, indent=4)
 
 # Helper function to resample all functional images to a reference image
-def resample_to_reference(func_files, reference_img, preprocessing_dir):
+def resample_to_reference(layout, func_files, reference_img):
     resampled_files = []
     for func_file in func_files:
-        #todo: build filename with "resampled" at a place where it makes more sense for BIDS parsing.
-        resampled_path = preprocessing_dir / f"{Path(func_file).name}"
+        # Build BIDS-compliant filename for resampled data
+        entities = layout.derivatives["connectomix"].parse_file_entities(func_file)
+        resampled_path = layout.derivatives["connectomix"].build_path(entities,
+                          path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_desc-resampled.nii.gz'],
+                          validate=False)
+        
+        ensure_directory(resampled_path)
         resampled_files.append(str(resampled_path))
+        
+        # Resample to reference if file does not exists
         if not os.path.isfile(resampled_path):
             img = load_img(func_file)
             #todo: check if resampling is necessary by comparing affine and grid. If not, just copy the file.
@@ -81,8 +92,11 @@ def resample_to_reference(func_files, reference_img, preprocessing_dir):
     return resampled_files
 
 # Extract time series based on specified method
-def extract_timeseries(func_file, confounds_file, t_r, method, method_options):
-    confounds = select_confounds(confounds_file)
+def extract_timeseries(func_file, confounds_file, t_r, config):
+    confounds = select_confounds(confounds_file, config)
+    
+    method = config['method']
+    method_options = config['method_options']
 
     # Set filter options based on the config file
     high_pass = method_options.get('high_pass', None)
@@ -90,22 +104,27 @@ def extract_timeseries(func_file, confounds_file, t_r, method, method_options):
 
     # Atlas-based extraction
     if method == 'atlas':
-        atlas_img = method_options['atlas_path']
+        # Load the default atlas and inform user
+        atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
+        warnings.warn("Using Harvard-Oxford atlas cort-maxprob-thr25-1mm.")
+        labels = atlas["labels"]
+        
+        # Define masker object and proceed with timeseries computation
         masker = NiftiLabelsMasker(
-            atlas_img=atlas_img,
+            labels_img=atlas["filename"],
+            labels=labels,
             standardize=True,
             detrend=True,
             high_pass=high_pass,
             low_pass=low_pass,
             t_r=t_r
         )
-        timeseries = masker.fit_transform(func_file, confounds=confounds.values)
-        # Todo: find labels for atlas
-        labels = None
+        timeseries = masker.fit_transform(func_file, confounds=confounds.values)        
+        # Drop the first entry which is always the Background label
+        labels = labels[1:]
     
     # ROI-based extraction
     elif method == 'roi':
-        
         # Read seed labels and coordinates from file
         if os.path.isfile(method_options['seeds_file']):
             with open(method_options['seeds_file']) as seed_file:
@@ -222,7 +241,9 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Save a copy of the config file to the output directory
-# Todo: add date and time to copy of config file to avoid clash
+    # Todo: add date and time to copy of config file to avoid clash
+    if not "method_options" in config.keys():
+        config["method_options"] = {}
     save_copy_of_config(config, output_dir / "config.json")
     print(f"Configuration file saved to {output_dir / 'config.json'}")
     
@@ -235,7 +256,8 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Create a BIDSLayout to parse the BIDS dataset
     layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, output_dir])
     
-    # Get task, session, run and space from config file    
+    # Get subjects, task, session, run and space from config file    
+    subjects = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())
     task = config.get("task", layout.derivatives['fMRIPrep'].get_tasks())
     run = config.get("run", layout.derivatives['fMRIPrep'].get_runs())
     session = config.get("session", layout.derivatives['fMRIPrep'].get_sessions())
@@ -248,6 +270,7 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
         return_type='filename',
         space=space,
         desc='preproc',
+        subject=subjects,
         task=task,
         run=run,
         session=session,
@@ -256,6 +279,7 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
         suffix='timeseries',
         extension='tsv',
         return_type='filename',
+        subject=subjects,
         task=task,
         run=run,
         session=session
@@ -266,6 +290,7 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
         return_type='filename',
         space=space,
         desc='preproc',
+        subject=subjects,
         task=task,
         run=run,
         session=session
@@ -283,22 +308,18 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     print(f"Found {len(func_files)} functional files")
 
     # Choose the first functional file as the reference for alignment
-# Todo: add possibility to specify path to ref in config file
-    reference_func_file = load_img(func_files[0])
-
-    # Create a preprocessing directory to store aligned files
-    preprocessing_dir = output_dir / "preprocessing"
-    preprocessing_dir.mkdir(parents=True, exist_ok=True)
+    reference_func_file = load_img(config.get("reference_functional_file", func_files[0]))
 
     # Resample all functional files to the reference image
-    resampled_files = resample_to_reference(func_files, reference_func_file, preprocessing_dir)
+    resampled_files = resample_to_reference(layout, func_files, reference_func_file)
     print("All functional files resampled to match the reference image.")
 
     # Set up connectivity measures
     connectivity_types = config['connectivity_measure']
     if isinstance(connectivity_types, str):
         connectivity_types = [connectivity_types]
-        # Todo: raise error if not list
+    elif not isinstance(connectivity_types, list):
+        raise ValueError(f"The connectivity_types value must either be a string or a list. You provided {connectivity_types}.")
 
     # Compute CanICA components if necessary and store it in the methods options
     if config['method'] == 'ica':
@@ -315,31 +336,21 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
         # Print status
         print(f"Processing file {func_file}")
+               
         
-        
-        method = config['method']
-        method_options = config['method_options']
-        
-        
-
         # Generate the BIDS-compliant filename for the timeseries and save
         entities = layout.parse_file_entities(func_file)
         timeseries_path = layout.derivatives['connectomix'].build_path(entities,
-                                                  path_patterns=['sub-{subject}/[ses-{ses}/]sub-{subject}_[ses-{ses}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy' % method],
+                                                  path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy' % config['method']],
                                                   validate=False)
         ensure_directory(timeseries_path)
         
         # Extract timeseries
-        if os.path.isfile(timeseries_path):
-            print(f"Timeseries for {func_file} already exists, skipping computation.")
-            timeseries = np.load(timeseries_path)
-        else:
-            timeseries, labels = extract_timeseries(str(func_file),
-                                            str(confound_file),
-                                            get_repetition_time(json_file),
-                                            method,
-                                            method_options)
-            np.save(timeseries_path, timeseries)
+        timeseries, labels = extract_timeseries(str(func_file),
+                                        str(confound_file),
+                                        get_repetition_time(json_file),
+                                        config)
+        np.save(timeseries_path, timeseries)
         
         # Iterate over each connectivity type
         for connectivity_type in connectivity_types:
@@ -353,31 +364,173 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
         
             # Generate the BIDS-compliant filename for the connectivity matrix and save
             # Todo: create a JSON file with component IMG hash and also path to file.
-            # Todo: add session and run as optional entities in the path_patterms for each of the outputs. DONE in three places BUT must be tested!
             conn_matrix_path = layout.derivatives['connectomix'].build_path(entities,
-                                                      path_patterns=['sub-{subject}/[ses-{ses}/]sub-{subject}_[ses-{ses}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy' % (method, connectivity_type)],
+                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy' % (config["method"], connectivity_type)],
                                                       validate=False)
             ensure_directory(conn_matrix_path)
             np.save(conn_matrix_path, conn_matrix)
             
             # Generate the BIDS-compliant filename for the figure, generate the figure and save
             conn_matrix_plot_path = layout.derivatives['connectomix'].build_path(entities,
-                                                      path_patterns=['sub-{subject}/[ses-{ses}/]sub-{subject}_[ses-{ses}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg' % (method, connectivity_type)],
+                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg' % (config["method"], connectivity_type)],
                                                       validate=False)
             ensure_directory(conn_matrix_plot_path)
             plt.figure(figsize=(10, 10))
-            #plot_matrix(conn_matrix, labels=masker.labels_, colorbar=True)
             plot_matrix(conn_matrix, labels=labels, colorbar=True)
             plt.savefig(conn_matrix_plot_path)
             plt.close()
+
+# Custom non-valid entity filter
+def apply_nonbids_filter(entity, value, files):
+    filtered_files = []
+    for file in files:
+        if f"{entity}-{value}" in os.path.basename(file).split("_"):
+            filtered_files.append(file)
+    return filtered_files
+
+# Permutation testing with stat max thresholding
+# Todo: completely review this function. It is basically a placeholder.
+def permutation_test(group1_data, group2_data, n_permutations):
+    """
+    Perform a two-sided permutation test to determine positive and negative thresholds separately.
+    Returns separate maximum and minimum thresholds for positive and negative t-values.
+    """
+    combined_data = np.concatenate([group1_data, group2_data], axis=0)
+    n_subjects_group1 = group1_data.shape[0]
+    
+    # Placeholder logic for permutation distribution
+    permuted_max = {"positive": [], "negative": []}
+    permuted_min = {"positive": [], "negative": []}
+
+    for _ in range(n_permutations):
+        # Shuffle subjects and split into new groups
+        np.random.shuffle(combined_data)
+        new_group1 = combined_data[:n_subjects_group1]
+        new_group2 = combined_data[n_subjects_group1:]
+
+        # Perform independent t-test on permuted groups
+        t_stat, _ = ttest_ind(new_group1, new_group2, axis=0, equal_var=False)
+        
+        # Capture separate values for positive and negative distributions
+        permuted_max["positive"].append(np.max(t_stat))
+        permuted_min["negative"].append(np.min(t_stat))
+
+    # Compute 2-sided thresholds
+    max_positive = np.percentile(permuted_max["positive"], 97.5)
+    min_negative = np.percentile(permuted_min["negative"], 2.5)
+    
+    return {"positive": max_positive}, {"negative": min_negative}
 
 # Group-level analysis
 def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Print version information
     print(f"Running connectomix (Group-level) version {__version__}")
 
-    # Placeholder logic for group-level analysis
-    print("Group-level analysis is currently under development.")
+    # Load config
+    config = load_config(config)
+
+    # Create a BIDSLayout to handle files and outputs
+    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
+    
+    # Load group specifications from config
+    group1_subjects = config['group1_subjects']
+    group2_subjects = config['group2_subjects']
+    
+    # Retrieve connectivity type and other configuration parameters
+    connectivity_type = config['connectivity_measure']
+    method = config['method']
+    task = config.get("task", "restingstate")
+    run = config.get("run", None)
+    session = config.get("session", None)
+    space = config.get("space", "MNI152NLin2009cAsym")
+    analysis_type = config.get("analysis_type", "independent")  # Options: 'independent' or 'paired'
+    
+    entities = {
+        "task": task,
+        "space": space,
+        "session": session,
+        "run": run,
+        "desc": connectivity_type,
+        "suffix": "matrix",
+        "extension": ".npy"
+    }
+    
+    # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
+    group1_matrices = []
+    for subject in group1_subjects:
+        conn_files = layout.derivatives["connectomix"].get(subject=subject,
+                                                          **entities,
+                                                          return_type='filename',
+                                                          invalid_filters='allow')
+        # Refine selection with non-BIDS entity filtering
+        conn_files = apply_nonbids_filter("method", method, conn_files)
+        if len(conn_files) == 0:
+            raise FileNotFoundError(f"Connectivity matrix for subject {subject} not found, are you sure you ran the participant-level pipeline?")
+        elif len(conn_files) == 1:
+            group1_matrices.append(np.load(conn_files[0]))  # Load the match
+        else:
+            raise ValueError(f"There are multiple matches for subject {subject}, review your configuration.")
+            
+    group2_matrices = []
+    for subject in group2_subjects:
+        conn_files = layout.derivatives["connectomix"].get(subject=subject,
+                                                          **entities,
+                                                          return_type='filename',
+                                                          invalid_filters='allow')
+        # Refine selection with non-BIDS entity filtering
+        conn_files = apply_nonbids_filter("method", method, conn_files)
+        if len(conn_files) == 0:
+            raise FileNotFoundError(f"Connectivity matrix for subject {subject} not found, are you sure you ran the participant-level pipeline?")
+        elif len(conn_files) == 1:
+            group2_matrices.append(np.load(conn_files[0]))  # Load the match
+        else:
+            raise ValueError(f"There are multiple matches for subject {subject}, review your configuration.")
+    
+    # Convert to 3D arrays: (subjects, nodes, nodes)
+    group1_data = np.stack(group1_matrices, axis=0)
+    group2_data = np.stack(group2_matrices, axis=0)
+    
+    # Perform the appropriate group-level analysis
+    if analysis_type == "independent":
+        # Independent t-test between different subjects
+        t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
+    elif analysis_type == "paired":
+        # Paired t-test within the same subjects
+        if len(group1_subjects) != len(group2_subjects):
+            raise ValueError("Paired t-test requires an equal number of subjects in both groups.")
+        t_stats, p_values = ttest_rel(group1_data, group2_data, axis=0)
+    else:
+        raise ValueError(f"Unknown analysis type: {analysis_type}")
+    
+    # Threshold 1: Uncorrected p-value
+    p_uncorr_threshold = config.get("uncorrected_threshold", 0.001)
+    uncorr_mask = p_values < p_uncorr_threshold
+
+    # Threshold 2: FDR correction
+    fdr_threshold = config.get("fdr_threshold", 0.05)
+    fdr_mask = multipletests(p_values.flatten(), alpha=fdr_threshold, method='fdr_bh')[0].reshape(p_values.shape)
+
+    # Threshold 3: Permutation-based threshold
+    n_permutations = config.get("n_permutations", 10000)
+    permuted_max, permuted_min = permutation_test(group1_data, group2_data, n_permutations)
+    perm_mask = (t_stats > permuted_max) | (t_stats < permuted_min)
+    
+    # Save thresholds to a BIDS-compliant JSON file
+    thresholds = {
+        "uncorrected_threshold": p_uncorr_threshold,
+        "fdr_threshold": fdr_threshold,
+        "permutation_thresholds": {
+            "max_positive": permuted_max["positive"].tolist(),
+            "min_negative": permuted_min["negative"].tolist(),
+            "n_permutations": n_permutations
+        }
+    }
+    threshold_file = layout.derivatives['connectomix'].build_path(entities, 
+                                       path_patterns=['group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_thresholds.json' % (method, connectivity_type)],
+                                       validate=False)
+
+    with open(threshold_file, 'w') as f:
+        json.dump(thresholds, f, indent=4)
     
 # if __name__ == '__main__':
 #     # Argument parser for command-line inputs
@@ -413,7 +566,7 @@ connectomix_dir = "/data/ds005418/derivatives/connectomix_dev"
 
 bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
 fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
-connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_dev"
+connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_dev_wip"
 
 # config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix_config_test.json"
 
@@ -436,5 +589,31 @@ config["connectivity_measure"] = "correlation"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
+config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
+# config["reference_functional_file"] = "/path/to/func/ref"
+config["subjects"] = "CTL01"
 
-main(bids_dir, connectomix_dir, fmriprep_dir, config)
+config = {}
+config["method"] = "atlas"
+config["connectivity_measure"] = "correlation"
+config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
+config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
+# config["reference_functional_file"] = "/path/to/func/ref"
+config["subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04"]
+
+# main(bids_dir, connectomix_dir, fmriprep_dir, config)
+
+config = {}
+config["method"] = "atlas"
+config["connectivity_measure"] = "correlation"
+config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
+config["group1_subjects"] = ["CTL01", "CTL02"]
+config["group2_subjects"] = ["CTL03", "CTL04"]
+config["n_permutations"] = 5
+
+derivatives_dir = connectomix_dir
+group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
