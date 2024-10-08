@@ -390,7 +390,7 @@ def apply_nonbids_filter(entity, value, files):
 
 # Permutation testing with stat max thresholding
 # Todo: completely review this function. It is basically a placeholder.
-def permutation_test(group1_data, group2_data, n_permutations):
+def permutation_test(group1_data, group2_data, config, layout):
     """
     Perform a two-sided permutation test to determine positive and negative thresholds separately.
     Returns separate maximum and minimum thresholds for positive and negative t-values.
@@ -398,9 +398,43 @@ def permutation_test(group1_data, group2_data, n_permutations):
     combined_data = np.concatenate([group1_data, group2_data], axis=0)
     n_subjects_group1 = group1_data.shape[0]
     
+    # Extract values from config
+    n_permutations = config.get("n_permutations", 10000)
+    
     # Placeholder logic for permutation distribution
     permuted_max = {"positive": [], "negative": []}
     permuted_min = {"positive": [], "negative": []}
+
+    # Load pre-existing permuted data, if any
+    perm_files = apply_nonbids_filter("comparison",
+                         config["comparison_label"],
+                         layout.derivatives["connectomix"].get(extension=".npy"))
+    perm_null_distributions = []
+    for perm_file in perm_files:
+        perm_data = np.load(perm_file)
+        if len(perm_null_distributions) == 0:
+            perm_null_distributions = perm_data
+        else:
+            perm_null_distributions = np.append(perm_null_distributions, perm_data , axis=0)
+            
+    # Run permutation testing by chunks and save permuted data
+    n_resamples = 10  # number of permutations per chunk
+    while len(perm_null_distributions) < config["n_permutations"]:
+        # Run permutation chunk
+        perm_test = permutation_test((group1_data, group2_data),
+                                                      stat_func,
+                                                      vectorized=False,
+                                                      n_resamples=n_resamples)
+        
+        layout.derivatives["connectomix"].get()
+        
+        # save to temporary file
+        np.save(temp_fn, perm_test.null_distribution)
+        # generate hash
+        h = hashlib.md5(open(temp_fn, 'rb').read()).hexdigest()    
+        # rename temp to final filename
+        final_fn = join(permudations_dir, f"permutation_n_resamples-{n_resamples}_hash-{h}.npy")
+        rename(temp_fn, final_fn)
 
     for _ in range(n_permutations):
         # Shuffle subjects and split into new groups
@@ -420,6 +454,14 @@ def permutation_test(group1_data, group2_data, n_permutations):
     min_negative = np.percentile(permuted_min["negative"], 2.5)
     
     return {"positive": max_positive}, {"negative": min_negative}
+
+# Define a function to compute the difference in connectivity between the two groups
+# Todo: adapt this for paired tests
+def stat_func(x, y, axis=0):
+    from scipy.stats import ttest_ind
+    # Compute the t-statistic between two independent groups
+    t_stat, _ = ttest_ind(x, y)
+    return t_stat
 
 # Group-level analysis
 def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
@@ -487,6 +529,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
             raise ValueError(f"There are multiple matches for subject {subject}, review your configuration.")
     
     # Convert to 3D arrays: (subjects, nodes, nodes)
+    # Todo: make sure this is actually necessary
     group1_data = np.stack(group1_matrices, axis=0)
     group2_data = np.stack(group2_matrices, axis=0)
     
@@ -512,7 +555,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 
     # Threshold 3: Permutation-based threshold
     n_permutations = config.get("n_permutations", 10000)
-    permuted_max, permuted_min = permutation_test(group1_data, group2_data, n_permutations)
+    permuted_max, permuted_min = permutation_test(group1_data, group2_data, config)
     perm_mask = (t_stats > permuted_max) | (t_stats < permuted_min)
     
     # Save thresholds to a BIDS-compliant JSON file
@@ -614,6 +657,7 @@ config["space"] = "MNI152NLin2009cAsym"
 config["group1_subjects"] = ["CTL01", "CTL02"]
 config["group2_subjects"] = ["CTL03", "CTL04"]
 config["n_permutations"] = 5
+config["analysis_label"] = "CTL0102_vs_CTL0304_TEST"
 
 derivatives_dir = connectomix_dir
 group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
