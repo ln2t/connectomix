@@ -23,8 +23,9 @@ from bids import BIDSLayout
 import csv
 from pathlib import Path
 import matplotlib.pyplot as plt
-from scipy.stats import ttest_ind, ttest_rel
+from scipy.stats import ttest_ind, ttest_rel, permutation_test
 from statsmodels.stats.multitest import multipletests
+import hashlib
 
 # Define the version number
 __version__ = "1.0.0"
@@ -227,9 +228,6 @@ def ensure_directory(file_path):
     # Check if the directory exists, if not, create it
     if not os.path.exists(directory):
         os.makedirs(directory)
-        print(f"Directory {directory} created.")
-    else:
-        print(f"Directory {directory} already exists.")
  
 # Main function to run connectomix
 def main(bids_dir, derivatives_dir, fmriprep_dir, config):
@@ -383,32 +381,30 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
 # Custom non-valid entity filter
 def apply_nonbids_filter(entity, value, files):
     filtered_files = []
+    if not entity == "suffix":
+        entity = f"{entity}-"
     for file in files:
-        if f"{entity}-{value}" in os.path.basename(file).split("_"):
+        if f"{entity}{value}" in os.path.basename(file).split("_"):
             filtered_files.append(file)
     return filtered_files
 
 # Permutation testing with stat max thresholding
 # Todo: completely review this function. It is basically a placeholder.
-def permutation_test(group1_data, group2_data, config, layout):
+def generate_permuted_null_distributions(group1_data, group2_data, config, layout, entities):
     """
     Perform a two-sided permutation test to determine positive and negative thresholds separately.
     Returns separate maximum and minimum thresholds for positive and negative t-values.
-    """
-    combined_data = np.concatenate([group1_data, group2_data], axis=0)
-    n_subjects_group1 = group1_data.shape[0]
-    
+    """   
     # Extract values from config
     n_permutations = config.get("n_permutations", 10000)
     
-    # Placeholder logic for permutation distribution
-    permuted_max = {"positive": [], "negative": []}
-    permuted_min = {"positive": [], "negative": []}
-
     # Load pre-existing permuted data, if any
     perm_files = apply_nonbids_filter("comparison",
                          config["comparison_label"],
-                         layout.derivatives["connectomix"].get(extension=".npy"))
+                         layout.derivatives["connectomix"].get(extension=".npy",
+                                                               suffix="permutations",
+                                                               return_type='filename'))
+    
     perm_null_distributions = []
     for perm_file in perm_files:
         perm_data = np.load(perm_file)
@@ -419,41 +415,56 @@ def permutation_test(group1_data, group2_data, config, layout):
             
     # Run permutation testing by chunks and save permuted data
     n_resamples = 10  # number of permutations per chunk
-    while len(perm_null_distributions) < config["n_permutations"]:
+    while len(perm_null_distributions) < n_permutations:
         # Run permutation chunk
+        print(f"Running a chunk of permutations... (goal is {n_permutations} permutations)")
         perm_test = permutation_test((group1_data, group2_data),
                                                       stat_func,
                                                       vectorized=False,
                                                       n_resamples=n_resamples)
         
-        layout.derivatives["connectomix"].get()
+        perm_test.null_distribution
         
-        # save to temporary file
+        # Build a temporary file before generatin hash
+        temp_fn = layout.derivatives["connectomix"].build_path({**entities,
+                                                          "comparison_label": config["comparison_label"],
+                                                          "method": config["method"],
+                                                          },
+                                                     path_patterns=["group/permutations/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_tmp.npy"],
+                                                     validate=False)
+        
+        ensure_directory(temp_fn)
+        
+        # Clean any temporary file, in case previous run was abruptly interrupted
+        if os.path.isfile(temp_fn):
+            os.remove(temp_fn)
+        
+        # Add result to list of permuted data
+        if len(perm_null_distributions) == 0:
+            perm_null_distributions = perm_test.null_distribution
+        else:
+            perm_null_distributions = np.append(perm_null_distributions, perm_test.null_distribution, axis=0)
+        
+        # Save to temporary file
         np.save(temp_fn, perm_test.null_distribution)
-        # generate hash
+        # Generate hash to ensure we save each permutations in a separate file
         h = hashlib.md5(open(temp_fn, 'rb').read()).hexdigest()    
-        # rename temp to final filename
-        final_fn = join(permudations_dir, f"permutation_n_resamples-{n_resamples}_hash-{h}.npy")
-        rename(temp_fn, final_fn)
-
-    for _ in range(n_permutations):
-        # Shuffle subjects and split into new groups
-        np.random.shuffle(combined_data)
-        new_group1 = combined_data[:n_subjects_group1]
-        new_group2 = combined_data[n_subjects_group1:]
-
-        # Perform independent t-test on permuted groups
-        t_stat, _ = ttest_ind(new_group1, new_group2, axis=0, equal_var=False)
-        
-        # Capture separate values for positive and negative distributions
-        permuted_max["positive"].append(np.max(t_stat))
-        permuted_min["negative"].append(np.min(t_stat))
-
-    # Compute 2-sided thresholds
-    max_positive = np.percentile(permuted_max["positive"], 97.5)
-    min_negative = np.percentile(permuted_min["negative"], 2.5)
+        # Rename temporary file to final filename
+        final_fn = layout.derivatives["connectomix"].build_path({**entities,
+                                                          "comparison_label": config["comparison_label"],
+                                                          "method": config["method"],
+                                                          "hash": h
+                                                          },
+                                                     path_patterns=["group/permutations/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_hash-{hash}_permutations.npy"],
+                                                     validate=False)
+        ensure_directory(final_fn)
+        os.rename(temp_fn, final_fn)
     
-    return {"positive": max_positive}, {"negative": min_negative}
+    # Extract max and min stat distributions
+    null_max_distribution = np.nanmax(perm_null_distributions, axis=(1, 2))
+    null_min_distribution = np.nanmin(perm_null_distributions, axis=(1, 2))
+        
+    return null_max_distribution, null_min_distribution
 
 # Define a function to compute the difference in connectivity between the two groups
 # Todo: adapt this for paired tests
@@ -493,7 +504,6 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         "session": session,
         "run": run,
         "desc": connectivity_type,
-        "suffix": "matrix",
         "extension": ".npy"
     }
     
@@ -501,9 +511,10 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     group1_matrices = []
     for subject in group1_subjects:
         conn_files = layout.derivatives["connectomix"].get(subject=subject,
-                                                          **entities,
-                                                          return_type='filename',
-                                                          invalid_filters='allow')
+                                                           suffix="matrix",
+                                                           **entities,
+                                                           return_type='filename',
+                                                           invalid_filters='allow')
         # Refine selection with non-BIDS entity filtering
         conn_files = apply_nonbids_filter("method", method, conn_files)
         if len(conn_files) == 0:
@@ -516,9 +527,10 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     group2_matrices = []
     for subject in group2_subjects:
         conn_files = layout.derivatives["connectomix"].get(subject=subject,
-                                                          **entities,
-                                                          return_type='filename',
-                                                          invalid_filters='allow')
+                                                           suffix="matrix",
+                                                           **entities,
+                                                           return_type='filename',
+                                                           invalid_filters='allow')
         # Refine selection with non-BIDS entity filtering
         conn_files = apply_nonbids_filter("method", method, conn_files)
         if len(conn_files) == 0:
@@ -555,7 +567,13 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 
     # Threshold 3: Permutation-based threshold
     n_permutations = config.get("n_permutations", 10000)
-    permuted_max, permuted_min = permutation_test(group1_data, group2_data, config)
+    null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group1_data, group2_data, config, layout, entities)
+    
+    # Compute thresholds at desired significance
+    alpha = float(config.get("fwe_alpha", "0.05"))
+    t_max = np.percentile(null_max_distribution, (1 - alpha / 2) * 100)
+    t_min = np.percentile(null_min_distribution, alpha / 2 * 100)
+    
     perm_mask = (t_stats > permuted_max) | (t_stats < permuted_min)
     
     # Save thresholds to a BIDS-compliant JSON file
@@ -644,7 +662,8 @@ config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
 config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
 # config["reference_functional_file"] = "/path/to/func/ref"
-config["subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04"]
+config["subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04", "CTL05", "CTL06", "CTL07", "CTL08", "CTL10"]
+config["subjects"] = ["CTL09"]
 
 # main(bids_dir, connectomix_dir, fmriprep_dir, config)
 
@@ -654,10 +673,9 @@ config["connectivity_measure"] = "correlation"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
-config["group1_subjects"] = ["CTL01", "CTL02"]
-config["group2_subjects"] = ["CTL03", "CTL04"]
-config["n_permutations"] = 5
-config["analysis_label"] = "CTL0102_vs_CTL0304_TEST"
+config["group1_subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04"]
+config["group2_subjects"] = ["CTL05", "CTL06", "CTL07", "CTL08", "CTL09", "CTL10"]
+config["n_permutations"] = 15
+config["comparison_label"] = "CTL0102vsCTL0304TEST"
 
-derivatives_dir = connectomix_dir
 group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
