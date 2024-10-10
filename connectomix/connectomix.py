@@ -13,7 +13,7 @@ import numpy as np
 import shutil
 import warnings
 from nilearn.image import resample_img, load_img
-from nilearn.plotting import plot_matrix
+from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords
 from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure
 from nilearn.decomposition import CanICA
@@ -106,14 +106,18 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
     # Atlas-based extraction
     if method == 'atlas':
         # Load the default atlas and inform user
-        atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
-        warnings.warn("Using Harvard-Oxford atlas cort-maxprob-thr25-1mm.")
+        
+        #atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
+        #warnings.warn("Using Harvard-Oxford atlas cort-maxprob-thr25-1mm.")
+        # Todo: put this in config file
+        n_rois = 100
+        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
+        warnings.warn(f"Using Schaefer 2018 atlas with {n_rois} rois")
         labels = atlas["labels"]
         
         # Define masker object and proceed with timeseries computation
         masker = NiftiLabelsMasker(
-            labels_img=atlas["filename"],
-            labels=labels,
+            labels_img=atlas["maps"],
             standardize=True,
             detrend=True,
             high_pass=high_pass,
@@ -121,8 +125,8 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
             t_r=t_r
         )
         timeseries = masker.fit_transform(func_file, confounds=confounds.values)        
-        # Drop the first entry which is always the Background label
-        labels = labels[1:]
+        # Drop the first entry which is always the Background label. Not necessary for Schaefer2018 atlas
+        # labels = labels[1:]
     
     # ROI-based extraction
     elif method == 'roi':
@@ -229,30 +233,30 @@ def ensure_directory(file_path):
     if not os.path.exists(directory):
         os.makedirs(directory)
  
-# Main function to run connectomix
-def main(bids_dir, derivatives_dir, fmriprep_dir, config):
+# Participant-level analysis
+def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Print version information
-    print(f"Running connectomix version {__version__}")
+    print(f"Running connectomix (Participant-level) version {__version__}")
 
-    # Prepare output directory
-    output_dir = Path(derivatives_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
     # Save a copy of the config file to the output directory
     # Todo: add date and time to copy of config file to avoid clash
+    # Todo: make filename for config file BIDS compliant
     if not "method_options" in config.keys():
         config["method_options"] = {}
-    save_copy_of_config(config, output_dir / "config.json")
-    print(f"Configuration file saved to {output_dir / 'config.json'}")
+        
+    derivatives_dir = Path(derivatives_dir)
+    derivatives_dir.mkdir(parents=True, exist_ok=True)
+    save_copy_of_config(config, derivatives_dir / "participant_level_config.json")
+    print(f"Configuration file saved to {derivatives_dir / 'participant_level_config.json'}")
     
     # Create the dataset_description.json file
-    create_dataset_description(output_dir)
+    create_dataset_description(derivatives_dir)
 
     # Load the configuration file
     config = load_config(config)
     
     # Create a BIDSLayout to parse the BIDS dataset
-    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, output_dir])
+    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
     
     # Get subjects, task, session, run and space from config file    
     subjects = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())
@@ -322,7 +326,7 @@ def main(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Compute CanICA components if necessary and store it in the methods options
     if config['method'] == 'ica':
         # Create a canICA directory to store component images
-        canica_dir = output_dir / "canica"
+        canica_dir = derivatives_dir / "canica"
         canica_dir.mkdir(parents=True, exist_ok=True)
         
         # Compute CanICA and export path and extractor in options to be passed to compute time series
@@ -389,7 +393,6 @@ def apply_nonbids_filter(entity, value, files):
     return filtered_files
 
 # Permutation testing with stat max thresholding
-# Todo: completely review this function. It is basically a placeholder.
 def generate_permuted_null_distributions(group1_data, group2_data, config, layout, entities):
     """
     Perform a two-sided permutation test to determine positive and negative thresholds separately.
@@ -430,7 +433,7 @@ def generate_permuted_null_distributions(group1_data, group2_data, config, layou
                                                           "comparison_label": config["comparison_label"],
                                                           "method": config["method"],
                                                           },
-                                                     path_patterns=["group/permutations/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_tmp.npy"],
+                                                     path_patterns=["group/{comparison_label}/permutations/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_tmp.npy"],
                                                      validate=False)
         
         ensure_directory(temp_fn)
@@ -446,6 +449,7 @@ def generate_permuted_null_distributions(group1_data, group2_data, config, layou
             perm_null_distributions = np.append(perm_null_distributions, perm_test.null_distribution, axis=0)
         
         # Save to temporary file
+        # Todo: extract max and min stat and save only those values in a single file, as we don't need all the permuted data
         np.save(temp_fn, perm_test.null_distribution)
         # Generate hash to ensure we save each permutations in a separate file
         h = hashlib.md5(open(temp_fn, 'rb').read()).hexdigest()    
@@ -455,7 +459,7 @@ def generate_permuted_null_distributions(group1_data, group2_data, config, layou
                                                           "method": config["method"],
                                                           "hash": h
                                                           },
-                                                     path_patterns=["group/permutations/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_hash-{hash}_permutations.npy"],
+                                                     path_patterns=["group/{comparison_label}/permutations/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_hash-{hash}_permutations.npy"],
                                                      validate=False)
         ensure_directory(final_fn)
         os.rename(temp_fn, final_fn)
@@ -474,6 +478,94 @@ def stat_func(x, y, axis=0):
     t_stat, _ = ttest_ind(x, y)
     return t_stat
 
+# Helper function to create and save matrix plots for each thresholding strategy
+def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, labels=None):    
+        
+    # Todo: save sidecar json file with alpha-thresholds
+    fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "comparison_label": config["comparison_label"],
+                                                      "method": config["method"]                                                      
+                                                      },
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_uncorrmatrix.svg"],
+                                                 validate=False)
+    
+    fn_fdr = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "comparison_label": config["comparison_label"],
+                                                      "method": config["method"]                                                      
+                                                      },
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_fdrmatrix.svg"],
+                                                 validate=False)
+    
+    fn_fwe = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "comparison_label": config["comparison_label"],
+                                                      "method": config["method"]                                                      
+                                                      },
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_fwematrix.svg"],
+                                                 validate=False)
+    
+    # Todo: add more details in plot titles
+    plt.figure(figsize=(10, 10))
+    plot_matrix(t_stats * uncorr_mask, labels=labels, colorbar=True)
+    plt.title('Uncorrected Threshold')
+    plt.savefig(fn_uncorr)
+    plt.close()
+
+    plt.figure(figsize=(10, 10))
+    plot_matrix(t_stats * fdr_mask, labels=labels, colorbar=True)
+    plt.title('FDR Threshold')
+    plt.savefig(fn_fdr)
+    plt.close()
+
+    plt.figure(figsize=(10, 10))
+    plot_matrix(t_stats * perm_mask, labels=labels, colorbar=True)
+    plt.title("Permutation-Based Threshold")
+    plt.savefig(fn_fwe)
+    plt.close()
+    
+# Helper function to create and save connectome plots for each thresholding strategy
+def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, coords):    
+        
+    # Todo: save sidecar json file with alpha-thresholds
+    fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "comparison_label": config["comparison_label"],
+                                                      "method": config["method"]                                                      
+                                                      },
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_uncorrconnectome.svg"],
+                                                 validate=False)
+    
+    fn_fdr = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "comparison_label": config["comparison_label"],
+                                                      "method": config["method"]                                                      
+                                                      },
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_fdrconnectome.svg"],
+                                                 validate=False)
+    
+    fn_fwe = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "comparison_label": config["comparison_label"],
+                                                      "method": config["method"]                                                      
+                                                      },
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_fweconnectome.svg"],
+                                                 validate=False)
+    
+    # Todo: add more details in plot titles
+    plt.figure(figsize=(10, 10))
+    plot_connectome(t_stats * uncorr_mask, node_coords=coords)
+    plt.title('Uncorrected Threshold')
+    plt.savefig(fn_uncorr)
+    plt.close()
+
+    plt.figure(figsize=(10, 10))
+    plot_connectome(t_stats * fdr_mask, node_coords=coords)
+    plt.title('FDR Threshold')
+    plt.savefig(fn_fdr)
+    plt.close()
+
+    plt.figure(figsize=(10, 10))
+    plot_connectome(t_stats * perm_mask, node_coords=coords)
+    plt.title("Permutation-Based Threshold")
+    plt.savefig(fn_fwe)
+    plt.close()
+
 # Group-level analysis
 def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Print version information
@@ -481,6 +573,13 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 
     # Load config
     config = load_config(config)
+    
+    # Save config file for reproducibility
+    # Todo: make filename for config file BIDS compliant
+    derivatives_dir = Path(derivatives_dir)
+    derivatives_dir.mkdir(parents=True, exist_ok=True)
+    save_copy_of_config(config, derivatives_dir / "group_level_config.json")
+    print(f"Configuration file saved to {derivatives_dir / 'group_level_config.json'}")    
 
     # Create a BIDSLayout to handle files and outputs
     layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
@@ -573,65 +672,67 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     alpha = float(config.get("fwe_alpha", "0.05"))
     t_max = np.percentile(null_max_distribution, (1 - alpha / 2) * 100)
     t_min = np.percentile(null_min_distribution, alpha / 2 * 100)
+    print(f"Thresholds for max and min stat from null distribution estimated by permutations: {t_max} and {t_min} (n_perms = {n_permutations})")
     
-    perm_mask = (t_stats > permuted_max) | (t_stats < permuted_min)
+    perm_mask = (t_stats > t_max) | (t_stats < t_min)
     
     # Save thresholds to a BIDS-compliant JSON file
     thresholds = {
         "uncorrected_threshold": p_uncorr_threshold,
         "fdr_threshold": fdr_threshold,
         "permutation_thresholds": {
-            "max_positive": permuted_max["positive"].tolist(),
-            "min_negative": permuted_min["negative"].tolist(),
+            "max_positive": t_max,
+            "min_negative": t_min,
             "n_permutations": n_permutations
         }
     }
-    threshold_file = layout.derivatives['connectomix'].build_path(entities, 
-                                       path_patterns=['group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_thresholds.json' % (method, connectivity_type)],
-                                       validate=False)
-
+    
+    threshold_file = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "comparison_label": config["comparison_label"],
+                                                      "method": config["method"]                                                      
+                                                      },
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_thresholds.json"],
+                                                 validate=False)
+    
+    ensure_directory(threshold_file)
     with open(threshold_file, 'w') as f:
         json.dump(thresholds, f, indent=4)
     
-# if __name__ == '__main__':
-#     # Argument parser for command-line inputs
-#     parser = argparse.ArgumentParser(description="Connectomix: Functional Connectivity from fMRIPrep outputs")
-#     parser.add_argument('bids_dir', type=str, help='BIDS root directory containing the dataset.')
-#     parser.add_argument('derivatives_dir', type=str, help='Directory where to store the outputs.')
-#     parser.add_argument('participant', type=str, help='Participant label to process (e.g., "sub-01").')
-#     parser.add_argument('--config', type=str, help='Path to the configuration file.', required=True)
-
-#     args = parser.parse_args()
-
-#     # Run the main function
-#     main(args.bids_dir, args.derivatives_dir, args.participant, args.config, args.fmriprep_dir)
-
-# with open("/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/code/CTL_vs_FDA_config_test.json", "r") as json_file:
-#     data = json.load(json_file)
-
-# bids_dir = data["bids_dir"]
-# fmriprep_dir = data["fmriprep_dir"]
-# canica_dir = data["canica_dir"]
-# connectomes_dir = data["connectomes_dir"]
-# connectomix_dir = data["connectomix_dir"]
-# confounds_dir = data["confounds_dir"]
-# group1_regex = data["group1_regex"]
-# group2_regex = data["group2_regex"]
-# group1_label = data["group1_label"]
-# group2_label = data["group2_label"]
-# seeds_file = data["seeds_file"]
-
+    # Generate plots
+    # Atlas-based extraction
+    if method == 'atlas':
+        n_rois = 100
+        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
+        #atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
+        labels = atlas["labels"]
+        # labels=labels[1:] # not needed for Schaefer2018 atlas
+        # Grab center coordinates for atlas labels
+        coords = find_parcellation_cut_coords(labels_img=atlas['maps'])
+    generate_group_matrix_plots(t_stats,
+                                uncorr_mask,
+                                fdr_mask,
+                                perm_mask,
+                                config,
+                                layout,
+                                entities,
+                                labels)
+    
+    generate_group_connectome_plots(t_stats,
+                                    uncorr_mask,
+                                    fdr_mask,
+                                    perm_mask,
+                                    config,
+                                    layout,
+                                    entities,
+                                    coords)
+    
 bids_dir = "/data/ds005418"
 fmriprep_dir = "/data/ds005418/derivatives/fmriprep_v21.0.4"
 connectomix_dir = "/data/ds005418/derivatives/connectomix_dev"
 
-bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
-fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
-connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_dev_wip"
-
-# config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix_config_test.json"
-
-# config = "/data/ds005418/code/connectomix/config.json"
+# bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
+# fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
+# connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_dev_wip"
 
 config = {}
 config["method"] = "ica"
@@ -647,7 +748,7 @@ config["method_options"] = {}
 config["method_options"]["seeds_file"] = "/home/arovai/git/arovai/connectomix/connectomix/seeds/brain_and_cerebellum_seeds.tsv"
 config["method_options"]["radius"] = "5"
 config["connectivity_measure"] = "correlation"
-config["session"] = "1"
+#config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
 config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
@@ -657,25 +758,138 @@ config["subjects"] = "CTL01"
 config = {}
 config["method"] = "atlas"
 config["connectivity_measure"] = "correlation"
-config["session"] = "1"
+# config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
 config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
 # config["reference_functional_file"] = "/path/to/func/ref"
-config["subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04", "CTL05", "CTL06", "CTL07", "CTL08", "CTL10"]
-config["subjects"] = ["CTL09"]
+# config["subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04", "CTL05", "CTL06", "CTL07", "CTL08", "CTL10"]
+config["subjects"] = ["001", "004", "012", "017", "018", "019", "020"]
 
-# main(bids_dir, connectomix_dir, fmriprep_dir, config)
+# participant_level_analysis(bids_dir, "/data/ds005418/derivatives/connectomix_dev_schaefer2018", fmriprep_dir, config)
 
+config = {}
+config["method"] = "atlas"
+config["connectivity_measure"] = "correlation"
+#config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
+#config["group1_subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04"]
+#config["group2_subjects"] = ["CTL05", "CTL06", "CTL07", "CTL08", "CTL09", "CTL10"]
+config["group1_subjects"] = ["001", "004", "012"]
+config["group2_subjects"] = ["017", "018", "019", "020"]
+config["n_permutations"] = 100
+config["comparison_label"] = "test"
+
+# group_level_analysis(bids_dir, "/data/ds005418/derivatives/connectomix_dev_schaefer2018", fmriprep_dir, config)
+
+## Analysis for the Hilarious_Mosquito dataset
+bids_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
+fmriprep_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
+connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
+# Subject groupings: CTL, FDA, FDAcog, FDAnoncog
+CTL = ["CTL01","CTL02","CTL03","CTL04","CTL05","CTL06","CTL07","CTL08","CTL09","CTL10","CTL11","CTL12","CTL13","CTL14","CTL15","CTL16","CTL17","CTL18","CTL19","CTL20","CTL21","CTL22","CTL23","CTL24","CTL25","CTL26","CTL27","CTL28","CTL29"]
+FDAnoncog = ["FDA03", "FDA04", "FDA05", "FDA06", "FDA12", "FDA14", "FDA17", "FDA18", "FDA20", "FDA21", "FDA23", "FDA24", "FDA25", "FDA26", "FDA28", "FDA29"]
+FDAcog = ["FDA01", "FDA02", "FDA07", "FDA08", "FDA09", "FDA10", "FDA11", "FDA13", "FDA15", "FDA16", "FDA19", "FDA22", "FDA27", "FDA30"]
+FDA = [*FDAcog, *FDAnoncog]
+n_permutations = 100
+
+# ICA
+# - participant-level
+config = {}
+config["method"] = "ica"
+config["connectivity_measure"] = "correlation"
+config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
+participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+# - group-level
+config = {}
+config["method"] = "ica"
+config["connectivity_measure"] = "correlation"
+config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
+config["n_permutations"] = n_permutations
+
+# -- CTL versus FDA
+config["group1_subjects"] = CTL
+config["group2_subjects"] = FDA
+config["comparison_label"] = "CTLvsFDA"
+group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+
+# -- FDAcog versus FDAnoncog
+config["group1_subjects"] = FDAcog
+config["group2_subjects"] = FDAnoncog
+config["comparison_label"] = "FDAcogvsFDAnoncog"
+group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+
+# Atlas
+# - participant-level
 config = {}
 config["method"] = "atlas"
 config["connectivity_measure"] = "correlation"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
-config["group1_subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04"]
-config["group2_subjects"] = ["CTL05", "CTL06", "CTL07", "CTL08", "CTL09", "CTL10"]
-config["n_permutations"] = 15
-config["comparison_label"] = "CTL0102vsCTL0304TEST"
+participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+# - group-level
+config = {}
+config["method"] = "atlas"
+config["connectivity_measure"] = "correlation"
+config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
+config["n_permutations"] = n_permutations
 
+# -- CTL versus FDA
+config["group1_subjects"] = CTL
+config["group2_subjects"] = FDA
+config["comparison_label"] = "CTLvsFDA"
 group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+
+# -- FDAcog versus FDAnoncog
+config["group1_subjects"] = FDAcog
+config["group2_subjects"] = FDAnoncog
+config["comparison_label"] = "FDAcogvsFDAnoncog"
+group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+
+# Rois
+# - participant-level
+config = {}
+config["method"] = "roi"
+config["method_options"] = {}
+config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+config["method_options"]["radius"] = "5"
+config["connectivity_measure"] = "correlation"
+config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
+participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+
+# - group-level
+config = {}
+config["method"] = "roi"
+config["method_options"] = {}
+config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+config["method_options"]["radius"] = "5"
+config["connectivity_measure"] = "correlation"
+config["session"] = "1"
+config["task"] = "restingstate"
+config["space"] = "MNI152NLin2009cAsym"
+config["n_permutations"] = n_permutations
+
+# -- CTL versus FDA
+config["group1_subjects"] = CTL
+config["group2_subjects"] = FDA
+config["comparison_label"] = "CTLvsFDA"
+group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+
+# -- FDAcog versus FDAnoncog
+config["group1_subjects"] = FDAcog
+config["group2_subjects"] = FDAnoncog
+config["comparison_label"] = "FDAcogvsFDAnoncog"
+group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+
+
+
