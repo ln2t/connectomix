@@ -50,6 +50,9 @@ def select_confounds(confounds_file, config):
     default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
     selected_confounds = confounds[config.get("confound_columns", default_confound_columns)]
     # Todo: check that provided columns exist in confounds
+    # Todo: implement better method to deal with NaN's. Those are always present when taking derivatives of confounds and nilearn trows an error.
+    warnings.warn("If NaNs are present in the confounds, they are replaced by zero to ensure compatibility with nilearn. This is potentially very wrong.")
+    selected_confounds = selected_confounds.fillna(0)
     return selected_confounds
 
 # Helper function to read the repetition time (TR) from a JSON file
@@ -613,6 +616,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 
 # Group-level analysis
 def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
+    # Todo: implement correlation of connectivity with vector of scores like age, behavioural score etc including confounds
     # Print version information
     print(f"Running connectomix (Group-level) version {__version__}")
 
@@ -657,7 +661,8 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
                                                            suffix="matrix",
                                                            **entities,
                                                            return_type='filename',
-                                                           invalid_filters='allow')
+                                                           invalid_filters='allow',
+                                                           extension='.npy')
         # Refine selection with non-BIDS entity filtering
         conn_files = apply_nonbids_filter("method", method, conn_files)
         if len(conn_files) == 0:
@@ -861,9 +866,14 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 # Todo: set-up CLI
 
 ## Analysis for the Hilarious_Mosquito dataset
-bids_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
-fmriprep_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
-connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
+# bids_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
+# fmriprep_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
+# connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
+
+bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
+fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
+connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_9P"
+
 # Subject groupings: CTL, FDA, FDAcog, FDAnoncog
 CTL = ["CTL01","CTL02","CTL03","CTL04","CTL05","CTL06","CTL07","CTL08","CTL09","CTL10","CTL11","CTL12","CTL14","CTL15","CTL16","CTL17","CTL18","CTL19","CTL20","CTL21","CTL22","CTL23","CTL24","CTL25","CTL26","CTL27","CTL28","CTL29"]
 FDAnoncog = ["FDA03", "FDA04", "FDA05", "FDA06", "FDA12", "FDA20", "FDA23", "FDA24", "FDA25", "FDA26", "FDA28", "FDA29"]
@@ -871,7 +881,7 @@ FDAcog = ["FDA01", "FDA02", "FDA07", "FDA08", "FDA09", "FDA10", "FDA11", "FDA13"
 FDA = [*FDAcog, *FDAnoncog]
 n_permutations = 20
 
-# Warning: seems to have not fmriprep output for "FDA17", "FDA18", "FDA21", but rawdata data exists!
+# Warning: seems to have not fmriprep output for "FDA17", "FDA18", but rawdata data exists!
 
 # ICA
 # - participant-level
@@ -913,6 +923,7 @@ config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
 # participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+
 # - group-level
 config = {}
 config["method"] = "atlas"
@@ -939,21 +950,33 @@ config["comparison_label"] = "FDAcogvsFDAnoncog"
 config = {}
 config["method"] = "roi"
 config["method_options"] = {}
-config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+# config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 config["method_options"]["radius"] = "5"
-config["connectivity_measure"] = "correlation"
+# config["connectivity_measure"] = "correlation"
+config["connectivity_measure"] = "covariance"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
-# participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+# config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z',
+#                               'rot_x', 'rot_y', 'rot_z',
+#                               'trans_x_derivative1', 'trans_y_derivative1', 'trans_z_derivative1',
+#                               'rot_x_derivative1', 'rot_y_derivative1', 'rot_z_derivative1',
+#                               'global_signal']
+config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z',
+                              'rot_x', 'rot_y', 'rot_z',
+                              'global_signal', 'white_matter']
+participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
 # - group-level
 config = {}
 config["method"] = "roi"
 config["method_options"] = {}
-config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+# config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 config["method_options"]["radius"] = "5"
-config["connectivity_measure"] = "correlation"
+# config["connectivity_measure"] = "correlation"
+config["connectivity_measure"] = "covariance"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
@@ -962,14 +985,16 @@ config["n_permutations"] = n_permutations
 # -- CTL versus FDA
 config["group1_subjects"] = CTL
 config["group2_subjects"] = FDA
+config["uncorrected_threshold"] = 0.05
 config["comparison_label"] = "CTLvsFDA"
-# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
 # -- FDAcog versus FDAnoncog
 config["group1_subjects"] = FDAcog
 config["group2_subjects"] = FDAnoncog
+config["uncorrected_threshold"] = 0.05
 config["comparison_label"] = "FDAcogvsFDAnoncog"
-# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
 
 
