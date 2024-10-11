@@ -208,7 +208,6 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         extractor.low_pass  = low_pass
         extractor.t_r = t_r
         timeseries = extractor.transform(func_file, confounds=confounds.values)
-        # Todo: save extractor.regions_img_ in derivatives for latex usage in connectome plots at group level
         labels = None
     else:
         raise ValueError(f"Unknown method: {method}")
@@ -217,38 +216,68 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
 
 # Compute CanICA component images
 # Todo: add file with paths to func files used to compute ICA, generate hash, use hash to name both component IMG and text file.
-def compute_canica_components(func_filenames, output_dir, options):
+def compute_canica_components(func_filenames, layout, entities, options):
     # Build path to save canICA components
-    # Todo: make this BIDS friendly
-    canica_filename = output_dir / "canica_components.nii.gz"
-        
+    # Todo: make this BIDS friendly. DONE, UNTESTED
+    canica_filename = layout.build_path(entities,
+                      path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.nii.gz"],
+                      validate=False)
+    canica_sidecar = layout.build_path(entities,
+                     path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.json"],
+                     validate=False)
+    extracted_regions_filename = layout.build_path(entities,
+                      path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_extractedregions.nii.gz"],
+                      validate=False)
+    extracted_regions_sidecar = layout.build_path(entities,
+                      path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_extractedregions.json"],
+                      validate=False)
+    
+    ensure_directory(canica_filename)
+    ensure_directory(canica_sidecar)
+    ensure_directory(extracted_regions_filename)
+    ensure_directory(extracted_regions_sidecar)
+    
+    # Define canica parameters
+    # Todo: ensure the options in CanICA are adapted
+    canica_parameters = dict(n_components=20,
+                             memory="nilearn_cache",
+                             memory_level=2,
+                             verbose=10,
+                             mask_strategy="whole-brain-template",
+                             random_state=0,
+                             standardize="zscore_sample",
+                             n_jobs=2)
+    
+    # Dump config to file for reproducibility
+    with open(canica_sidecar, "w") as fp:
+        json.dump({**canica_parameters, "func_filenames": func_filenames}, fp, indent=4)
+    
     # If has not yet been computed, compute canICA components
     if not os.path.isfile(canica_filename):
-        # Todo: ensure the options in CanICA are adapted
-        canica = CanICA(
-            n_components=20,
-            memory="nilearn_cache",
-            memory_level=2,
-            verbose=10,
-            mask_strategy="whole-brain-template",
-            random_state=0,
-            standardize="zscore_sample",
-            n_jobs=2,
-        )
+        canica = CanICA(**canica_parameters)
         canica.fit(func_filenames)
         
         # Save image to output filename
         canica.components_img_.to_filename(canica_filename)
     else:
         print(f"ICA component file {canica_filename} already exist, skipping computation.")
+        
+    # Extract also regions from the canica components for connectivity analysis
+    extractor_options = dict(threshold=options.get('threshold', 0.5),
+                             standardize=True,
+                             detrend=True,
+                             min_region_size=options.get('min_region_size', 50))
+        
+    # Dump config to file for reproducibility
+    with open(extracted_regions_sidecar, "w") as fp:
+        json.dump(extractor_options, fp, indent=4)
+                       
     extractor = RegionExtractor(
         canica_filename,
-        threshold=options.get('threshold', 0.5),
-        standardize=True,
-        detrend=True,
-        min_region_size=options.get('min_region_size', 50)
+        **extractor_options
     )
     extractor.fit()
+    extractor.regions_img_.to_filename(extracted_regions_filename)
     print(f"Number of ICA-based components extracted: {extractor.regions_img_.shape[-1]}")
     return canica_filename, extractor
 
@@ -262,12 +291,16 @@ def generate_permuted_null_distributions(group1_data, group2_data, config, layou
     n_permutations = config.get("n_permutations", 10000)
     
     # Load pre-existing permuted data, if any
-    # Todo: there is bug here as it takes files from ICA when running ROI method.s
+    # Todo: there is bug here as it takes files from ICA when running ROI method. DONE but UNTESTED
+    perm_files = layout.derivatives["connectomix"].get(extension=".npy",
+                                          suffix="permutations",
+                                          return_type='filename')
     perm_files = apply_nonbids_filter("comparison",
                          config["comparison_label"],
-                         layout.derivatives["connectomix"].get(extension=".npy",
-                                                               suffix="permutations",
-                                                               return_type='filename'))
+                         perm_files)
+    perm_files = apply_nonbids_filter("method",
+                                      config["method"],
+                                      perm_files)
     
     perm_null_distributions = []
     for perm_file in perm_files:
@@ -278,7 +311,7 @@ def generate_permuted_null_distributions(group1_data, group2_data, config, layou
             perm_null_distributions = np.append(perm_null_distributions, perm_data , axis=0)
             
     # Run permutation testing by chunks and save permuted data
-    n_resamples = 10  # number of permutations per chunk
+    n_resamples = 10  # number of permutations per chunk. This is mostly for memory management
     while len(perm_null_distributions) < n_permutations:
         # Run permutation chunk
         print(f"Running a chunk of permutations... (goal is {n_permutations} permutations)")
@@ -289,7 +322,7 @@ def generate_permuted_null_distributions(group1_data, group2_data, config, layou
         
         perm_test.null_distribution
         
-        # Build a temporary file before generatin hash
+        # Build a temporary file before generating hash
         temp_fn = layout.derivatives["connectomix"].build_path({**entities,
                                                           "comparison_label": config["comparison_label"],
                                                           "method": config["method"],
@@ -614,8 +647,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         "space": space,
         "session": session,
         "run": run,
-        "desc": connectivity_type,
-        "extension": ".npy"
+        "desc": connectivity_type
     }
     
     # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
@@ -639,6 +671,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     for subject in group2_subjects:
         conn_files = layout.derivatives["connectomix"].get(subject=subject,
                                                            suffix="matrix",
+                                                           extension=".npy",
                                                            **entities,
                                                            return_type='filename',
                                                            invalid_filters='allow')
@@ -737,7 +770,13 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # ICA-based extraction
     elif method == 'ica':
         raise ValueError("Group level analysis with method ICA still under development.")
-        # coords=find_probabilistic_atlas_cut_coords(extractor.regions_img_)
+        # Todo: test the following lines
+        extracted_regions_entities = entities.copy()
+        extracted_regions_entities.pop("desc")
+        extracted_regions_entities["suffix"] = "extractedregions"
+        extracted_regions_entities["extension"] = ".nii.gz"
+        extracted_regions_filename = layout.derivatives["connectomix"].get(**extracted_regions_entities)
+        coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
         labels = None
     else:
         raise ValueError(f"Unknown method: {method}")
