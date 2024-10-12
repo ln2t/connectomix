@@ -291,7 +291,7 @@ def generate_permuted_null_distributions(group1_data, group2_data, config, layou
     Returns separate maximum and minimum thresholds for positive and negative t-values.
     """   
     # Extract values from config
-    n_permutations = config.get("n_permutations", 10000)
+    n_permutations = config.get("n_permutations")
     
     # Load pre-existing permuted data, if any
     # Todo: there is bug here as it takes files from ICA when running ROI method. DONE but UNTESTED
@@ -379,25 +379,29 @@ def stat_func(x, y, axis=0):
 def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, labels=None):    
         
     # Todo: save sidecar json file with alpha-thresholds
+    # Todo: test new names with alpha level
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
-                                                      "method": config["method"]                                                      
+                                                      "method": config["method"],
+                                                      "alpha": config["uncorrected_alpha"]
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_uncorrmatrix.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_uncorrmatrix.svg"],
                                                  validate=False)
     
     fn_fdr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
-                                                      "method": config["method"]                                                      
+                                                      "method": config["method"],
+                                                      "alpha": config["fdr_alpha"]                                                
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_fdrmatrix.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_fdrmatrix.svg"],
                                                  validate=False)
     
     fn_fwe = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
-                                                      "method": config["method"]                                                      
+                                                      "method": config["method"],
+                                                      "alpha": config["fwe_alpha"]                                                    
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_fwematrix.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_fwematrix.svg"],
                                                  validate=False)
     
     # Todo: add more details in plot titles
@@ -423,25 +427,29 @@ def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, confi
 def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, coords):    
         
     # Todo: save sidecar json file with alpha-thresholds
+    # Todo: test new names with alpha level
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
-                                                      "method": config["method"]                                                      
+                                                      "method": config["method"]   ,
+                                                      "alpha": config["uncorrected_alpha"]                                                   
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_uncorrconnectome.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_uncorrconnectome.svg"],
                                                  validate=False)
     
     fn_fdr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
-                                                      "method": config["method"]                                                      
+                                                      "method": config["method"] ,
+                                                      "alpha": config["fdr_alpha"]                                                       
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_fdrconnectome.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_fdrconnectome.svg"],
                                                  validate=False)
     
     fn_fwe = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
-                                                      "method": config["method"]                                                      
+                                                      "method": config["method"] ,
+                                                      "alpha": config["fwe_alpha"]                                                     
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_fweconnectome.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_fweconnectome.svg"],
                                                  validate=False)
     
     # Todo: add more details in plot titles
@@ -463,37 +471,62 @@ def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, c
     plt.savefig(fn_fwe)
     plt.close()
 
+# Function to manage default group-level options
+def set_unspecified_participant_level_options_to_default(config, layout):
+    config["method_options"] = config.get("method_options", {})
+    config["subjects"] = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())
+    config["task"] = config.get("task", layout.derivatives['fMRIPrep'].get_tasks())
+    config["run"] = config.get("run", layout.derivatives['fMRIPrep'].get_runs())
+    config["session"] = config.get("session", layout.derivatives['fMRIPrep'].get_sessions())
+    config["space"] = config.get("space", layout.derivatives['fMRIPrep'].get_spaces())   
+    config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
+    return config
+
+# Function to manage default group-level options
+def set_unspecified_group_level_options_to_default(config):
+    config["fdr_alpha"] = config.get("fdr_alpha", 0.05)
+    config["uncorrected_alpha"] = config.get("uncorrected_alpha", 0.001)
+    config["n_permutations"] = config.get("n_permutations", 10000)
+    config["fwe_alpha"]= float(config.get("fwe_alpha", "0.05"))
+    config["task"] = config.get("task", "restingstate")
+    config["run"] = config.get("run", None)
+    config["session"] = config.get("session", None)
+    config["space"] = config.get("space", "MNI152NLin2009cAsym")
+    config["analysis_type"]= config.get("analysis_type", "independent")  # Options: 'independent' or 'paired'
+    return config
+
 # Participant-level analysis
 def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Print version information
     print(f"Running connectomix (Participant-level) version {__version__}")
 
-    # Save a copy of the config file to the output directory
-    # Todo: add date and time to copy of config file to avoid clash
-    # Todo: make filename for config file BIDS compliant
-    if not "method_options" in config.keys():
-        config["method_options"] = {}
-        
+    # Create derivative directory        
     derivatives_dir = Path(derivatives_dir)
     derivatives_dir.mkdir(parents=True, exist_ok=True)
-    save_copy_of_config(config, derivatives_dir / "participant_level_config.json")
-    print(f"Configuration file saved to {derivatives_dir / 'participant_level_config.json'}")
-    
+
     # Create the dataset_description.json file
     create_dataset_description(derivatives_dir)
 
-    # Load the configuration file
-    config = load_config(config)
-    
     # Create a BIDSLayout to parse the BIDS dataset
     layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
     
+    # Load the configuration file
+    config = load_config(config)
+    
+    # Set unspecified config options to default values
+    config = set_unspecified_participant_level_options_to_default(config, layout)
+    
+    # Save a copy of the config file to the output directory
+    # Todo: add date and time to copy of config file to avoid clash.
+    save_copy_of_config(config, derivatives_dir / "participant_level_config.json")
+    print(f"Configuration file saved to {derivatives_dir / 'participant_level_config.json'}")
+        
     # Get subjects, task, session, run and space from config file    
-    subjects = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())
-    task = config.get("task", layout.derivatives['fMRIPrep'].get_tasks())
-    run = config.get("run", layout.derivatives['fMRIPrep'].get_runs())
-    session = config.get("session", layout.derivatives['fMRIPrep'].get_sessions())
-    space = config.get("space", layout.derivatives['fMRIPrep'].get_spaces())   
+    subjects = config.get("subjects")
+    task = config.get("task")
+    run = config.get("run")
+    session = config.get("session")
+    space = config.get("space")   
 
     # Select the functional, confound and metadata files
     func_files = layout.derivatives['fMRIPrep'].get(
@@ -535,13 +568,14 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         raise FileNotFoundError("No confound files found")
     if len(func_files) != len(confound_files):
         raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and confound_files {len(confound_files)}")
-
     # Todo: add more consistency checks
 
     print(f"Found {len(func_files)} functional files")
 
     # Choose the first functional file as the reference for alignment
-    reference_func_file = load_img(config.get("reference_functional_file", func_files[0]))
+    if config.get("reference_function_file") == "first_functional_file":
+        config["reference_function_file"] = func_files[0]
+    reference_func_file = load_img(config.get("reference_functional_file"))
 
     # Resample all functional files to the reference image
     resampled_files = resample_to_reference(layout, func_files, reference_func_file)
@@ -623,6 +657,9 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Load config
     config = load_config(config)
     
+    # Set unspecified config options to default values
+    config = set_unspecified_group_level_options_to_default(config)
+    
     # Save config file for reproducibility
     # Todo: make filename for config file BIDS compliant
     derivatives_dir = Path(derivatives_dir)
@@ -638,13 +675,13 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     group2_subjects = config['group2_subjects']
     
     # Retrieve connectivity type and other configuration parameters
-    connectivity_type = config['connectivity_measure']
-    method = config['method']
-    task = config.get("task", "restingstate")
-    run = config.get("run", None)
-    session = config.get("session", None)
-    space = config.get("space", "MNI152NLin2009cAsym")
-    analysis_type = config.get("analysis_type", "independent")  # Options: 'independent' or 'paired'
+    connectivity_type = config.get('connectivity_measure')
+    method = config.get('method')
+    task = config.get("task")
+    run = config.get("run")
+    session = config.get("session")
+    space = config.get("space")
+    analysis_type = config.get("analysis_type")
     
     entities = {
         "task": task,
@@ -705,31 +742,32 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         t_stats, p_values = ttest_rel(group1_data, group2_data, axis=0)
     else:
         raise ValueError(f"Unknown analysis type: {analysis_type}")
-    
+        
     # Threshold 1: Uncorrected p-value
-    p_uncorr_threshold = config.get("uncorrected_threshold", 0.001)
+    p_uncorr_threshold = config["uncorrected_alpha"]
     uncorr_mask = p_values < p_uncorr_threshold
 
     # Threshold 2: FDR correction
-    fdr_threshold = config.get("fdr_threshold", 0.05)
+    fdr_threshold = config["fdr_alpha"]
     fdr_mask = multipletests(p_values.flatten(), alpha=fdr_threshold, method='fdr_bh')[0].reshape(p_values.shape)
 
     # Threshold 3: Permutation-based threshold
-    n_permutations = config.get("n_permutations", 10000)
+    n_permutations = config["n_permutations"]
     null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group1_data, group2_data, config, layout, entities)
     
     # Compute thresholds at desired significance
-    alpha = float(config.get("fwe_alpha", "0.05"))
-    t_max = np.percentile(null_max_distribution, (1 - alpha / 2) * 100)
-    t_min = np.percentile(null_min_distribution, alpha / 2 * 100)
+    fwe_alpha = float(config["fwe_alpha"])
+    t_max = np.percentile(null_max_distribution, (1 - fwe_alpha / 2) * 100)
+    t_min = np.percentile(null_min_distribution, fwe_alpha / 2 * 100)
     print(f"Thresholds for max and min stat from null distribution estimated by permutations: {t_max} and {t_min} (n_perms = {n_permutations})")
     
     perm_mask = (t_stats > t_max) | (t_stats < t_min)
     
     # Save thresholds to a BIDS-compliant JSON file
     thresholds = {
-        "uncorrected_threshold": p_uncorr_threshold,
-        "fdr_threshold": fdr_threshold,
+        "uncorrected_alpha": p_uncorr_threshold,
+        "fdr_alpha": fdr_threshold,
+        "fwe_alpha": fwe_alpha,
         "permutation_thresholds": {
             "max_positive": t_max,
             "min_negative": t_min,
@@ -774,7 +812,6 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
             raise FileNotFoundError(f"Seeds file {seed_file_path} not found")
     # ICA-based extraction
     elif method == 'ica':
-        raise ValueError("Group level analysis with method ICA still under development.")
         # Todo: test the following lines
         extracted_regions_entities = entities.copy()
         extracted_regions_entities.pop("desc")
