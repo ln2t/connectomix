@@ -823,8 +823,8 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     print(f"Found {len(func_files)} functional files")
 
     # Choose the first functional file as the reference for alignment
-    if config.get("reference_function_file") == "first_functional_file":
-        config["reference_function_file"] = func_files[0]
+    if config.get("reference_functional_file") == "first_functional_file":
+        config["reference_functional_file"] = func_files[0]
     reference_func_file = load_img(config.get("reference_functional_file"))
 
     # Resample all functional files to the reference image
@@ -1166,13 +1166,13 @@ connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connec
 # fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
 # connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_9P"
 
-create_participant_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
-create_group_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
+# create_participant_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
+# create_group_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
 
 # Subject groupings: CTL, FDA, FDAcog, FDAnoncog
 CTL = ["CTL01","CTL02","CTL03","CTL04","CTL05","CTL06","CTL07","CTL08","CTL09","CTL10","CTL11","CTL12","CTL14","CTL15","CTL16","CTL17","CTL18","CTL19","CTL20","CTL21","CTL22","CTL23","CTL24","CTL25","CTL26","CTL27","CTL28","CTL29"]
 FDAnoncog = ["FDA03", "FDA04", "FDA05", "FDA06", "FDA12", "FDA20", "FDA23", "FDA24", "FDA25", "FDA26", "FDA28", "FDA29"]
-FDAcog = ["FDA01", "FDA02", "FDA07", "FDA08", "FDA09", "FDA10", "FDA11", "FDA13", "FDA15", "FDA16", "FDA19", "FDA22", "FDA27", "FDA30"]
+FDAcog = ["FDA01", "FDA02", "FDA07", "FDA08", "FDA09", "FDA10", "FDA11", "FDA13", "FDA15", "FDA16", "FDA17", "FDA18", "FDA19", "FDA22", "FDA27", "FDA30"]
 FDA = [*FDAcog, *FDAnoncog]
 n_permutations = 20
 
@@ -1245,11 +1245,11 @@ config["comparison_label"] = "FDAcogvsFDAnoncog"
 config = {}
 config["method"] = "roi"
 config["method_options"] = {}
-# config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
-config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+# config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 config["method_options"]["radius"] = "5"
-# config["connectivity_measure"] = "correlation"
-config["connectivity_measure"] = "covariance"
+config["connectivity_measure"] = "correlation"
+# config["connectivity_measure"] = "covariance"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
@@ -1267,11 +1267,11 @@ participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 config = {}
 config["method"] = "roi"
 config["method_options"] = {}
-# config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
-config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
+# config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 config["method_options"]["radius"] = "5"
-# config["connectivity_measure"] = "correlation"
-config["connectivity_measure"] = "covariance"
+config["connectivity_measure"] = "correlation"
+# config["connectivity_measure"] = "covariance"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
@@ -1280,14 +1280,14 @@ config["n_permutations"] = n_permutations
 # -- CTL versus FDA
 config["group1_subjects"] = CTL
 config["group2_subjects"] = FDA
-config["uncorrected_threshold"] = 0.05
+config["uncorrected_threshold"] = 0.001
 config["comparison_label"] = "CTLvsFDA"
 group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
 # -- FDAcog versus FDAnoncog
 config["group1_subjects"] = FDAcog
 config["group2_subjects"] = FDAnoncog
-config["uncorrected_threshold"] = 0.05
+config["uncorrected_threshold"] = 0.001
 config["comparison_label"] = "FDAcogvsFDAnoncog"
 group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
