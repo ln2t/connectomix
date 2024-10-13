@@ -623,25 +623,25 @@ def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, confi
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
                                                       "method": config["method"],
-                                                      "alpha": config["uncorrected_alpha"]
+                                                      "alpha": str(config["uncorrected_alpha"]).replace('.', 'dot')
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_uncorrmatrix.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_uncorrmatrix.svg"],
                                                  validate=False)
     
     fn_fdr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
                                                       "method": config["method"],
-                                                      "alpha": config["fdr_alpha"]                                                
+                                                      "alpha": str(config["fdr_alpha"]).replace('.', 'dot')
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_fdrmatrix.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_fdrmatrix.svg"],
                                                  validate=False)
     
     fn_fwe = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
                                                       "method": config["method"],
-                                                      "alpha": config["fwe_alpha"]                                                    
+                                                      "alpha": str(config["fwe_alpha"]).replace('.', 'dot')
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_fwematrix.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_fwematrix.svg"],
                                                  validate=False)
     
     # Todo: add more details in plot titles
@@ -671,25 +671,25 @@ def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, c
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
                                                       "method": config["method"]   ,
-                                                      "alpha": config["uncorrected_alpha"]                                                   
+                                                      "alpha": str(config["uncorrected_alpha"]).replace('.', 'dot')
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_uncorrconnectome.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_uncorrconnectome.svg"],
                                                  validate=False)
     
     fn_fdr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
                                                       "method": config["method"] ,
-                                                      "alpha": config["fdr_alpha"]                                                       
+                                                      "alpha": str(config["fdr_alpha"]).replace('.', 'dot')
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_fdrconnectome.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_fdrconnectome.svg"],
                                                  validate=False)
     
     fn_fwe = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
                                                       "method": config["method"] ,
-                                                      "alpha": config["fwe_alpha"]                                                     
+                                                      "alpha": str(config["fwe_alpha"]).replace('.', 'dot')
                                                       },
-                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{str(alpha)}_fweconnectome.svg"],
+                                                 path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_fweconnectome.svg"],
                                                  validate=False)
     
     # Todo: add more details in plot titles
@@ -744,6 +744,7 @@ def set_unspecified_group_level_options_to_default(config):
 
 # Participant-level analysis
 def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
+    # Todo: add an 'overwrite' argument to recompute everything even if files exist
     # Print version information
     print(f"Running connectomix (Participant-level) version {__version__}")
 
@@ -873,6 +874,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         for connectivity_type in connectivity_types:
             print(f"Computing connectivity: {connectivity_type}")
             # Compute connectivity
+            # Todo: skip connectivity measure if files already present
             connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
             conn_matrix = connectivity_measure.fit_transform([timeseries])[0]
             
@@ -1172,7 +1174,7 @@ connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connec
 # Subject groupings: CTL, FDA, FDAcog, FDAnoncog
 CTL = ["CTL01","CTL02","CTL03","CTL04","CTL05","CTL06","CTL07","CTL08","CTL09","CTL10","CTL11","CTL12","CTL14","CTL15","CTL16","CTL17","CTL18","CTL19","CTL20","CTL21","CTL22","CTL23","CTL24","CTL25","CTL26","CTL27","CTL28","CTL29"]
 FDAnoncog = ["FDA03", "FDA04", "FDA05", "FDA06", "FDA12", "FDA20", "FDA23", "FDA24", "FDA25", "FDA26", "FDA28", "FDA29"]
-FDAcog = ["FDA01", "FDA02", "FDA07", "FDA08", "FDA09", "FDA10", "FDA11", "FDA13", "FDA15", "FDA16", "FDA17", "FDA18", "FDA19", "FDA22", "FDA27", "FDA30"]
+FDAcog = ["FDA01", "FDA02", "FDA07", "FDA08", "FDA09", "FDA10", "FDA11", "FDA13", "FDA15", "FDA16", "FDA19", "FDA22", "FDA27", "FDA30"]
 FDA = [*FDAcog, *FDAnoncog]
 n_permutations = 20
 
@@ -1261,7 +1263,7 @@ config["space"] = "MNI152NLin2009cAsym"
 config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z',
                               'rot_x', 'rot_y', 'rot_z',
                               'global_signal', 'white_matter']
-participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+# participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
 # - group-level
 config = {}
@@ -1280,14 +1282,14 @@ config["n_permutations"] = n_permutations
 # -- CTL versus FDA
 config["group1_subjects"] = CTL
 config["group2_subjects"] = FDA
-config["uncorrected_threshold"] = 0.001
+config["uncorrected_threshold"] = 0.05
 config["comparison_label"] = "CTLvsFDA"
 group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
 # -- FDAcog versus FDAnoncog
 config["group1_subjects"] = FDAcog
 config["group2_subjects"] = FDAnoncog
-config["uncorrected_threshold"] = 0.001
+config["uncorrected_threshold"] = 0.05
 config["comparison_label"] = "FDAcogvsFDAnoncog"
 group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
