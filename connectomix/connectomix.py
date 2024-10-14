@@ -105,7 +105,7 @@ method_options:
     """
     
     # Build filenames for each output
-    yaml_file = Path(derivatives_dir) / 'default_participant_level_config.yaml'
+    yaml_file = Path(derivatives_dir) / 'config' / 'default_participant_level_config.yaml'
     
     ensure_directory(yaml_file)
     
@@ -212,7 +212,7 @@ method: atlas # Method to determine ROIs to compute variance. Uses the Schaeffer
     """
     
     # Build filenames for each output
-    yaml_file = Path(derivatives_dir) / 'default_group_level_config.yaml'
+    yaml_file = Path(derivatives_dir) / 'config' / 'default_group_level_config.yaml'
     
     ensure_directory(yaml_file)
     
@@ -284,6 +284,8 @@ def create_dataset_description(output_dir):
 
 # Function to copy config to path
 def save_copy_of_config(config, path):
+    # First make sure destination is valid
+    ensure_directory(path)
     # If config is a str, assume it is a path and copy
     if isinstance(config, str):
         shutil.copy(config, path)
@@ -418,8 +420,8 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         # Drop the first entry which is always the Background label. Not necessary for Schaefer2018 atlas
         # labels = labels[1:]
     
-    # ROI-based extraction
-    elif method == 'roi':
+    # seeds-based extraction
+    elif method == 'seeds':
         # Read seed labels and coordinates from file
         if os.path.isfile(method_options['seeds_file']):
             with open(method_options['seeds_file']) as seed_file:
@@ -534,7 +536,7 @@ def generate_permuted_null_distributions(group1_data, group2_data, config, layou
     n_permutations = config.get("n_permutations")
     
     # Load pre-existing permuted data, if any
-    # Todo: there is bug here as it takes files from ICA when running ROI method. DONE but UNTESTED
+    # Todo: there is bug here as it takes files from ICA when running seeds method. DONE but UNTESTED
     perm_files = layout.derivatives["connectomix"].get(extension=".npy",
                                           suffix="permutations",
                                           return_type='filename')
@@ -723,7 +725,7 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
     if config.get("method") == 'atlas':
         config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
-    if config.get("method") == 'roi':
+    if config.get("method") == 'seeds':
         config["method_options"]["radius"] = config["method_options"].get("radius", 5)
     config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.008)    
     config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.1)
@@ -767,10 +769,10 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Get the current date and time
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
-    # Save a copy of the config file to the output directory
-    # Todo: test date and time addition to filename, also in console print
-    save_copy_of_config(config, derivatives_dir / f"participant_level_config_{timestamp}.json")
-    print(f"Configuration file saved to {derivatives_dir / 'participant_level_config_{timestamp}.json'}")
+    # Save a copy of the config file to the config directory
+    config_filename = derivatives_dir / "config" / "backups" / f"participant_level_config_{timestamp}.json"
+    save_copy_of_config(config, config_filename)
+    print(f"Configuration file saved to {config_filename}")
         
     # Get subjects, task, session, run and space from config file    
     subjects = config.get("subjects")
@@ -916,12 +918,11 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
     # Save config file for reproducibility
-    # Todo: make filename for config file BIDS compliant
-    # Todo: test date and time addition to filename, also in console print
     derivatives_dir = Path(derivatives_dir)
     derivatives_dir.mkdir(parents=True, exist_ok=True)
-    save_copy_of_config(config, derivatives_dir / f"group_level_config_{timestamp}.json")
-    print(f"Configuration file saved to {derivatives_dir / 'group_level_config_{timestamp}.json'}")
+    config_filename = derivatives_dir / "config" / "backups" / f"group_level_config_{timestamp}.json"
+    save_copy_of_config(config, config_filename)
+    print(f"Configuration file saved to {config_filename}")
 
     # Create a BIDSLayout to handle files and outputs
     layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
@@ -1054,7 +1055,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         # labels=labels[1:] # not needed for Schaefer2018 atlas
         # Grab center coordinates for atlas labels
         coords = find_parcellation_cut_coords(labels_img=atlas['maps'])
-    elif method == 'roi':
+    elif method == 'seeds':
         # Read seed labels and coordinates from file
         seed_file_path = config['method_options']['seeds_file']
         if os.path.isfile(seed_file_path):
@@ -1117,7 +1118,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 # config["space"] = "MNI152NLin2009cAsym"
 
 # config = {}
-# config["method"] = "roi"
+# config["method"] = "seeds"
 # config["method_options"] = {}
 # config["method_options"]["seeds_file"] = "/home/arovai/git/arovai/connectomix/connectomix/seeds/brain_and_cerebellum_seeds.tsv"
 # config["method_options"]["radius"] = "5"
@@ -1168,8 +1169,11 @@ connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connec
 # fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
 # connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_9P"
 
-# create_participant_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
-# create_group_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
+create_participant_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
+create_group_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
+
+config_file = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
+participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config_file)
 
 # Subject groupings: CTL, FDA, FDAcog, FDAnoncog
 CTL = ["CTL01","CTL02","CTL03","CTL04","CTL05","CTL06","CTL07","CTL08","CTL09","CTL10","CTL11","CTL12","CTL14","CTL15","CTL16","CTL17","CTL18","CTL19","CTL20","CTL21","CTL22","CTL23","CTL24","CTL25","CTL26","CTL27","CTL28","CTL29"]
@@ -1242,10 +1246,10 @@ config["group2_subjects"] = FDAnoncog
 config["comparison_label"] = "FDAcogvsFDAnoncog"
 # group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
-# Rois
+# Seeds
 # - participant-level
 config = {}
-config["method"] = "roi"
+config["method"] = "seeds"
 config["method_options"] = {}
 config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 # config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
@@ -1267,7 +1271,7 @@ config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z',
 
 # - group-level
 config = {}
-config["method"] = "roi"
+config["method"] = "seeds"
 config["method_options"] = {}
 config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 # config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
@@ -1291,7 +1295,7 @@ config["group1_subjects"] = FDAcog
 config["group2_subjects"] = FDAnoncog
 config["uncorrected_threshold"] = 0.05
 config["comparison_label"] = "FDAcogvsFDAnoncog"
-group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
 
 
 
