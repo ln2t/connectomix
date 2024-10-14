@@ -34,9 +34,10 @@ from datetime import datetime
 # Define the version number
 __version__ = "1.0.0"
 
+# Todo: create reprots with nireports
+
 ## Helper functions
 
-# Todo: add a "helper" function to generate template config files with subject labels, tasks, and so on. DONE but UNTESTED
 # Todo: to generate the default configuration files, use the actual functions setting configuration to it's default values! (both for participant and group level)
 # Helper function to create default configuration file based on what the dataset contains at participant level
 def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmriprep_dir):
@@ -117,7 +118,7 @@ method_options:
 
 
 # Helper function to create default configuration file based on what the dataset contains at group level
-def create_group_level_default_config_file(bids_dir, derivatives_dir, fmriprep_dir):
+def create_group_level_default_config_file(bids_dir, derivatives_dir):
     """
     Create default configuration file in YAML format for default parameters, at group level.
 
@@ -127,7 +128,7 @@ def create_group_level_default_config_file(bids_dir, derivatives_dir, fmriprep_d
     print("Generating default configuration file for default parameters, please wait while the dataset is explored...")
 
     # Create a BIDSLayout to parse the BIDS dataset
-    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
+    layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
     
     # Extract subject, task, run, session, and space information from BIDSLayout
     tasks = layout.get_tasks()
@@ -143,7 +144,7 @@ def create_group_level_default_config_file(bids_dir, derivatives_dir, fmriprep_d
     
     runs = layout.get_runs()
     if len(runs) == 0:
-        run = None
+        run = 'null'
     else:
         run = runs[0]
     if len(runs) > 1:
@@ -209,6 +210,10 @@ connectivity_kind: correlation
 
 # Method used at participant-level
 method: atlas # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
+
+# Method-specific options
+method_options:
+    n_rois: 100  # Number of ROIs 
     """
     
     # Build filenames for each output
@@ -222,7 +227,6 @@ method: atlas # Method to determine ROIs to compute variance. Uses the Schaeffer
 
     print(f"Default YAML configuration file saved at {yaml_file}. Go to github.com/ln2t/connectomix for more details.")
 
-# Todo: allow config file to be a yml as well as a json DONE, UNTESTED
 # Helper function to load the configuration file
 def load_config(config):
     if isinstance(config, str):
@@ -246,7 +250,6 @@ def load_config(config):
         return config
     else:
         raise TypeError(f"Wrong configuration data {config}. Must provide either path (to .json or .yaml or .yml) or dict.")
-        return {}
 
 # Helper function to select confounds
 def select_confounds(confounds_file, config):
@@ -373,7 +376,6 @@ def resample_to_reference(layout, func_files, reference_img):
             img = load_img(func_file)
             # We round the affine as sometimes there are mismatch (small numerical errors?) in fMRIPrep's output
             img = Nifti1Image(img.get_fdata(), affine=np.round(img.affine, 2), header=img.header)
-            #todo: check if resampling is necessary by comparing affine and grid. If not, just copy the file. DONE, UNTESTED
             if check_affines_match(img, reference_img):
                 resampled_img = img
             else:
@@ -398,10 +400,6 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
     # Atlas-based extraction
     if method == 'atlas':
         # Load the default atlas and inform user
-        
-        #atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
-        #warnings.warn("Using Harvard-Oxford atlas cort-maxprob-thr25-1mm.")
-        # Todo: put this in config file DONE, UNTESTED
         n_rois = method_options.get("n_rois")
         atlas = datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
         warnings.warn(f"Using Schaefer 2018 atlas with {n_rois} rois")
@@ -536,7 +534,6 @@ def generate_permuted_null_distributions(group1_data, group2_data, config, layou
     n_permutations = config.get("n_permutations")
     
     # Load pre-existing permuted data, if any
-    # Todo: there is bug here as it takes files from ICA when running seeds method. DONE but UNTESTED
     perm_files = layout.derivatives["connectomix"].get(extension=".npy",
                                           suffix="permutations",
                                           return_type='filename')
@@ -620,8 +617,6 @@ def stat_func(x, y, axis=0):
 # Helper function to create and save matrix plots for each thresholding strategy
 def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, labels=None):    
         
-    # Todo: save sidecar json file with alpha-thresholds
-    # Todo: test new names with alpha level
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
                                                       "method": config["method"],
@@ -835,7 +830,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     print("All functional files resampled to match the reference image.")
 
     # Set up connectivity measures
-    connectivity_types = config['connectivity_measure']
+    connectivity_types = config['connectivity_kind']
     if isinstance(connectivity_types, str):
         connectivity_types = [connectivity_types]
     elif not isinstance(connectivity_types, list):
@@ -875,7 +870,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         # Iterate over each connectivity type
         for connectivity_type in connectivity_types:
             print(f"Computing connectivity: {connectivity_type}")
-            # Compute connectivity
+            # Compute connectivityconnectivity_measure
             # Todo: skip connectivity measure if files already present
             connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
             conn_matrix = connectivity_measure.fit_transform([timeseries])[0]
@@ -903,7 +898,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     print("Participant-level analysis completed.")
 
 # Group-level analysis
-def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
+def group_level_analysis(bids_dir, derivatives_dir, config):
     # Todo: implement correlation of connectivity with vector of scores like age, behavioural score etc including confounds
     # Print version information
     print(f"Running connectomix (Group-level) version {__version__}")
@@ -925,14 +920,14 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     print(f"Configuration file saved to {config_filename}")
 
     # Create a BIDSLayout to handle files and outputs
-    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
+    layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
     
     # Load group specifications from config
     group1_subjects = config['group1_subjects']
     group2_subjects = config['group2_subjects']
     
     # Retrieve connectivity type and other configuration parameters
-    connectivity_type = config.get('connectivity_measure')
+    connectivity_type = config.get('connectivity_kind')
     method = config.get('method')
     task = config.get("task")
     run = config.get("run")
@@ -1100,7 +1095,50 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
                                     entities,
                                     coords)
     print("Group-level analysis completed.")
+
+# Main function with subcommands for participant and group analysis
+def main():
+    parser = argparse.ArgumentParser(description="Connectomix: Functional Connectivity from fMRIPrep outputs using BIDS structure")
     
+    # Define positional arguments for bids_dir, derivatives_dir, and analysis_level
+    parser.add_argument('bids_dir', type=str, help='BIDS root directory containing the dataset.')
+    parser.add_argument('derivatives_dir', type=str, help='Directory where to store the outputs.')
+    parser.add_argument('analysis_level', choices=['participant', 'group'], help="Analysis level: either 'participant' or 'group'.")
+    
+    # Define optional arguments that apply to both analysis levels
+    parser.add_argument('--fmriprep_dir', type=str, help='Directory where fMRIPrep outputs are stored.')
+    parser.add_argument('--config', type=str, help='Path to the configuration file.')
+    parser.add_argument('--participant_label', type=str, help='Participant label to process (e.g., "sub-01").')
+    parser.add_argument('--helper', help='Helper function to write default configuration files.', action='store_true')
+
+    args = parser.parse_args()
+
+    # Run the appropriate analysis level
+    if args.analysis_level == 'participant':
+        
+        # Check if fMRIPrep directory must be guessed and if yes, if it exists.
+        if not args.fmriprep_dir:
+            args.fmriprep_dir = Path(args.bids_dir) / 'derivatives' / 'fmriprep'
+            if not Path(args.fmriprep_dir).exists():
+                raise FileNotFoundError(f"fMRIPrep directory {args.fmriprep_dir} not found. Use --fmriprep_dir option to specify path manually.")
+        
+        # First check if only helper function must be called
+        if args.helper:
+            create_participant_level_default_config_file(args.bids_dir, args.derivatives_dir, args.fmriprep_dir)
+        else:
+            participant_level_analysis(args.bids_dir, args.derivatives_dir, args.fmriprep_dir, args.config)
+    elif args.analysis_level == 'group':
+        # First check if only helper function must be called
+        if args.helper:
+            create_group_level_default_config_file(args.bids_dir, args.derivatives_dir)
+        else:
+            group_level_analysis(args.bids_dir, args.derivatives_dir, args.config)
+
+if __name__ == '__main__':
+    main()
+    
+exit()
+
 # bids_dir = "/data/ds005418"
 # fmriprep_dir = "/data/ds005418/derivatives/fmriprep_v21.0.4"
 # connectomix_dir = "/data/ds005418/derivatives/connectomix_dev"
@@ -1112,7 +1150,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 # config = {}
 # config["method"] = "ica"
 # config["method_options"] = {}
-# config["connectivity_measure"] = "correlation"
+# config["connectivity_kind"] = "correlation"
 # config["session"] = "1"
 # config["task"] = "restingstate"
 # config["space"] = "MNI152NLin2009cAsym"
@@ -1122,7 +1160,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 # config["method_options"] = {}
 # config["method_options"]["seeds_file"] = "/home/arovai/git/arovai/connectomix/connectomix/seeds/brain_and_cerebellum_seeds.tsv"
 # config["method_options"]["radius"] = "5"
-# config["connectivity_measure"] = "correlation"
+# config["connectivity_kind"] = "correlation"
 # #config["session"] = "1"
 # config["task"] = "restingstate"
 # config["space"] = "MNI152NLin2009cAsym"
@@ -1132,7 +1170,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 
 # config = {}
 # config["method"] = "atlas"
-# config["connectivity_measure"] = "correlation"
+# config["connectivity_kind"] = "correlation"
 # # config["session"] = "1"
 # config["task"] = "restingstate"
 # config["space"] = "MNI152NLin2009cAsym"
@@ -1145,7 +1183,7 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 
 # config = {}
 # config["method"] = "atlas"
-# config["connectivity_measure"] = "correlation"
+# config["connectivity_kind"] = "correlation"
 # #config["session"] = "1"
 # config["task"] = "restingstate"
 # config["space"] = "MNI152NLin2009cAsym"
@@ -1161,19 +1199,23 @@ def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
 # Todo: set-up CLI
 
 ## Analysis for the Hilarious_Mosquito dataset
-bids_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
-fmriprep_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
-connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
+# bids_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
+# fmriprep_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
+# connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
 
-# bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
-# fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
-# connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_9P"
+bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
+fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
+connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
 
 create_participant_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
 create_group_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
 
-config_file = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
-participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config_file)
+# config_file = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
+# config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
+# participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config_file)
+ 
+config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_group_level_config.yaml"
+group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config_file)
 
 # Subject groupings: CTL, FDA, FDAcog, FDAnoncog
 CTL = ["CTL01","CTL02","CTL03","CTL04","CTL05","CTL06","CTL07","CTL08","CTL09","CTL10","CTL11","CTL12","CTL14","CTL15","CTL16","CTL17","CTL18","CTL19","CTL20","CTL21","CTL22","CTL23","CTL24","CTL25","CTL26","CTL27","CTL28","CTL29"]
@@ -1188,7 +1230,7 @@ n_permutations = 20
 # - participant-level
 config = {}
 config["method"] = "ica"
-config["connectivity_measure"] = "correlation"
+config["connectivity_kind"] = "correlation"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
@@ -1197,7 +1239,7 @@ config["space"] = "MNI152NLin2009cAsym"
 # - group-level WORK IN PROGRESS
 config = {}
 config["method"] = "ica"
-config["connectivity_measure"] = "correlation"
+config["connectivity_kind"] = "correlation"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
@@ -1219,7 +1261,7 @@ config["comparison_label"] = "FDAcogvsFDAnoncog"
 # - participant-level
 config = {}
 config["method"] = "atlas"
-config["connectivity_measure"] = "correlation"
+config["connectivity_kind"] = "correlation"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
@@ -1228,7 +1270,7 @@ config["space"] = "MNI152NLin2009cAsym"
 # - group-level
 config = {}
 config["method"] = "atlas"
-config["connectivity_measure"] = "correlation"
+config["connectivity_kind"] = "correlation"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
@@ -1254,8 +1296,8 @@ config["method_options"] = {}
 config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 # config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 config["method_options"]["radius"] = "5"
-config["connectivity_measure"] = "correlation"
-# config["connectivity_measure"] = "covariance"
+config["connectivity_kind"] = "correlation"
+# config["connectivity_kind"] = "covariance"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
@@ -1276,8 +1318,8 @@ config["method_options"] = {}
 config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 # config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
 config["method_options"]["radius"] = "5"
-config["connectivity_measure"] = "correlation"
-# config["connectivity_measure"] = "covariance"
+config["connectivity_kind"] = "correlation"
+# config["connectivity_kind"] = "covariance"
 config["session"] = "1"
 config["task"] = "restingstate"
 config["space"] = "MNI152NLin2009cAsym"
