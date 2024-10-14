@@ -24,21 +24,20 @@ from nilearn.regions import RegionExtractor
 from nilearn import datasets
 from bids import BIDSLayout
 import csv
+import hashlib
 from pathlib import Path
 import matplotlib.pyplot as plt
 from scipy.stats import ttest_ind, ttest_rel, permutation_test
 from statsmodels.stats.multitest import multipletests
-import hashlib
 from datetime import datetime
 
 # Define the version number
 __version__ = "1.0.0"
 
-# Todo: create reprots with nireports
+# Todo: create reports with nireports
 
 ## Helper functions
 
-# Todo: to generate the default configuration files, use the actual functions setting configuration to it's default values! (both for participant and group level)
 # Helper function to create default configuration file based on what the dataset contains at participant level
 def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmriprep_dir):
     """
@@ -59,12 +58,8 @@ def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmri
     # Create a BIDSLayout to parse the BIDS dataset
     layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
     
-    # Extract subject, task, run, session, and space information from BIDSLayout
-    subjects = layout.get_subjects()
-    tasks = layout.get_tasks()
-    runs = layout.get_runs()
-    sessions = layout.get_sessions()
-    spaces = layout.get_spaces()
+    # Load all default values in config file
+    config = set_unspecified_participant_level_options_to_default({}, layout)
 
     # Prepare the YAML content with comments
     yaml_content_with_comments = f"""\
@@ -73,36 +68,37 @@ def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmri
 # Full documentation is located at github.com/ln2t/connectomix
 # All parameters are set to their default value for the dataset located at
 # {bids_dir}
+# Important note: more parameters can be tuned than those shown here, this is only a starting point.
 
 # List of subjects
-subjects: {subjects}
+subjects: {config.get("subjects")}
 
 # List of tasks
-tasks: {tasks}
+tasks: {config.get("task")}
 
 # List of runs
-runs: {runs}
+runs: {config.get("run")}
 
 # List of sessions
-sessions: {sessions}
+sessions: {config.get("session")}
 
 # List of output spaces
-spaces: {spaces}
+spaces: {config.get("space")}
 
 # Confounding variables to include when extracting timeseries. Choose from confounds computed from fMRIPrep.
-confound_columns: ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
+confound_columns: {config.get("confound_columns")}
 
 # Kind of connectivity measure to compute
-connectivity_kind: correlation  # Choose from covariance, correlation, partial correlation or precision. This option is passed to nilearn.connectome.ConnectivityMeasure.
+connectivity_kind: {config.get("connectivity_kind")}  # Choose from covariance, correlation, partial correlation or precision. This option is passed to nilearn.connectome.ConnectivityMeasure.
 
 # Method to define regions of interests to compute connectivity
-method: atlas # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
+method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
   
 # Method-specific options
 method_options:
-    n_rois: 100  # Number of ROIs in the atlas to consider. This option is passed to nilearn.datasets.fetch_atlas_schaefer_2018.    
-    high_pass: 0.008 # High-pass filtering, in Hz, applied to BOLD data. Low (<0.008 Hz) values does minimal changes to the signal, while high (>0.01) values improves sensitivity.
-    low_pass: 0.1 # Low-pass filtering, in Hz, applied to BOLD data. High (>0.1 Hz) values does minimal changes to the signal, while low (< 0.08 Hz)values improves specificity.
+    n_rois: {config["method_options"].get("n_rois")}  # Number of ROIs in the atlas to consider. This option is passed to nilearn.datasets.fetch_atlas_schaefer_2018.    
+    high_pass: {config["method_options"].get("high_pass")} # High-pass filtering, in Hz, applied to BOLD data. Low (<0.008 Hz) values does minimal changes to the signal, while high (>0.01) values improves sensitivity.
+    low_pass: {config["method_options"].get("low_pass")} # Low-pass filtering, in Hz, applied to BOLD data. High (>0.1 Hz) values does minimal changes to the signal, while low (< 0.08 Hz)values improves specificity.
     """
     
     # Build filenames for each output
@@ -115,7 +111,8 @@ method_options:
         yaml_out.write(yaml_content_with_comments)
 
     print(f"Default YAML configuration file saved at {yaml_file}. Go to github.com/ln2t/connectomix for more details.")
-
+    print("See also below for the output:")
+    print(yaml_content_with_comments)
 
 # Helper function to create default configuration file based on what the dataset contains at group level
 def create_group_level_default_config_file(bids_dir, derivatives_dir):
@@ -124,57 +121,21 @@ def create_group_level_default_config_file(bids_dir, derivatives_dir):
 
     """
 
-    # Print some stuff for the primate using this function
-    print("Generating default configuration file for default parameters, please wait while the dataset is explored...")
-
     # Create a BIDSLayout to parse the BIDS dataset
     layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
+
+    # Print some stuff for the primate using this function
+    print("Generating default configuration file for default parameters, please wait while the dataset is explored...")   
     
-    # Extract subject, task, run, session, and space information from BIDSLayout
-    tasks = layout.get_tasks()
-    if len(tasks) == 0:
-        raise ValueError("No task found in dataset! Are you sure it is BIDS valid?")
-    if "restingstate" in tasks:
-        task = "restingstate"
-    elif "rs" in tasks:
-        task = "rs"
-    else:
-        warnings.warn(f"There is not obvious choice for taskname. All tasks found are {tasks}. Defaulting to {tasks[0]}")
-        task = tasks[0]
-    
-    runs = layout.get_runs()
-    if len(runs) == 0:
-        run = 'null'
-    else:
-        run = runs[0]
-    if len(runs) > 1:
-        warnings.warn(f"Several runs found: {runs}. Defaulting to {runs[0]}")
-    
-    sessions = layout.get_sessions()
-    if len(sessions) == 0:
-        session = None
-    else:
-        session = sessions[0]
-    if len(sessions) > 1:
-        warnings.warn(f"Several sessions found: {sessions}. Defaulting to {sessions[0]}")
-        
-    spaces = layout.get_spaces()
-    if len(spaces) == 0:
-        raise ValueError("No space found in dataset! Are you sure it is BIDS valid?")
-    else:
-        if "MNI152NLin2009cAsym" in spaces:
-            space = "MNI152NLin2009cAsym"
-        else:
-            warnings.warn(f"There is not obvious choice for space. All spaces found are {spaces}. Defaulting to {spaces[0]}")
-            space = spaces[0]
-        
+    # Load default configuration
+    config = set_unspecified_group_level_options_to_default({}, layout)
+            
     # Prepare the YAML content with comments
     yaml_content_with_comments = f"""\
 # Connectomix Configuration File
 # This file is generated automatically. Please modify the parameters as needed.
 # Full documentation is located at github.com/ln2t/connectomix
-# All parameters are set to their default value for the dataset located at
-# {bids_dir}
+# All parameters are set to their plausible or default value
 # Fields flagged as 'FILL IN' must be edited manually.
 
 # Groups to compare
@@ -183,37 +144,37 @@ group2_subjects: []  # The list of subjects in the second group <----- FILL IN
 comparison_label: CUSTOMLABEL  # A custom label to distinguish different analysis (e.g. 'ControlsVersusPatients'). Do not use underscores of hyphens. <----- FILL IN
 
 # Type of statistical comparison
-analysis_type: independent  # Can be also set to 'paired' for two-sample paired t-tests
+analysis_type: {config.get("analysis_type")}  # Can be also set to 'paired' for two-sample paired t-tests
 
 # Statistical alpha-level thresholds
-uncorrected_alpha: 0.001  # Without multiple-comparison correction
-fdr_alpha: 0.05  # Used in the BH-FDR multiple-comparison correction method
-fwe_alpha: 0.05  # Used in the Family-Wise Error multiple-comparison correction method (maximum and minimum t-statistic distributions estimated from permutations of the data).
+uncorrected_alpha: {config.get("uncorrected_alpha")}  # Without multiple-comparison correction
+fdr_alpha: {config.get("fdr_alpha")}  # Used in the BH-FDR multiple-comparison correction method
+fwe_alpha: {config.get("fwe_alpha")}  # Used in the Family-Wise Error multiple-comparison correction method (maximum and minimum t-statistic distributions estimated from permutations of the data).
 
 # Number of permutations to estimate the null distributions
-n_permutations: 10000  # Can be set to a lower value for testing purposes (e.g. 30). If increased, computational time goes up.
+n_permutations: {config.get("n_permutations")}  # Can be set to a lower value for testing purposes (e.g. 30). If increased, computational time goes up.
 
 # Selected task
-task: {task}
+task: {config.get("task")}
 
 # Selected run
-run: {run}
+run: {config.get("run")}
 
 # Selected session
-session: {session}
+session: {config.get("session")}
 
 # Selected space
-space: {space}
+space: {config.get("space")}
 
 # Kind of connectivity used at participant-level
-connectivity_kind: correlation
+connectivity_kind: {config.get("connectivity_kind")}
 
 # Method used at participant-level
-method: atlas # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
+method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
 
 # Method-specific options
 method_options:
-    n_rois: 100  # Number of ROIs 
+    n_rois: {config["method_options"].get("n_rois")}  # Number of ROIs 
     """
     
     # Build filenames for each output
@@ -226,6 +187,8 @@ method_options:
         yaml_out.write(yaml_content_with_comments)
 
     print(f"Default YAML configuration file saved at {yaml_file}. Go to github.com/ln2t/connectomix for more details.")
+    print("See also below for the output:")
+    print(yaml_content_with_comments)
 
 # Helper function to load the configuration file
 def load_config(config):
@@ -254,12 +217,16 @@ def load_config(config):
 # Helper function to select confounds
 def select_confounds(confounds_file, config):
     confounds = pd.read_csv(confounds_file, delimiter='\t')
-    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
+    
+    # First check selected confound columns are valid names
     for confound_column in config.get("confound_columns"):
         if not confound_column in confounds.columns:
             raise ValueError(f"Confounds column {confound_column} is not a valid confound name.")
-    selected_confounds = confounds[config.get("confound_columns", default_confound_columns)]
-    # Todo: check that provided columns exist in confounds DONE, UNTESTED
+            
+    # Select the confounds
+    selected_confounds = confounds[config.get("confound_columns")]
+    
+    # Deal with NaN in confound values
     # Todo: implement better method to deal with NaN's. Those are always present when taking derivatives of confounds and nilearn trows an error. Maybe a bug in nilearn? Open an issue?
     warnings.warn("If NaNs are present in the confounds, they are replaced by zero to ensure compatibility with nilearn. This is potentially very wrong.")
     selected_confounds = selected_confounds.fillna(0)
@@ -383,7 +350,7 @@ def resample_to_reference(layout, func_files, reference_img):
                 
             resampled_img.to_filename(resampled_path)
         else:
-            print(f"Functional file {resampled_path} already exist, skipping resampling.")
+            print(f"Functional file {os.path.basename(resampled_path)} already exist, skipping resampling.")
     return resampled_files
 
 # Extract time series based on specified method
@@ -414,9 +381,7 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
             low_pass=low_pass,
             t_r=t_r
         )
-        timeseries = masker.fit_transform(func_file, confounds=confounds.values)        
-        # Drop the first entry which is always the Background label. Not necessary for Schaefer2018 atlas
-        # labels = labels[1:]
+        timeseries = masker.fit_transform(func_file, confounds=confounds.values)
     
     # seeds-based extraction
     elif method == 'seeds':
@@ -446,6 +411,7 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
 
     # ICA-based extraction
     elif method == 'ica':
+        warnings.warn("ICA-based method is still unstable, use with caution.")
         extractor = method_options["extractor"]
         extractor.high_pass = high_pass
         extractor.low_pass  = low_pass
@@ -462,19 +428,19 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
 def compute_canica_components(func_filenames, layout, entities, options):
     # Build path to save canICA components
     # Todo: make this BIDS friendly. DONE, UNTESTED
-    canica_filename = layout.build_path(entities,
+    canica_filename = layout.derivatives['connectomix'].build_path(entities,
                       path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.nii.gz"],
                       validate=False)
-    canica_sidecar = layout.build_path(entities,
+    canica_sidecar = layout.derivatives['connectomix'].build_path(entities,
                      path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.json"],
                      validate=False)
-    extracted_regions_filename = layout.build_path(entities,
+    extracted_regions_filename = layout.derivatives['connectomix'].build_path(entities,
                       path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_extractedregions.nii.gz"],
                       validate=False)
-    extracted_regions_sidecar = layout.build_path(entities,
+    extracted_regions_sidecar = layout.derivatives['connectomix'].build_path(entities,
                       path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_extractedregions.json"],
                       validate=False)
-    
+        
     ensure_directory(canica_filename)
     ensure_directory(canica_sidecar)
     ensure_directory(extracted_regions_filename)
@@ -501,9 +467,10 @@ def compute_canica_components(func_filenames, layout, entities, options):
         canica.fit(func_filenames)
         
         # Save image to output filename
+        print(f"Saving canica components image to {canica_filename}")
         canica.components_img_.to_filename(canica_filename)
     else:
-        print(f"ICA component file {canica_filename} already exist, skipping computation.")
+        print(f"ICA component file {os.path.basename(canica_filename)} already exist, skipping computation.")
         
     # Extract also regions from the canica components for connectivity analysis
     extractor_options = dict(threshold=options.get('threshold', 0.5),
@@ -520,8 +487,12 @@ def compute_canica_components(func_filenames, layout, entities, options):
         **extractor_options
     )
     extractor.fit()
-    extractor.regions_img_.to_filename(extracted_regions_filename)
+    
     print(f"Number of ICA-based components extracted: {extractor.regions_img_.shape[-1]}")
+    
+    print(f"Saving extracted ROIs to {extracted_regions_filename}")
+    extractor.regions_img_.to_filename(extracted_regions_filename)
+    
     return canica_filename, extractor
 
 # Permutation testing with stat max thresholding
@@ -711,12 +682,15 @@ def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, c
 # Function to manage default group-level options
 def set_unspecified_participant_level_options_to_default(config, layout):
     config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
+    config["method"] = config.get("method", "atlas")
     config["method_options"] = config.get("method_options", {})
     config["subjects"] = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())
     config["task"] = config.get("task", layout.derivatives['fMRIPrep'].get_tasks())
     config["run"] = config.get("run", layout.derivatives['fMRIPrep'].get_runs())
     config["session"] = config.get("session", layout.derivatives['fMRIPrep'].get_sessions())
     config["space"] = config.get("space", layout.derivatives['fMRIPrep'].get_spaces())
+    if 'MNI152NLin2009cAsym' in config.get("space"):
+        config["space"] = ['MNI152NLin2009cAsym']
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
     if config.get("method") == 'atlas':
         config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
@@ -724,19 +698,31 @@ def set_unspecified_participant_level_options_to_default(config, layout):
         config["method_options"]["radius"] = config["method_options"].get("radius", 5)
     config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.008)    
     config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.1)
+
+    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
+    config["confound_columns"] = config.get("confound_columns", default_confound_columns)
+
     return config
 
 # Function to manage default group-level options
-def set_unspecified_group_level_options_to_default(config):
-    config["task"] = config.get("task", "restingstate")
-    config["run"] = config.get("run", None)
-    config["session"] = config.get("session", None)
-    config["space"] = config.get("space", "MNI152NLin2009cAsym")
+def set_unspecified_group_level_options_to_default(config, layout):
+    config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
+    config["task"] = config.get("task", "restingstate" if "restingstate" in layout.derivatives['connectomix'].get_tasks() else layout.derivatives['connectomix'].get_tasks())
+    config["run"] = config.get("run", "")
+    config["session"] = config.get("session", layout.derivatives['connectomix'].get_sessions())
+    config["space"] = config.get("space", "MNI152NLin2009cAsym" if "MNI152NLin2009cAsym" in layout.derivatives['connectomix'].get_spaces() else layout.derivatives['connectomix'].get_spaces())
     config["uncorrected_alpha"] = config.get("uncorrected_alpha", 0.001)
     config["fdr_alpha"] = config.get("fdr_alpha", 0.05)
     config["fwe_alpha"]= float(config.get("fwe_alpha", 0.05))
     config["n_permutations"] = config.get("n_permutations", 10000)
     config["analysis_type"]= config.get("analysis_type", "independent")  # Options: 'independent' or 'paired'
+    config["method"] = config.get("method", "atlas")
+    config["method_options"] = config.get("method_options", {})
+    if config.get("method") == 'atlas':
+        config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
+    if config.get("method") == 'seeds':
+        config["method_options"]["radius"] = config["method_options"].get("radius", 5)
+        
     return config
 
 # Participant-level analysis
@@ -818,7 +804,8 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and confound_files {len(confound_files)}")
     # Todo: add more consistency checks
 
-    print(f"Found {len(func_files)} functional files")
+    print(f"Found {len(func_files)} functional files:")
+    [print(os.path.basename(fn)) for fn in func_files]
 
     # Choose the first functional file as the reference for alignment
     if config.get("reference_functional_file") == "first_functional_file":
@@ -844,9 +831,13 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         
         # Compute CanICA and export path and extractor in options to be passed to compute time series
         config['method_options']['components'], config['method_options']['extractor'] = compute_canica_components(resampled_files,
-                                                                           canica_dir,
-                                                                           config["method_options"])
-
+                                                                                                                      layout,
+                                                                                                                      dict(task=task,
+                                                                                                                           run=run,
+                                                                                                                           session=session,
+                                                                                                                           space=space),
+                                                                                                                      config["method_options"])
+        
     # Iterate through each functional file
     for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
         # Print status
@@ -906,8 +897,11 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     # Load config
     config = load_config(config)
     
+    # Create a BIDSLayout to handle files and outputs
+    layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
+    
     # Set unspecified config options to default values
-    config = set_unspecified_group_level_options_to_default(config)
+    config = set_unspecified_group_level_options_to_default(config, layout)
     
     # Get the current date and time
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -918,9 +912,6 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     config_filename = derivatives_dir / "config" / "backups" / f"group_level_config_{timestamp}.json"
     save_copy_of_config(config, config_filename)
     print(f"Configuration file saved to {config_filename}")
-
-    # Create a BIDSLayout to handle files and outputs
-    layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
     
     # Load group specifications from config
     group1_subjects = config['group1_subjects']
@@ -959,7 +950,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         elif len(conn_files) == 1:
             group1_matrices.append(np.load(conn_files[0]))  # Load the match
         else:
-            raise ValueError(f"There are multiple matches for subject {subject}, review your configuration.")
+            raise ValueError(f"There are multiple matches for subject {subject}, review your configuration. Matches are {conn_files}")
             
     group2_matrices = []
     for subject in group2_subjects:
@@ -1065,7 +1056,9 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
             raise FileNotFoundError(f"Seeds file {seed_file_path} not found")
     # ICA-based extraction
     elif method == 'ica':
-        # Todo: test the following lines
+        # Todo: test the following lines - THERE IS BUG SOMEWHERE HERE!
+        raise ValueError("Method ICA at group level not finished, please come again later.s")
+        exit()
         extracted_regions_entities = entities.copy()
         extracted_regions_entities.pop("desc")
         extracted_regions_entities["suffix"] = "extractedregions"
@@ -1139,6 +1132,8 @@ if __name__ == '__main__':
     
 exit()
 
+# Clean what follows
+
 # bids_dir = "/data/ds005418"
 # fmriprep_dir = "/data/ds005418/derivatives/fmriprep_v21.0.4"
 # connectomix_dir = "/data/ds005418/derivatives/connectomix_dev"
@@ -1196,8 +1191,6 @@ exit()
 
 # group_level_analysis(bids_dir, "/data/ds005418/derivatives/connectomix_dev_schaefer2018", fmriprep_dir, config)
 
-# Todo: set-up CLI
-
 ## Analysis for the Hilarious_Mosquito dataset
 # bids_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
 # fmriprep_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
@@ -1208,7 +1201,7 @@ fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d
 connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
 
 create_participant_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
-create_group_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
+create_group_level_default_config_file(connectomix_dir)
 
 # config_file = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
 # config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
