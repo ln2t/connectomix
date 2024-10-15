@@ -612,30 +612,32 @@ def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, confi
                                                  path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_fwematrix.svg"],
                                                  validate=False)
     
-    # Todo: add more details in plot titles
+    uncorr_percentage = 100*float(config.get("uncorrected_alpha"))
+    uncorr_percentage = str(uncorr_percentage)
     plt.figure(figsize=(10, 10))
-    plot_matrix(t_stats * uncorr_mask, labels=labels, colorbar=True)
-    plt.title('Uncorrected Threshold')
+    plot_matrix(t_stats * uncorr_mask, labels=labels, colorbar=True, title=f"Uncorrected Threshold ({uncorr_percentage}%)")
     plt.savefig(fn_uncorr)
     plt.close()
-
+    
+    fdr_percentage = 100*float(config.get("fdr_alpha"))
+    fdr_percentage = str(fdr_percentage)
     plt.figure(figsize=(10, 10))
-    plot_matrix(t_stats * fdr_mask, labels=labels, colorbar=True)
-    plt.title('FDR Threshold')
+    plot_matrix(t_stats * fdr_mask, labels=labels, colorbar=True, title=f"FDR Threshold ({fdr_percentage}%)")
     plt.savefig(fn_fdr)
     plt.close()
 
+    fwe_percentage = 100*float(config.get("fwe_alpha"))
+    fwe_percentage = str(fwe_percentage)    
+    n_permutations = config.get("n_permutations")
+    n_permutations = str(n_permutations)
     plt.figure(figsize=(10, 10))
-    plot_matrix(t_stats * perm_mask, labels=labels, colorbar=True)
-    plt.title("Permutation-Based Threshold")
+    plot_matrix(t_stats * perm_mask, labels=labels, colorbar=True, title=f"Permutation-Based Threshold ({fwe_percentage}% and {n_permutations} permutations)")
     plt.savefig(fn_fwe)
     plt.close()
     
 # Helper function to create and save connectome plots for each thresholding strategy
 def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, coords):    
         
-    # Todo: save sidecar json file with alpha-thresholds
-    # Todo: test new names with alpha level
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "comparison_label": config["comparison_label"],
                                                       "method": config["method"]   ,
@@ -660,22 +662,26 @@ def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, c
                                                  path_patterns=["group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_fweconnectome.svg"],
                                                  validate=False)
     
-    # Todo: add more details in plot titles
+    uncorr_percentage = 100*float(config.get("uncorrected_alpha"))
+    uncorr_percentage = str(uncorr_percentage)
     plt.figure(figsize=(10, 10))
-    plot_connectome(t_stats * uncorr_mask, node_coords=coords)
-    plt.title('Uncorrected Threshold')
+    plot_connectome(t_stats * uncorr_mask, node_coords=coords, title=f"Uncorrected Threshold ({uncorr_percentage}%)")
     plt.savefig(fn_uncorr)
     plt.close()
 
+    fdr_percentage = 100*float(config.get("fdr_alpha"))
+    fdr_percentage = str(fdr_percentage)
     plt.figure(figsize=(10, 10))
-    plot_connectome(t_stats * fdr_mask, node_coords=coords)
-    plt.title('FDR Threshold')
+    plot_connectome(t_stats * fdr_mask, node_coords=coords, title=f"FDR Threshold ({fdr_percentage}%)")
     plt.savefig(fn_fdr)
     plt.close()
 
+    fwe_percentage = 100*float(config.get("fwe_alpha"))
+    fwe_percentage = str(fwe_percentage)
+    n_permutations = config.get("n_permutations")
+    n_permutations = str(n_permutations)
     plt.figure(figsize=(10, 10))
-    plot_connectome(t_stats * perm_mask, node_coords=coords)
-    plt.title("Permutation-Based Threshold")
+    plot_connectome(t_stats * perm_mask, node_coords=coords, title=f"Permutation-Based Threshold ({fwe_percentage}% and {n_permutations} permutations)")
     plt.savefig(fn_fwe)
     plt.close()
 
@@ -691,6 +697,8 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     config["space"] = config.get("space", layout.derivatives['fMRIPrep'].get_spaces())
     if 'MNI152NLin2009cAsym' in config.get("space"):
         config["space"] = ['MNI152NLin2009cAsym']
+    elif 'MNI152NLin6Asym' in config.get("space"):
+        config["space"] = ['MNI152NLin6Asym']
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
     if config.get("method") == 'atlas':
         config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
@@ -888,6 +896,67 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
             plt.close()
     print("Participant-level analysis completed.")
 
+def generate_group_comparison_report(layout, config):
+    """
+    Generates a group comparison report based on the method and connectivity kind.
+
+    """
+
+    method = config.get("method")
+    comparison_label = config.get('comparison_label')
+    task = config.get("task")
+    space = config.get("space")
+    connectivity_kind = config.get("connectivity_kind")
+    session = config.get("session")
+    run = config.get("run")
+    
+    bids_entities = dict(session=session,
+                        run=run,
+                        task=task,
+                        space=space,
+                        desc=connectivity_kind)
+    
+    entities = dict(**bids_entities ,
+                    method=method,
+                    comparison=comparison_label)
+  
+    report_output_path = layout.derivatives['connectomix'].build_path(entities,
+                                                 path_patterns=['group/{comparison}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_comparison-{comparison}_report.html'],
+                                                 validate=False)
+    
+    ensure_directory(report_output_path)    
+    
+    suffixes = ['uncorrmatrix', 'uncorrconnectome', 'fdrmatrix', 'fdrconnectome', 'fwematrix', 'fweconnectome']
+
+    with open(report_output_path, 'w') as report_file:
+        # Write the title of the report
+        report_file.write(f"<h1>Group Comparison Report for Method: {method}</h1>\n")
+        report_file.write(f"<h2>Connectivity Kind: {connectivity_kind}</h2>\n")
+        for suffix in suffixes:
+            figure_files = layout.derivatives['connectomix'].get(**bids_entities,
+                                                                 suffix=suffix,
+                                                                 extension='.svg',
+                                                                 return_type='filename')
+            figure_files = apply_nonbids_filter('method', method, figure_files)
+            figure_files = apply_nonbids_filter('comparison', comparison_label, figure_files)
+            
+            if suffix in ['uncorrmatrix', 'uncorrconnectome']:
+                alpha = str(config["uncorrected_alpha"]).replace('.', 'dot')
+            if suffix in ['fdrmatrix', 'fdrconnectome']:
+                alpha = str(config["fdr_alpha"]).replace('.', 'dot')
+            if suffix in ['fwematrix', 'fweconnectome']:
+                alpha = str(config["fwe_alpha"]).replace('.', 'dot')
+                
+            figure_files = apply_nonbids_filter('alpha', alpha, figure_files)
+            if len(figure_files) > 2:
+                raise ValueError("f{Too many files found in the group-level outputs, are you sure you aren't mixing up analyses? Use different labels if need be!'}")
+            else:
+                for figure_file in figure_files:
+                    report_file.write(f'<img src="{figure_file}" width="800">\n')
+
+        print(f"Group comparison report saved to {report_output_path}")
+
+
 # Group-level analysis
 def group_level_analysis(bids_dir, derivatives_dir, config):
     # Todo: implement correlation of connectivity with vector of scores like age, behavioural score etc including confounds
@@ -1069,7 +1138,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     else:
         raise ValueError(f"Unknown method: {method}")
 
-        
+    # Create plots of the thresholded group connectivity matrices and connectomes
     generate_group_matrix_plots(t_stats,
                                 uncorr_mask,
                                 fdr_mask,
@@ -1088,18 +1157,75 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                     entities,
                                     coords)
     
-    generate_group_report(layout, config)
-    
+    # Generate report
+    generate_group_comparison_report(layout, config)    
+
     print("Group-level analysis completed.")
+
+# Define the autonomous mode, to guess paths and parameters
+def autonomous_mode():
+    """ Function to automatically guess the analysis paths and settings. """
+    
+    current_dir = Path.cwd()
+
+    # Step 1: Find BIDS directory (bids_dir)
+    if (current_dir / "dataset_description.json").exists():
+        bids_dir = current_dir
+    elif (current_dir / "rawdata" / "dataset_description.json").exists():
+        bids_dir = current_dir / "rawdata"
+    else:
+        raise FileNotFoundError("Could not find 'dataset_description.json'. Ensure the current directory or 'rawdata' folder contains it.")
+
+    # Step 2: Find derivatives directory and fMRIPrep directory
+    derivatives_dir = current_dir / "derivatives"
+    if not derivatives_dir.exists():
+        raise FileNotFoundError("The 'derivatives' folder was not found. Ensure the folder exists in the current directory.")
+    
+    # Look for the fMRIPrep folder in derivatives
+    fmriprep_folders = [f for f in derivatives_dir.iterdir() if f.is_dir() and f.name.lower().startswith('fmriprep')]
+    
+    if len(fmriprep_folders) == 1:
+        fmriprep_dir = fmriprep_folders[0]
+    elif len(fmriprep_folders) > 1:
+        raise FileNotFoundError("Multiple 'fMRIPrep' directories found in 'derivatives'. Please resolve this ambiguity.")
+    else:
+        raise FileNotFoundError("No 'fMRIPrep' directory found in 'derivatives'.")
+
+    # Step 3: Check if a 'connectomix' folder already exists in derivatives
+    connectomix_folder = [f for f in derivatives_dir.iterdir() if f.is_dir() and f.name.lower().startswith('connectomix')]
+    
+    if len(connectomix_folder) == 0:
+        # No connectomix folder found, assume participant-level analysis
+        connectomix_folder = Path(derivatives_dir) / 'connectomix'
+        analysis_level = 'participant'
+        cmd = f"python connectomix.py {bids_dir} {connectomix_folder} participant --fmriprep_dir {fmriprep_dir}"
+    elif len(connectomix_folder) == 1:
+        # Connectomix folder exists, assume group-level analysis
+        analysis_level = 'group'
+        cmd = f"python connectomix.py {bids_dir} {connectomix_folder[0]} group --fmriprep_dir {fmriprep_dir} --helper"
+    else:
+        raise ValueError(f"Several connectomix directories where found ({connectomix_folder}). Please resolve this ambiguity.")
+
+    # Step 4: Print the equivalent command that could be used manually
+    print(f"Autonomous mode detected the following command:\n{cmd}")
+
+    # Call the main function with guessed paths and settings
+    if analysis_level == 'participant':
+        participant_level_analysis(bids_dir, connectomix_folder, fmriprep_dir, {})
+    else:
+        create_group_level_default_config_file(bids_dir, connectomix_folder)
 
 # Main function with subcommands for participant and group analysis
 def main():
     parser = argparse.ArgumentParser(description="Connectomix: Functional Connectivity from fMRIPrep outputs using BIDS structure")
     
+    # Define the autonomous flag
+    parser.add_argument('--autonomous', action='store_true', help="Run the script in autonomous mode, guessing paths and settings.")
+    
     # Define positional arguments for bids_dir, derivatives_dir, and analysis_level
-    parser.add_argument('bids_dir', type=str, help='BIDS root directory containing the dataset.')
-    parser.add_argument('derivatives_dir', type=str, help='Directory where to store the outputs.')
-    parser.add_argument('analysis_level', choices=['participant', 'group'], help="Analysis level: either 'participant' or 'group'.")
+    parser.add_argument('bids_dir', nargs='?', type=str, help='BIDS root directory containing the dataset.')
+    parser.add_argument('derivatives_dir', nargs='?', type=str, help='Directory where to store the outputs.')
+    parser.add_argument('analysis_level', nargs='?', choices=['participant', 'group'], help="Analysis level: either 'participant' or 'group'.")
     
     # Define optional arguments that apply to both analysis levels
     parser.add_argument('--fmriprep_dir', type=str, help='Directory where fMRIPrep outputs are stored.')
@@ -1109,384 +1235,65 @@ def main():
 
     args = parser.parse_args()
 
-    # Run the appropriate analysis level
-    if args.analysis_level == 'participant':
-        
-        # Check if fMRIPrep directory must be guessed and if yes, if it exists.
-        if not args.fmriprep_dir:
-            args.fmriprep_dir = Path(args.bids_dir) / 'derivatives' / 'fmriprep'
-            if not Path(args.fmriprep_dir).exists():
-                raise FileNotFoundError(f"fMRIPrep directory {args.fmriprep_dir} not found. Use --fmriprep_dir option to specify path manually.")
-        
-        # First check if only helper function must be called
-        if args.helper:
-            create_participant_level_default_config_file(args.bids_dir, args.derivatives_dir, args.fmriprep_dir)
-        else:
-            participant_level_analysis(args.bids_dir, args.derivatives_dir, args.fmriprep_dir, args.config)
-    elif args.analysis_level == 'group':
-        # First check if only helper function must be called
-        if args.helper:
-            create_group_level_default_config_file(args.bids_dir, args.derivatives_dir)
-        else:
-            group_level_analysis(args.bids_dir, args.derivatives_dir, args.config)
+    # Run autonomous mode if flag is used
+    if args.autonomous:
+        autonomous_mode()
+    else:   
+        # Run the appropriate analysis level
+        if args.analysis_level == 'participant':
+            
+            # Check if fMRIPrep directory must be guessed and if yes, if it exists.
+            if not args.fmriprep_dir:
+                args.fmriprep_dir = Path(args.bids_dir) / 'derivatives' / 'fmriprep'
+                if not Path(args.fmriprep_dir).exists():
+                    raise FileNotFoundError(f"fMRIPrep directory {args.fmriprep_dir} not found. Use --fmriprep_dir option to specify path manually.")
+            
+            # First check if only helper function must be called
+            if args.helper:
+                create_participant_level_default_config_file(args.bids_dir, args.derivatives_dir, args.fmriprep_dir)
+            else:
+                participant_level_analysis(args.bids_dir, args.derivatives_dir, args.fmriprep_dir, args.config)
+        elif args.analysis_level == 'group':
+            # First check if only helper function must be called
+            if args.helper:
+                create_group_level_default_config_file(args.bids_dir, args.derivatives_dir)
+            else:
+                group_level_analysis(args.bids_dir, args.derivatives_dir, args.config)
 
 if __name__ == '__main__':
     main()
     
-exit()
+## TESTS
 
-# Clean what follows
+bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
+fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
+derivatives_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
+config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config.yaml"
 
-# bids_dir = "/data/ds005418"
-# fmriprep_dir = "/data/ds005418/derivatives/fmriprep_v21.0.4"
-# connectomix_dir = "/data/ds005418/derivatives/connectomix_dev"
+group_level_analysis(bids_dir, derivatives_dir, config_file)
 
-# bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
-# fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
-# connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_dev_wip"
-
-# config = {}
-# config["method"] = "ica"
-# config["method_options"] = {}
-# config["connectivity_kind"] = "correlation"
-# config["session"] = "1"
-# config["task"] = "restingstate"
-# config["space"] = "MNI152NLin2009cAsym"
-
-# config = {}
-# config["method"] = "seeds"
-# config["method_options"] = {}
-# config["method_options"]["seeds_file"] = "/home/arovai/git/arovai/connectomix/connectomix/seeds/brain_and_cerebellum_seeds.tsv"
-# config["method_options"]["radius"] = "5"
-# config["connectivity_kind"] = "correlation"
-# #config["session"] = "1"
-# config["task"] = "restingstate"
-# config["space"] = "MNI152NLin2009cAsym"
-# config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
-# # config["reference_functional_file"] = "/path/to/func/ref"
-# config["subjects"] = "CTL01"
-
-# config = {}
-# config["method"] = "atlas"
-# config["connectivity_kind"] = "correlation"
-# # config["session"] = "1"
-# config["task"] = "restingstate"
-# config["space"] = "MNI152NLin2009cAsym"
-# config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
-# # config["reference_functional_file"] = "/path/to/func/ref"
-# # config["subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04", "CTL05", "CTL06", "CTL07", "CTL08", "CTL10"]
-# config["subjects"] = ["001", "004", "012", "017", "018", "019", "020"]
-
-# # participant_level_analysis(bids_dir, "/data/ds005418/derivatives/connectomix_dev_schaefer2018", fmriprep_dir, config)
-
-# config = {}
-# config["method"] = "atlas"
-# config["connectivity_kind"] = "correlation"
-# #config["session"] = "1"
-# config["task"] = "restingstate"
-# config["space"] = "MNI152NLin2009cAsym"
-# #config["group1_subjects"] = ["CTL01", "CTL02", "CTL03", "CTL04"]
-# #config["group2_subjects"] = ["CTL05", "CTL06", "CTL07", "CTL08", "CTL09", "CTL10"]
-# config["group1_subjects"] = ["001", "004", "012"]
-# config["group2_subjects"] = ["017", "018", "019", "020"]
-# config["n_permutations"] = 100
-# config["comparison_label"] = "test"
-
-# group_level_analysis(bids_dir, "/data/ds005418/derivatives/connectomix_dev_schaefer2018", fmriprep_dir, config)
-
-## Analysis for the Hilarious_Mosquito dataset
 # bids_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
 # fmriprep_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
 # connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
 
-bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
-fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
-connectomix_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
-
-create_participant_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
-create_group_level_default_config_file(connectomix_dir)
+# create_participant_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
+# create_group_level_default_config_file(bids_dir, connectomix_dir)
 
 # config_file = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
 # config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
 # participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config_file)
  
-config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_group_level_config.yaml"
-group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config_file)
+# config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_group_level_config.yaml"
+# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config_file)
 
-# Subject groupings: CTL, FDA, FDAcog, FDAnoncog
-CTL = ["CTL01","CTL02","CTL03","CTL04","CTL05","CTL06","CTL07","CTL08","CTL09","CTL10","CTL11","CTL12","CTL14","CTL15","CTL16","CTL17","CTL18","CTL19","CTL20","CTL21","CTL22","CTL23","CTL24","CTL25","CTL26","CTL27","CTL28","CTL29"]
-FDAnoncog = ["FDA03", "FDA04", "FDA05", "FDA06", "FDA12", "FDA20", "FDA23", "FDA24", "FDA25", "FDA26", "FDA28", "FDA29"]
-FDAcog = ["FDA01", "FDA02", "FDA07", "FDA08", "FDA09", "FDA10", "FDA11", "FDA13", "FDA15", "FDA16", "FDA19", "FDA22", "FDA27", "FDA30"]
-FDA = [*FDAcog, *FDAnoncog]
-n_permutations = 20
+# bids_dir = '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata'
+# derivatives_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
+# config = os.path.join(derivatives_dir, 'config', 'group_level_config_20241014_153735.json')
+# config = load_config(config)
+# layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
+# config = set_unspecified_group_level_options_to_default(config, layout)
 
-# Warning: seems to have not fmriprep output for "FDA17", "FDA18", but rawdata data exists!
-
-# ICA
-# - participant-level
-config = {}
-config["method"] = "ica"
-config["connectivity_kind"] = "correlation"
-config["session"] = "1"
-config["task"] = "restingstate"
-config["space"] = "MNI152NLin2009cAsym"
-#config["subjects"] = ["FDA04"]
-# participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
-# - group-level WORK IN PROGRESS
-config = {}
-config["method"] = "ica"
-config["connectivity_kind"] = "correlation"
-config["session"] = "1"
-config["task"] = "restingstate"
-config["space"] = "MNI152NLin2009cAsym"
-config["n_permutations"] = n_permutations
-
-# -- CTL versus FDA
-config["group1_subjects"] = CTL
-config["group2_subjects"] = FDA
-config["comparison_label"] = "CTLvsFDA"
-# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
-
-# -- FDAcog versus FDAnoncog
-config["group1_subjects"] = FDAcog
-config["group2_subjects"] = FDAnoncog
-config["comparison_label"] = "FDAcogvsFDAnoncog"
-# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
-
-# Atlas
-# - participant-level
-config = {}
-config["method"] = "atlas"
-config["connectivity_kind"] = "correlation"
-config["session"] = "1"
-config["task"] = "restingstate"
-config["space"] = "MNI152NLin2009cAsym"
-# participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
-
-# - group-level
-config = {}
-config["method"] = "atlas"
-config["connectivity_kind"] = "correlation"
-config["session"] = "1"
-config["task"] = "restingstate"
-config["space"] = "MNI152NLin2009cAsym"
-config["n_permutations"] = n_permutations
-
-# -- CTL versus FDA
-config["group1_subjects"] = CTL
-config["group2_subjects"] = FDA
-config["comparison_label"] = "CTLvsFDA"
-# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
-
-# -- FDAcog versus FDAnoncog
-config["group1_subjects"] = FDAcog
-config["group2_subjects"] = FDAnoncog
-config["comparison_label"] = "FDAcogvsFDAnoncog"
-# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
-
-# Seeds
-# - participant-level
-config = {}
-config["method"] = "seeds"
-config["method_options"] = {}
-config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
-# config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
-config["method_options"]["radius"] = "5"
-config["connectivity_kind"] = "correlation"
-# config["connectivity_kind"] = "covariance"
-config["session"] = "1"
-config["task"] = "restingstate"
-config["space"] = "MNI152NLin2009cAsym"
-# config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z',
-#                               'rot_x', 'rot_y', 'rot_z',
-#                               'trans_x_derivative1', 'trans_y_derivative1', 'trans_z_derivative1',
-#                               'rot_x_derivative1', 'rot_y_derivative1', 'rot_z_derivative1',
-#                               'global_signal']
-config["confound_columns"] = ['trans_x', 'trans_y', 'trans_z',
-                              'rot_x', 'rot_y', 'rot_z',
-                              'global_signal', 'white_matter']
-# participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
-
-# - group-level
-config = {}
-config["method"] = "seeds"
-config["method_options"] = {}
-config["method_options"]["seeds_file"] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
-# config["method_options"]["seeds_file"] = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/sourcedata/brain_and_cerebellum_seeds_dentate_nucleate_only_and_frontal_only.csv"
-config["method_options"]["radius"] = "5"
-config["connectivity_kind"] = "correlation"
-# config["connectivity_kind"] = "covariance"
-config["session"] = "1"
-config["task"] = "restingstate"
-config["space"] = "MNI152NLin2009cAsym"
-config["n_permutations"] = n_permutations
-
-# -- CTL versus FDA
-config["group1_subjects"] = CTL
-config["group2_subjects"] = FDA
-config["uncorrected_threshold"] = 0.05
-config["comparison_label"] = "CTLvsFDA"
-group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
-
-# -- FDAcog versus FDAnoncog
-config["group1_subjects"] = FDAcog
-config["group2_subjects"] = FDAnoncog
-config["uncorrected_threshold"] = 0.05
-config["comparison_label"] = "FDAcogvsFDAnoncog"
-# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
-
-
-import json
-from pathlib import Path
-from nireports.reportlets.base import Report
-from nireports.reportlets.utils import plot_carpet
-
-def generate_group_report(layout, config):
-    """
-    Generates a group-level report using Nireports.
-
-    """
-
-    # Gather all figures we need in the report
-    report_files = apply_nonbids_filter('comparison', config["comparison_label"], layout.derivatives['connectomix'].get())
-    
-    for report_file in report_files:
-        entities = layout.parse_file_entities(report_file)
-        session = entities.get("sessions", None)
-        run = entities.get("runs", None)
-        task = entities.get("tasks")
-        space = entities.get("spaces")
-        report_path = layout.derivatives['connectomix'].build_path(dict(sessions=session,
-                                                                        runs=run,
-                                                                        tasks=task,
-                                                                        spaces=space,
-                                                                        comparison=config["comparison_label"]),
-                                                                   path_patterns=['group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_comparison-{comparison_label}_report.html'],
-                                                                   validate=False)
-        for method in entitites.get('method'):
-            for connectivity_kind in entities.get('desc'):
-                for suffix in entitites.get('suffix'):
-                    for alpha in entitites.get('alpha'):
-                        
-
-    
-
-    'alpha'
-    'desc'
-    'method'
-
-    'group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_'
-    'desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_report.html'
-
-
-    # Create a report object
-    report = Report(title="Group-Level Analysis Report")
-
-    # Add a summary of the configuration file
-    report.add_subheader("Configuration Summary")
-    report.add_paragraph(f"Method: {config['method']}")
-    report.add_paragraph(f"Connectivity Kind: {config['connectivity_kind']}")
-    
-    if "groups" in config:
-        report.add_paragraph(f"Group 1: {config['groups']['group1']}")
-        report.add_paragraph(f"Group 2: {config['groups']['group2']}")
-    elif "group_column" in config:
-        report.add_paragraph(f"Groups based on column: {config['group_column']}")
-    
-    report.add_paragraph(f"Paired Comparison: {config.get('paired_comparison', False)}")
-
-    # Add each plot and result to the report
-    for group_name, group_data in report_data.items():
-        report.add_subheader(f"Results for {group_name}")
-        
-        # Add connectivity matrix plot
-        if 'connectivity_matrix_path' in group_data:
-            report.add_image(group_data['connectivity_matrix_path'], title=f"Connectivity Matrix - {group_name}")
-        
-        # Add thresholded matrix plot
-        if 'thresholded_matrix_path' in group_data:
-            report.add_image(group_data['thresholded_matrix_path'], title=f"Thresholded Matrix - {group_name}")
-        
-        # Add connectome plot
-        if 'connectome_path' in group_data:
-            report.add_image(group_data['connectome_path'], title=f"Connectome - {group_name}")
-
-    # Save the report
-    report_output_path = Path(derivatives_dir) / "group_analysis" / "group_level_report.html"
-    report.save(report_output_path)
-    print(f"Group-level report saved to {report_output_path}")
-
-
-def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config_file):
-    """
-    Conducts group-level analysis and generates a report.
-
-    Parameters:
-    - bids_dir: Path to BIDS directory.
-    - derivatives_dir: Path to derivatives directory.
-    - fmriprep_dir: Path to fMRIPrep directory.
-    - config_file: Path to the group-level configuration file.
-    """
-
-    # Load config and prepare group comparison
-    # ... (existing logic for loading groups and computing stats) ...
-
-    # Define the group_results_dir
-    group_results_dir = Path(derivatives_dir) / "group_analysis"
-    group_results_dir.mkdir(parents=True, exist_ok=True)
-
-    # Placeholder for report data collection
-    report_data = {}
-
-    # For each group comparison, generate thresholded matrices and plots
-    for group_name in ["group_comparison_method-atlas_desc-correlation"]:
-        # Generate plots (this would be dynamically based on actual comparisons)
-        connectivity_matrix_path = group_results_dir / f"{group_name}_connectivity_matrix.png"
-        thresholded_matrix_path = group_results_dir / f"{group_name}_thresholded_matrix.png"
-        connectome_path = group_results_dir / f"{group_name}_connectome.png"
-        
-        # Placeholder: create dummy files or actual analysis here
-        # For the demo, assume the plots are already saved
-
-        # Collect paths for the report
-        report_data[group_name] = {
-            'connectivity_matrix_path': connectivity_matrix_path,
-            'thresholded_matrix_path': thresholded_matrix_path,
-            'connectome_path': connectome_path
-        }
-
-    # Generate the report after the analysis
-    generate_group_report(derivatives_dir, config_file, report_data)
-
-
-group_dir = '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_docker/group/CUSTOMLABEL'
-# from nireports.assembler.tools import run_reports
-# run_reports(output_dir, subject_label, 'madeoutuuid', bootstrap_file=get_report_config(),
-#             reportlets_dir=output_dir)
-
-
-
-
-bids_dir = '/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata'
-derivatives_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_docker"
-layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
-
-layout.get_entities()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# generate_group_comparison_report(layout, config)
 
 
 
