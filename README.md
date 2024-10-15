@@ -1,3 +1,5 @@
+![License](https://img.shields.io/github/license/ln2t/connectomix)
+
 # Connectomix: Functional Connectivity from fMRIPrep Outputs Using BIDS Structure
 
 ## Overview
