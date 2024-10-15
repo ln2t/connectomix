@@ -1087,6 +1087,9 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                     layout,
                                     entities,
                                     coords)
+    
+    generate_group_report(layout, config)
+    
     print("Group-level analysis completed.")
 
 # Main function with subcommands for participant and group analysis
@@ -1331,6 +1334,163 @@ config["group2_subjects"] = FDAnoncog
 config["uncorrected_threshold"] = 0.05
 config["comparison_label"] = "FDAcogvsFDAnoncog"
 # group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config)
+
+
+import json
+from pathlib import Path
+from nireports.reportlets.base import Report
+from nireports.reportlets.utils import plot_carpet
+
+def generate_group_report(layout, config):
+    """
+    Generates a group-level report using Nireports.
+
+    """
+
+    # Gather all figures we need in the report
+    report_files = apply_nonbids_filter('comparison', config["comparison_label"], layout.derivatives['connectomix'].get())
+    
+    for report_file in report_files:
+        entities = layout.parse_file_entities(report_file)
+        session = entities.get("sessions", None)
+        run = entities.get("runs", None)
+        task = entities.get("tasks")
+        space = entities.get("spaces")
+        report_path = layout.derivatives['connectomix'].build_path(dict(sessions=session,
+                                                                        runs=run,
+                                                                        tasks=task,
+                                                                        spaces=space,
+                                                                        comparison=config["comparison_label"]),
+                                                                   path_patterns=['group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_comparison-{comparison_label}_report.html'],
+                                                                   validate=False)
+        for method in entitites.get('method'):
+            for connectivity_kind in entities.get('desc'):
+                for suffix in entitites.get('suffix'):
+                    for alpha in entitites.get('alpha'):
+                        
+
+    
+
+    'alpha'
+    'desc'
+    'method'
+
+    'group/{comparison_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_'
+    'desc-{desc}_comparison-{comparison_label}_alpha-{alpha}_report.html'
+
+
+    # Create a report object
+    report = Report(title="Group-Level Analysis Report")
+
+    # Add a summary of the configuration file
+    report.add_subheader("Configuration Summary")
+    report.add_paragraph(f"Method: {config['method']}")
+    report.add_paragraph(f"Connectivity Kind: {config['connectivity_kind']}")
+    
+    if "groups" in config:
+        report.add_paragraph(f"Group 1: {config['groups']['group1']}")
+        report.add_paragraph(f"Group 2: {config['groups']['group2']}")
+    elif "group_column" in config:
+        report.add_paragraph(f"Groups based on column: {config['group_column']}")
+    
+    report.add_paragraph(f"Paired Comparison: {config.get('paired_comparison', False)}")
+
+    # Add each plot and result to the report
+    for group_name, group_data in report_data.items():
+        report.add_subheader(f"Results for {group_name}")
+        
+        # Add connectivity matrix plot
+        if 'connectivity_matrix_path' in group_data:
+            report.add_image(group_data['connectivity_matrix_path'], title=f"Connectivity Matrix - {group_name}")
+        
+        # Add thresholded matrix plot
+        if 'thresholded_matrix_path' in group_data:
+            report.add_image(group_data['thresholded_matrix_path'], title=f"Thresholded Matrix - {group_name}")
+        
+        # Add connectome plot
+        if 'connectome_path' in group_data:
+            report.add_image(group_data['connectome_path'], title=f"Connectome - {group_name}")
+
+    # Save the report
+    report_output_path = Path(derivatives_dir) / "group_analysis" / "group_level_report.html"
+    report.save(report_output_path)
+    print(f"Group-level report saved to {report_output_path}")
+
+
+def group_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config_file):
+    """
+    Conducts group-level analysis and generates a report.
+
+    Parameters:
+    - bids_dir: Path to BIDS directory.
+    - derivatives_dir: Path to derivatives directory.
+    - fmriprep_dir: Path to fMRIPrep directory.
+    - config_file: Path to the group-level configuration file.
+    """
+
+    # Load config and prepare group comparison
+    # ... (existing logic for loading groups and computing stats) ...
+
+    # Define the group_results_dir
+    group_results_dir = Path(derivatives_dir) / "group_analysis"
+    group_results_dir.mkdir(parents=True, exist_ok=True)
+
+    # Placeholder for report data collection
+    report_data = {}
+
+    # For each group comparison, generate thresholded matrices and plots
+    for group_name in ["group_comparison_method-atlas_desc-correlation"]:
+        # Generate plots (this would be dynamically based on actual comparisons)
+        connectivity_matrix_path = group_results_dir / f"{group_name}_connectivity_matrix.png"
+        thresholded_matrix_path = group_results_dir / f"{group_name}_thresholded_matrix.png"
+        connectome_path = group_results_dir / f"{group_name}_connectome.png"
+        
+        # Placeholder: create dummy files or actual analysis here
+        # For the demo, assume the plots are already saved
+
+        # Collect paths for the report
+        report_data[group_name] = {
+            'connectivity_matrix_path': connectivity_matrix_path,
+            'thresholded_matrix_path': thresholded_matrix_path,
+            'connectome_path': connectome_path
+        }
+
+    # Generate the report after the analysis
+    generate_group_report(derivatives_dir, config_file, report_data)
+
+
+group_dir = '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_docker/group/CUSTOMLABEL'
+# from nireports.assembler.tools import run_reports
+# run_reports(output_dir, subject_label, 'madeoutuuid', bootstrap_file=get_report_config(),
+#             reportlets_dir=output_dir)
+
+
+
+
+bids_dir = '/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata'
+derivatives_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix_docker"
+layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
+
+layout.get_entities()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
