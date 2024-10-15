@@ -38,7 +38,7 @@ docker pull arovai/connectomix
 To execute Connectomix using Docker, use the following command structure:
 
 ```bash
-docker run --rm -it \
+sudo docker run --rm -it \
     -v /path/to/bids_dataset:/bids_dataset:ro \
     -v /path/to/derivatives:/derivatives \
     arovai/connectomix \
@@ -55,12 +55,10 @@ docker run --rm -it \
 
 **Notes**:
 
-- **Replace Paths**: Ensure you replace `/path/to/bids_dataset` and `/path/to/derivatives` with the actual paths on your system.
-- **Permissions**: Docker must have permission to read from the BIDS dataset directory and write to the derivatives directory.
 - **Adjusting for Group-Level Analysis**: To perform a group-level analysis, change the analysis level to `group` and provide the necessary configuration:
 
   ```bash
-  docker run --rm -it \
+  sudo docker run --rm -it \
       -v /path/to/bids_dataset:/bids_dataset:ro \
       -v /path/to/derivatives:/derivatives \
       arovai/connectomix \
@@ -68,6 +66,12 @@ docker run --rm -it \
   ```
 
   Ensure that your configuration file is accessible within the container. If it's stored in the derivatives directory, as in the example above, it will be available at `/derivatives/config/group_config.yaml` inside the container.
+- **Autonomous mode with Docker**: the autonomous mode (see below) needs to get access to the current directory. To do that using docker, you must specify use `-w` option as follows:
+
+  ```bash
+  sudo docker run --rm -it -v $(pwd):/data -w /data arovai/connectomix --autonomous
+  ```
+
 
 For more information on Docker and managing containers, visit the [Docker Documentation](https://docs.docker.com/get-started/).
 
