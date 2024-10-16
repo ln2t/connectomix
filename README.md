@@ -30,7 +30,7 @@ You can run Connectomix using **Docker**, which encapsulates the application alo
 A pre-built Docker image is available on Docker Hub. Pull the image using the following command:
 
 ```bash
-docker pull arovai/connectomix
+sudo docker pull arovai/connectomix
 ```
 
 **Running Connectomix with Docker**
