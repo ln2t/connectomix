@@ -167,7 +167,7 @@ sessions: {config.get("sessions")}
 spaces: {config.get("spaces")}
 
 # Kind of connectivity used at participant-level
-connectivity_kind: {config.sget("connectivity_kind")}
+connectivity_kind: {config.get("connectivity_kind")}
 
 # Method used at participant-level
 method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
@@ -991,10 +991,10 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     # Retrieve connectivity type and other configuration parameters
     connectivity_type = config.get('connectivity_kind')
     method = config.get('method')
-    task = config.get("task")
-    run = config.get("run")
-    session = config.get("session")
-    space = config.get("space")
+    task = config.get("tasks")
+    run = config.get("runs")
+    session = config.get("sessions")
+    space = config.get("spaces")
     analysis_type = config.get("analysis_type")
     
     entities = {
