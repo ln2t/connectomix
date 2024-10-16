@@ -155,19 +155,19 @@ fwe_alpha: {config.get("fwe_alpha")}  # Used in the Family-Wise Error multiple-c
 n_permutations: {config.get("n_permutations")}  # Can be set to a lower value for testing purposes (e.g. 30). If increased, computational time goes up.
 
 # Selected task
-task: {config.get("task")}
+tasks: {config.get("tasks")}
 
 # Selected run
-run: {config.get("run")}
+runs: {config.get("runs")}
 
 # Selected session
-session: {config.get("session")}
+sessions: {config.get("sessions")}
 
 # Selected space
-space: {config.get("space")}
+spaces: {config.get("spaces")}
 
 # Kind of connectivity used at participant-level
-connectivity_kind: {config.get("connectivity_kind")}
+connectivity_kind: {config.sget("connectivity_kind")}
 
 # Method used at participant-level
 method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
@@ -693,14 +693,14 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     config["method"] = config.get("method", "atlas")
     config["method_options"] = config.get("method_options", {})
     config["subjects"] = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())
-    config["task"] = config.get("task", layout.derivatives['fMRIPrep'].get_tasks())
-    config["run"] = config.get("run", layout.derivatives['fMRIPrep'].get_runs())
-    config["session"] = config.get("session", layout.derivatives['fMRIPrep'].get_sessions())
-    config["space"] = config.get("space", layout.derivatives['fMRIPrep'].get_spaces())
-    if 'MNI152NLin2009cAsym' in config.get("space"):
-        config["space"] = ['MNI152NLin2009cAsym']
-    elif 'MNI152NLin6Asym' in config.get("space"):
-        config["space"] = ['MNI152NLin6Asym']
+    config["tasks"] = config.get("tasks", layout.derivatives['fMRIPrep'].get_tasks())
+    config["runs"] = config.get("runs", layout.derivatives['fMRIPrep'].get_runs())
+    config["sessions"] = config.get("sessions", layout.derivatives['fMRIPrep'].get_sessions())
+    config["spaces"] = config.get("spaces", layout.derivatives['fMRIPrep'].get_spaces())
+    if 'MNI152NLin2009cAsym' in config.get("spaces"):
+        config["spaces"] = ['MNI152NLin2009cAsym']
+    elif 'MNI152NLin6Asym' in config.get("spaces"):
+        config["spaces"] = ['MNI152NLin6Asym']
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
     if config.get("method") == 'atlas':
         config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
@@ -717,10 +717,10 @@ def set_unspecified_participant_level_options_to_default(config, layout):
 # Function to manage default group-level options
 def set_unspecified_group_level_options_to_default(config, layout):
     config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
-    config["task"] = config.get("task", "restingstate" if "restingstate" in layout.derivatives['connectomix'].get_tasks() else layout.derivatives['connectomix'].get_tasks())
-    config["run"] = config.get("run", "")
-    config["session"] = config.get("session", layout.derivatives['connectomix'].get_sessions())
-    config["space"] = config.get("space", "MNI152NLin2009cAsym" if "MNI152NLin2009cAsym" in layout.derivatives['connectomix'].get_spaces() else layout.derivatives['connectomix'].get_spaces())
+    config["tasks"] = config.get("tasks", "restingstate" if "restingstate" in layout.derivatives['connectomix'].get_tasks() else layout.derivatives['connectomix'].get_tasks())
+    config["runs"] = config.get("runs", "")
+    config["sessions"] = config.get("sessions", layout.derivatives['connectomix'].get_sessions())
+    config["spaces"] = config.get("spaces", "MNI152NLin2009cAsym" if "MNI152NLin2009cAsym" in layout.derivatives['connectomix'].get_spaces() else layout.derivatives['connectomix'].get_spaces())
     config["uncorrected_alpha"] = config.get("uncorrected_alpha", 0.001)
     config["fdr_alpha"] = config.get("fdr_alpha", 0.05)
     config["fwe_alpha"]= float(config.get("fwe_alpha", 0.05))
@@ -767,10 +767,10 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         
     # Get subjects, task, session, run and space from config file    
     subjects = config.get("subjects")
-    task = config.get("task")
-    run = config.get("run")
-    session = config.get("session")
-    space = config.get("space")   
+    task = config.get("tasks")
+    run = config.get("runs")
+    session = config.get("sessions")
+    space = config.get("spaces")   
 
     # Select the functional, confound and metadata files
     func_files = layout.derivatives['fMRIPrep'].get(
