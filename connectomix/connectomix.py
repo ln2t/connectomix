@@ -192,27 +192,29 @@ method_options:
 
 # Helper function to load the configuration file
 def load_config(config):
-    if isinstance(config, str):
-        config = Path(config)
-        if not config.exists():
-            raise FileNotFoundError(f"File not found: {config}")
-        # Detect file extension
-        file_extension = config.suffix.lower()
     
-        # Load JSON file
-        if file_extension == ".json":
-            with open(config, 'r') as file:
-                return json.load(file)
-    
-        # Load YAML file
-        elif file_extension in [".yaml", ".yml"]:
-            with open(config, 'r') as file:
-                return yaml.safe_load(file)
-            
-    elif isinstance(config, dict):
+    if isinstance(config, dict):
         return config
     else:
-        raise TypeError(f"Wrong configuration data {config}. Must provide either path (to .json or .yaml or .yml) or dict.")
+        if isinstance(config, str) or isinstance(config, Path):
+            config = Path(config)
+            if not config.exists():
+                raise FileNotFoundError(f"File not found: {config}")
+                
+            # Detect file extension
+            file_extension = config.suffix.lower()
+        
+            # Load JSON file
+            if file_extension == ".json":
+                with open(config, 'r') as file:
+                    return json.load(file)
+        
+            # Load YAML file
+            elif file_extension in [".yaml", ".yml"]:
+                with open(config, 'r') as file:
+                    return yaml.safe_load(file)
+            else:
+                raise TypeError(f"Wrong configuration data {config}. Must provide either path (to .json or .yaml or .yml) or dict.")
 
 # Helper function to select confounds
 def select_confounds(confounds_file, config):
@@ -1262,42 +1264,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
-## TESTS
-
-bids_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
-fmriprep_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
-derivatives_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
-config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config.yaml"
-
-group_level_analysis(bids_dir, derivatives_dir, config_file)
-
-# bids_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata"
-# fmriprep_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3"
-# connectomix_dir = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
-
-# create_participant_level_default_config_file(bids_dir, connectomix_dir, fmriprep_dir)
-# create_group_level_default_config_file(bids_dir, connectomix_dir)
-
-# config_file = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
-# config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_participant_level_config.yaml"
-# participant_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config_file)
- 
-# config_file = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/default_group_level_config.yaml"
-# group_level_analysis(bids_dir, connectomix_dir, fmriprep_dir, config_file)
-
-# bids_dir = '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata'
-# derivatives_dir = "/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix"
-# config = os.path.join(derivatives_dir, 'config', 'group_level_config_20241014_153735.json')
-# config = load_config(config)
-# layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
-# config = set_unspecified_group_level_options_to_default(config, layout)
-
-# generate_group_comparison_report(layout, config)
-
-
-
-
-
-
-
