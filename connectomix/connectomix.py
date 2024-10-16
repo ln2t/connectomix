@@ -5,6 +5,12 @@ Author: Antonin Rovai
 
 Created: August 2022
 """
+
+# General TODO list:
+# - implement correlation of connectivity with vector of scores like age, behavioural score etc including confounds
+# - add support for more atlases
+# - add more unittests functions
+
 import os
 import argparse
 import json
@@ -32,11 +38,7 @@ from statsmodels.stats.multitest import multipletests
 from datetime import datetime
 
 # Define the version number
-__version__ = "1.0.0"
-
-# Todo: create reports with nireports
-
-## Helper functions
+__version__ = "1.0.0"## Helper functions
 
 # Helper function to create default configuration file based on what the dataset contains at participant level
 def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmriprep_dir):
@@ -74,16 +76,16 @@ def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmri
 subjects: {config.get("subjects")}
 
 # List of tasks
-tasks: {config.get("task")}
+tasks: {config.get("tasks")}
 
 # List of runs
-runs: {config.get("run")}
+runs: {config.get("runs")}
 
 # List of sessions
-sessions: {config.get("session")}
+sessions: {config.get("sessions")}
 
 # List of output spaces
-spaces: {config.get("space")}
+spaces: {config.get("spacesf")}
 
 # Confounding variables to include when extracting timeseries. Choose from confounds computed from fMRIPrep.
 confound_columns: {config.get("confound_columns")}
@@ -429,7 +431,6 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
 # Todo: add file with paths to func files used to compute ICA, generate hash, use hash to name both component IMG and text file.
 def compute_canica_components(func_filenames, layout, entities, options):
     # Build path to save canICA components
-    # Todo: make this BIDS friendly. DONE, UNTESTED
     canica_filename = layout.derivatives['connectomix'].build_path(entities,
                       path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.nii.gz"],
                       validate=False)
@@ -483,7 +484,8 @@ def compute_canica_components(func_filenames, layout, entities, options):
     # Dump config to file for reproducibility
     with open(extracted_regions_sidecar, "w") as fp:
         json.dump(extractor_options, fp, indent=4)
-                       
+        
+    # Extract regions from canica components
     extractor = RegionExtractor(
         canica_filename,
         **extractor_options
@@ -906,11 +908,11 @@ def generate_group_comparison_report(layout, config):
 
     method = config.get("method")
     comparison_label = config.get('comparison_label')
-    task = config.get("task")
-    space = config.get("space")
+    task = config.get("tasks")
+    space = config.get("spaces")
     connectivity_kind = config.get("connectivity_kind")
-    session = config.get("session")
-    run = config.get("run")
+    session = config.get("sessions")
+    run = config.get("runs")
     
     bids_entities = dict(session=session,
                         run=run,
@@ -959,9 +961,15 @@ def generate_group_comparison_report(layout, config):
         print(f"Group comparison report saved to {report_output_path}")
 
 
+# Group size verification tool
+def check_group_has_several_members(group_subjects):
+    if len(group_subjects) == 0:
+        raise ValueError("One group has no member, please review your configuration file.")
+    elif len(group_subjects) == 1:
+        raise ValueError("Detecting a group with only one member, this is not yet supported. If this is not what you intended to do, review your configuration file.")
+
 # Group-level analysis
 def group_level_analysis(bids_dir, derivatives_dir, config):
-    # Todo: implement correlation of connectivity with vector of scores like age, behavioural score etc including confounds
     # Print version information
     print(f"Running connectomix (Group-level) version {__version__}")
 
@@ -987,6 +995,10 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     # Load group specifications from config
     group1_subjects = config['group1_subjects']
     group2_subjects = config['group2_subjects']
+    
+    # Check each group has at least two subjects, otherwise no permutation testing is possible
+    check_group_has_several_members(group1_subjects)
+    check_group_has_several_members(group2_subjects)
     
     # Retrieve connectivity type and other configuration parameters
     connectivity_type = config.get('connectivity_kind')
@@ -1127,14 +1139,11 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
             raise FileNotFoundError(f"Seeds file {seed_file_path} not found")
     # ICA-based extraction
     elif method == 'ica':
-        # Todo: test the following lines - THERE IS BUG SOMEWHERE HERE!
-        raise ValueError("Method ICA at group level not finished, please come again later.s")
-        exit()
         extracted_regions_entities = entities.copy()
         extracted_regions_entities.pop("desc")
         extracted_regions_entities["suffix"] = "extractedregions"
         extracted_regions_entities["extension"] = ".nii.gz"
-        extracted_regions_filename = layout.derivatives["connectomix"].get(**extracted_regions_entities)
+        extracted_regions_filename = layout.derivatives["connectomix"].get(**extracted_regions_entities)[0]
         coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
         labels = None
     else:
