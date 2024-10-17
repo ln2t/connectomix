@@ -138,12 +138,11 @@ def create_group_level_default_config_file(bids_dir, derivatives_dir):
 # This file is generated automatically. Please modify the parameters as needed.
 # Full documentation is located at github.com/ln2t/connectomix
 # All parameters are set to their plausible or default value
-# Fields flagged as 'FILL IN' must be edited manually.
 
 # Groups to compare
-group1_subjects: []  # The list of subjects in the first group <----- FILL IN
-group2_subjects: []  # The list of subjects in the second group <----- FILL IN
-comparison_label: CUSTOMLABEL  # A custom label to distinguish different analysis (e.g. 'ControlsVersusPatients'). Do not use underscores of hyphens. <----- FILL IN
+group1_subjects: {config.get("group1_subjects")}
+group2_subjects: {config.get("group2_subjects")}
+comparison_label: {config.get("comparison_label")}
 
 # Type of statistical comparison
 analysis_type: {config.get("analysis_type")}  # Can be also set to 'paired' for two-sample paired t-tests
@@ -154,7 +153,7 @@ fdr_alpha: {config.get("fdr_alpha")}  # Used in the BH-FDR multiple-comparison c
 fwe_alpha: {config.get("fwe_alpha")}  # Used in the Family-Wise Error multiple-comparison correction method (maximum and minimum t-statistic distributions estimated from permutations of the data).
 
 # Number of permutations to estimate the null distributions
-n_permutations: {config.get("n_permutations")}  # Can be set to a lower value for testing purposes (e.g. 30). If increased, computational time goes up.
+n_permutations: {config.get("n_permutations")}  # Can be set to a lower value for testing purposes (e.g. 20). If increased, computational time goes up.
 
 # Selected task
 tasks: {config.get("tasks")}
@@ -716,8 +715,64 @@ def set_unspecified_participant_level_options_to_default(config, layout):
 
     return config
 
+def guess_groups(layout):
+    """
+    Reads the participants.tsv file, checks for a 'group' column, and returns lists of participants for each group.
+    
+    Parameters:
+    - layout
+    
+    Returns:
+    - groups_dict: A dictionary with group names as keys and lists of participant IDs as values.
+    
+    Raises:
+    - Warning: If there are not exactly two groups.
+    """
+    
+    # Path to the participants.tsv file
+    participants_file = Path(layout.get(extension='tsv', scope='raw', return_type='filename')[0])
+    
+    # Read the participants.tsv file
+    participants_df = pd.read_csv(participants_file, sep='\t')
+      
+    # Check if the 'group' column exists
+    if 'group' in participants_df.columns:
+        # Create lists of participants for each group
+        groups_dict = {}
+        unique_groups = participants_df['group'].unique()
+        
+        for group_value in unique_groups:
+            # Get the list of participant IDs for the current group
+            participants_in_group = participants_df.loc[participants_df['group'] == group_value, 'participant_id'].tolist()
+            groups_dict[group_value] = participants_in_group
+        
+        # Raise a warning if there are not exactly two groups
+        if len(groups_dict) != 2:
+            warnings.warn(f"Expected exactly two groups, but found {len(groups_dict)} groups.")
+        
+        return groups_dict
+    else:
+        warnings.warn("No group column ground in the participants.tsv file, cannot guess any grouping.")
+
 # Function to manage default group-level options
 def set_unspecified_group_level_options_to_default(config, layout):
+    
+    config["comparison_label"] = config.get("comparison_label", "CUSTOMNAME")
+    if 'group1_subjects' not in config.keys():
+        # Try to guess the groups from participants.tsv file
+        guessed_groups = guess_groups(layout)
+        if len(guessed_groups) == 2:
+            group1_name = list(guessed_groups.keys())[0]
+            group2_name = list(guessed_groups.keys())[1]
+            warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
+            config["group1_subjects"] = config.get("group1_subjects", list(guessed_groups.values())[0])
+            config["group2_subjects"] = config.get("group2_subjects", list(guessed_groups.values())[1])
+            config["comparison_label"] = f"{group1_name}VersuS{group2_name}"
+            warnings.warn(f"Setting comparison label to {config['comparison_label']}")
+        else:
+            config["group1_subjects"] = config.get("subjects", layout.derivatives['connectomix'].get_subjects())  # this is used only through the --helper tool
+            warnings.warn("Could not detect two groups, putting all subjects into first group.")
+            
     config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
     config["tasks"] = config.get("tasks", "restingstate" if "restingstate" in layout.derivatives['connectomix'].get_tasks() else layout.derivatives['connectomix'].get_tasks())
     config["runs"] = config.get("runs", "")
@@ -726,7 +781,7 @@ def set_unspecified_group_level_options_to_default(config, layout):
     config["uncorrected_alpha"] = config.get("uncorrected_alpha", 0.001)
     config["fdr_alpha"] = config.get("fdr_alpha", 0.05)
     config["fwe_alpha"]= float(config.get("fwe_alpha", 0.05))
-    config["n_permutations"] = config.get("n_permutations", 10000)
+    config["n_permutations"] = config.get("n_permutations", 20)
     config["analysis_type"]= config.get("analysis_type", "independent")  # Options: 'independent' or 'paired'
     config["method"] = config.get("method", "atlas")
     config["method_options"] = config.get("method_options", {})
@@ -1079,6 +1134,8 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
 
     # Threshold 3: Permutation-based threshold
     n_permutations = config["n_permutations"]
+    if n_permutations < 5000:
+        warnings.warn("Running permutation analysis with less than 5000 permutations (you choose {n_permutations}).")
     null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group1_data, group2_data, config, layout, entities)
     
     # Compute thresholds at desired significance
@@ -1174,7 +1231,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     print("Group-level analysis completed.")
 
 # Define the autonomous mode, to guess paths and parameters
-def autonomous_mode():
+def autonomous_mode(run=False):
     """ Function to automatically guess the analysis paths and settings. """
     
     current_dir = Path.cwd()
@@ -1209,23 +1266,41 @@ def autonomous_mode():
         # No connectomix folder found, assume participant-level analysis
         connectomix_folder = Path(derivatives_dir) / 'connectomix'
         analysis_level = 'participant'
-        cmd = f"python connectomix.py {bids_dir} {connectomix_folder} participant --fmriprep_dir {fmriprep_dir}"
+        
     elif len(connectomix_folder) == 1:
-        # Connectomix folder exists, assume group-level analysis
-        analysis_level = 'group'
+        # Connectomix folder exists and is unique, checking if something has already been run at participant-level
         connectomix_folder = connectomix_folder[0]
-        cmd = f"python connectomix.py {bids_dir} {connectomix_folder} group --fmriprep_dir {fmriprep_dir} --helper"
+        layout = BIDSLayout(bids_dir, derivatives=[connectomix_folder])
+        if len(layout.derivatives['connectomix'].get_subjects()) == 0:
+            print("No participant-level result detected, assuming participant-level analysis")
+            analysis_level = 'participant'
+        else:
+            print(f"Detected participant-level results for subjects {layout.derivatives['connectomix'].get_subjects()}, assuming group-level analysis")
+            analysis_level = 'group'
+        
+        
     else:
         raise ValueError(f"Several connectomix directories where found ({connectomix_folder}). Please resolve this ambiguity.")
-
-    # Step 4: Print the equivalent command that could be used manually
-    print(f"Autonomous mode detected the following command:\n{cmd}")
-
-    # Call the main function with guessed paths and settings
+    
+    # Step 4: Call the main function with guessed paths and settings
     if analysis_level == 'participant':
-        participant_level_analysis(bids_dir, connectomix_folder, fmriprep_dir, {})
+        if run:
+            participant_level_analysis(bids_dir, connectomix_folder, fmriprep_dir, {})
+        else:
+            create_participant_level_default_config_file(bids_dir, connectomix_folder, fmriprep_dir)
+    elif analysis_level == 'group':
+        if run:
+            group_level_analysis(bids_dir, connectomix_folder, {})
+        else:
+            create_group_level_default_config_file(bids_dir, connectomix_folder)
+
+    cmd = f"python connectomix.py {bids_dir} {connectomix_folder} {analysis_level} --fmriprep_dir {fmriprep_dir}"
+    print(f"Autonomous mode suggests the following command:\n{cmd}")
+    if run:
+        print("... and now launching the analysis!")
     else:
-        create_group_level_default_config_file(bids_dir, connectomix_folder)
+        print("If you are happy with this configuration, run this command or simply relaunch the autonomous mode add the --run flag.")
+
 
 # Main function with subcommands for participant and group analysis
 def main():
@@ -1233,6 +1308,9 @@ def main():
     
     # Define the autonomous flag
     parser.add_argument('--autonomous', action='store_true', help="Run the script in autonomous mode, guessing paths and settings.")
+    
+    # Define the run flag
+    parser.add_argument('--run', action='store_true', help="Run the analysis based on what the autonomous mode found.")
     
     # Define positional arguments for bids_dir, derivatives_dir, and analysis_level
     parser.add_argument('bids_dir', nargs='?', type=str, help='BIDS root directory containing the dataset.')
@@ -1249,7 +1327,7 @@ def main():
 
     # Run autonomous mode if flag is used
     if args.autonomous:
-        autonomous_mode()
+        autonomous_mode(run=args.run)
     else:   
         # Run the appropriate analysis level
         if args.analysis_level == 'participant':
