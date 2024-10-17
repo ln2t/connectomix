@@ -1107,6 +1107,9 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         else:
             raise ValueError(f"There are multiple matches for subject {subject}, review your configuration.")
     
+    print(f"Group 1 contains {len(group1_matrices)} participants")
+    print(f"Group 2 contains {len(group2_matrices)} participants")
+    
     # Convert to 3D arrays: (subjects, nodes, nodes)
     # Todo: make sure this is actually necessary
     group1_data = np.stack(group1_matrices, axis=0)
