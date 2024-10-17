@@ -1213,7 +1213,8 @@ def autonomous_mode():
     elif len(connectomix_folder) == 1:
         # Connectomix folder exists, assume group-level analysis
         analysis_level = 'group'
-        cmd = f"python connectomix.py {bids_dir} {connectomix_folder[0]} group --fmriprep_dir {fmriprep_dir} --helper"
+        connectomix_folder = connectomix_folder[0]
+        cmd = f"python connectomix.py {bids_dir} {connectomix_folder} group --fmriprep_dir {fmriprep_dir} --helper"
     else:
         raise ValueError(f"Several connectomix directories where found ({connectomix_folder}). Please resolve this ambiguity.")
 
