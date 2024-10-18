@@ -7,7 +7,6 @@ Created: August 2022
 """
 
 # General TODO list:
-# - implement correlation of connectivity with vector of scores like age, behavioural score etc including confounds
 # - add support for more atlases
 # - add more unittests functions
 
@@ -27,11 +26,9 @@ from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sym_matrix
 from nilearn.decomposition import CanICA
 from nilearn.regions import RegionExtractor
-from nilearn.connectome import sym_matrix_to_vec
 from nilearn import datasets
 from bids import BIDSLayout
 import csv
-import hashlib
 from pathlib import Path
 import matplotlib.pyplot as plt
 from scipy.stats import ttest_ind, ttest_rel, permutation_test
@@ -41,7 +38,9 @@ from statsmodels.tools.tools import add_constant
 from datetime import datetime
 
 # Define the version number
-__version__ = "1.0.0"## Helper functions
+__version__ = "1.0.0"
+
+## Helper functions
 
 # Helper function to create default configuration file based on what the dataset contains at participant level
 def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmriprep_dir):
@@ -142,13 +141,10 @@ def create_group_level_default_config_file(bids_dir, derivatives_dir):
 # Full documentation is located at github.com/ln2t/connectomix
 # All parameters are set to their plausible or default value
 
-# Groups to compare
-group1_subjects: {config.get("group1_subjects")}
-group2_subjects: {config.get("group2_subjects")}
 analysis_label: {config.get("analysis_label")}  # Custom name for the analysis, e.g. ControlVersuSPatients, PreTreatmentVersuSPostTreatment, or EffectOfIQWithoutAge
 
-# Type of statistical analysis
-analysis_type: {config.get("analysis_type")}  # Can be also set to 'paired' for two-sample paired t-tests
+# Analysis type
+analysis_type: {config.get("analysis_type")}  # Choose from independent, paired, or regression. If regression is selected, provide also one covariate and optionnaly a list of confounds in analysis_options.
 
 # Statistical alpha-level thresholds
 uncorrected_alpha: {config.get("uncorrected_alpha")}  # Without multiple-comparison correction
@@ -170,11 +166,12 @@ sessions: {config.get("sessions")}
 # Selected space
 spaces: {config.get("spaces")}
 
-# Analysis type
-analysis_type: {config.get("analysis_type")}  # Choose from independent, paired, or regression. If regression is selected, provide also one covariate and optionnaly a list of confounds in analysis_options.
-
 # Analysis options
-# analysis_options
+analysis_options:
+    # Groups to compare
+    group1_subjects: {config["analysis_options"].get("group1_subjects")}
+    group2_subjects: {config["analysis_options"].get("group2_subjects")}
+    # Regression parameters
     # covariate: {config["analysis_options"].get("covariate")}  # Covariate for analysis type 'regression'
     # confounds: {config["analysis_options"].get("confounds")}  # Confounds for analysis type 'regression' (optionnal)
 
@@ -547,23 +544,20 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
         perm_data = np.array([list(observed_stats.values())])  # Size is (1,2) and order is max followed by min
     
     # Run the permutations until goal is reached
-    n_resamples = 10  # this is the chunk size
+    print(f"Running permutations (target is {n_permutations} permutations)...", end='')
     while perm_data.shape[0] <= n_permutations:
-        print(f"Running a chunk of permutations... (goal is {n_permutations} permutations)")
+        print('.', end='')
         if analysis_type in ['independent', 'paired']:
             group1_data = group_data[0]
             group2_data = group_data[1]
             perm_test = permutation_test((group1_data, group2_data),
                                                           stat_func,
                                                           vectorized=False,
-                                                          n_resamples=n_resamples)
+                                                          n_resamples=1)
             permuted_t_scores = perm_test.null_distribution
             
         elif analysis_type == 'regression':
-            
-            # work in progress
-            # In principle everything should work, but I didn't tested much...
-            permuted_t_scores, _ = regression_analysis(group_data, design_matrix, permtutate=True)
+            permuted_t_scores, _ = regression_analysis(group_data, design_matrix, permutate=True)
             
         null_data = np.array([np.nanmax(permuted_t_scores), np.nanmin(permuted_t_scores)])
         perm_data = np.vstack((perm_data, null_data.reshape(1, -1)))
@@ -571,7 +565,8 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
         # Save to file
         np.save(perm_file, perm_data)
         
-    return perm_data[:0], perm_data[:1]  # Returning all maxima and all minima
+    print('.')
+    return perm_data.reshape([-1,1])[0:], perm_data.reshape([-1,1])[1:]  # Returning all maxima and all minima
 
 # Define a function to compute the difference in connectivity between the two groups
 # Todo: adapt this for paired tests
@@ -761,7 +756,7 @@ def set_unspecified_group_level_options_to_default(config, layout):
     
     config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
     config["tasks"] = config.get("tasks", "restingstate" if "restingstate" in layout.derivatives['connectomix'].get_tasks() else layout.derivatives['connectomix'].get_tasks())
-    config["runs"] = config.get("runs", "")
+    config["runs"] = config.get("runs", layout.derivatives['connectomix'].get_runs())
     config["sessions"] = config.get("sessions", layout.derivatives['connectomix'].get_sessions())
     config["spaces"] = config.get("spaces", "MNI152NLin2009cAsym" if "MNI152NLin2009cAsym" in layout.derivatives['connectomix'].get_spaces() else layout.derivatives['connectomix'].get_spaces())
     config["uncorrected_alpha"] = config.get("uncorrected_alpha", 0.001)
@@ -777,15 +772,15 @@ def set_unspecified_group_level_options_to_default(config, layout):
     
     config["analysis_label"] = config.get("analysis_label", "CUSTOMNAME")
     if config.get("analysis_type") in ['independent', 'paired']:
-        if 'group1_subjects' not in config.keys():
+        if 'group1_subjects' not in config['analysis_options'].keys():
             # Try to guess the groups from participants.tsv file
             guessed_groups = guess_groups(layout)
             if len(guessed_groups) == 2:
                 group1_name = list(guessed_groups.keys())[0]
                 group2_name = list(guessed_groups.keys())[1]
                 warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
-                config["group1_subjects"] = config.get("group1_subjects", list(guessed_groups.values())[0])
-                config["group2_subjects"] = config.get("group2_subjects", list(guessed_groups.values())[1])
+                config["analysis_options"]["group1_subjects"] = config.get("group1_subjects", list(guessed_groups.values())[0])
+                config["analysis_options"]["group2_subjects"] = config.get("group2_subjects", list(guessed_groups.values())[1])
                 config["analysis_label"] = f"{group1_name}VersuS{group2_name}"
                 warnings.warn(f"Setting analysis label to {config['analysis_label']}")
             else:
@@ -793,8 +788,8 @@ def set_unspecified_group_level_options_to_default(config, layout):
                 warnings.warn("Could not detect two groups, putting all subjects into first group.")
     elif config.get("analysis_type") == 'regression':
         config["analysis_options"]["subjects_to_regress"] = config["analysis_options"].get("subjects_to_regress", layout.derivatives['connectomix'].get_subjects())
-        config["analysis_options"]["covariate"] = config["anaysis_options"].get("covariate", "COVARIATENAME")
-        config["analysis_options"]["confounds"] = config["anaysis_options"].get("confounds", [])
+        config["analysis_options"]["covariate"] = config["analysis_options"].get("covariate", "COVARIATENAME")
+        config["analysis_options"]["confounds"] = config["analysis_options"].get("confounds", [])
     if config.get("method") == 'atlas':
         config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
     if config.get("method") == 'seeds':
@@ -978,6 +973,7 @@ def generate_group_analysis_report(layout, config):
     connectivity_kind = config.get("connectivity_kind")
     session = config.get("sessions")
     run = config.get("runs")
+    analysis_type = config.get("analysis_type")
     
     bids_entities = dict(session=session,
                         run=run,
@@ -1001,12 +997,21 @@ def generate_group_analysis_report(layout, config):
         # Write the title of the report
         report_file.write(f"<h1>Group analysis Report for Method: {method}</h1>\n")
         report_file.write(f"<h2>Connectivity Kind: {connectivity_kind}</h2>\n")
+        report_file.write(f"<h3>Analysis type: {analysis_type}, analysis label {config.get('analysis_label')}</h3>\n")
+        if analysis_type == 'independent':
+            report_file.write(f"<h3>Subjects: {config['analysis_options'].get('group1_subjects')} versus {config['analysis_options'].get('group2_subjects')}</h3>\n")
+        elif analysis_type == 'regression':
+            report_file.write(f"<h3>Subjects: {config['analysis_options'].get('subjects_to_regress')}</h3>\n")
+            report_file.write(f"<h3>Covariate: {config['analysis_options'].get('covariate')}</h3>\n")
+            if config.get('analysis_options')['confounds']:
+                report_file.write(f"<h3>Confounds: {config['analysis_options'].get('confounds')}</h3>\n")
         for suffix in suffixes:
             figure_files = layout.derivatives['connectomix'].get(**bids_entities,
                                                                  suffix=suffix,
                                                                  extension='.svg',
                                                                  return_type='filename')
             figure_files = apply_nonbids_filter('method', method, figure_files)
+            
             figure_files = apply_nonbids_filter('analysis', analysis_label, figure_files)
             
             if suffix in ['uncorrmatrix', 'uncorrconnectome']:
@@ -1017,13 +1022,16 @@ def generate_group_analysis_report(layout, config):
                 alpha = str(config["fwe_alpha"]).replace('.', 'dot')
                 
             figure_files = apply_nonbids_filter('alpha', alpha, figure_files)
-            if len(figure_files) > 2:
+            if len(figure_files) < 1:
+                raise ValueError("Not enough figure files found, maybe this is a bug?")    
+            elif len(figure_files) >= 2:
                 raise ValueError("f{Too many files found in the group-level outputs, are you sure you aren't mixing up analyses? Use different labels if need be!'}")
             else:
                 for figure_file in figure_files:
                     report_file.write(f'<img src="{figure_file}" width="800">\n')
 
-        print(f"Group analysis report saved to {report_output_path}")
+        print("Group analysis report saved. To open, you may try to type the following command (might not work when using Docker")
+        print(f"open {report_output_path}")
 
 
 # Group size verification tool
@@ -1057,7 +1065,7 @@ def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entit
 def retrieve_info_from_participant_table(layout, subjects, covariate, confounds=None):
     
     # Load participants.tsv
-    participants_file = layout.get(return_type='filename', extenion='tsv', scope='raw')
+    participants_file = layout.get(return_type='filename', extension='tsv', scope='raw')[0]
     participants_df = pd.read_csv(participants_file, sep='\t')
     
     # Ensure the measure exists in participants.tsv
@@ -1081,7 +1089,7 @@ def retrieve_info_from_participant_table(layout, subjects, covariate, confounds=
     # Extract the measure and confounds for each subject in subjects_list
     for subject in subjects:
         # Find the row corresponding to the subject
-        subject_row = participants_df.loc[participants_df['participant_id'] == subject, columns_to_extract]
+        subject_row = participants_df.loc[participants_df['participant_id'] == 'sub-' + subject, columns_to_extract]
         
         # Check if the subject exists in the participants.tsv file
         if subject_row.empty:
@@ -1112,14 +1120,18 @@ def regression_analysis(group_data, design_matrix, permutate=False):
     """
     
     # Get the number of subjects, nodes from group_data
+    group_data = np.array(group_data)
     n_subjects, n_nodes, _ = group_data.shape
+
+    # Extract name of columns to permute
+    covariable_to_permute = design_matrix.columns[0]
 
     # Extract the covariate (first column of design matrix) and other covariates
     X = add_constant(design_matrix)  # Add constant for the intercept
 
     # If permutate is True, shuffle the first column (covariate) of the design matrix
     if permutate:
-        X[:, 1] = np.random.permutation(X[:, 1])
+        X[covariable_to_permute] = np.random.permutation(X[covariable_to_permute])
 
     # Vectorize the symmetric connectivity matrices (extract upper triangular part)
     vec_group_data = np.array([sym_matrix_to_vec(matrix) for matrix in group_data])
@@ -1140,8 +1152,8 @@ def regression_analysis(group_data, design_matrix, permutate=False):
         model = OLS(y, X).fit()
 
         # Extract t-value and p-value for the covariate (first column)
-        t_values_vec[idx] = model.tvalues[1]
-        p_values_vec[idx] = model.pvalues[1]
+        t_values_vec[idx] = model.tvalues[covariable_to_permute]
+        p_values_vec[idx] = model.pvalues[covariable_to_permute]
 
     # Convert the vectorized t-values and p-values back to symmetric matrices
     t_values_matrix = vec_to_sym_matrix(t_values_vec)
@@ -1171,7 +1183,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     derivatives_dir.mkdir(parents=True, exist_ok=True)
     config_filename = derivatives_dir / "config" / "backups" / f"group_level_config_{timestamp}.json"
     save_copy_of_config(config, config_filename)
-    print(f"Configuration file saved to {config_filename}")
+    print(f"Configuration file backed up at {config_filename}")
     
     # Retrieve connectivity type and other configuration parameters
     connectivity_type = config.get('connectivity_kind')
@@ -1194,8 +1206,8 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
 
     if analysis_type in ['independent', 'paired']:
         # Load group specifications from config
-        group1_subjects = config['group1_subjects']
-        group2_subjects = config['group2_subjects']
+        group1_subjects = config['analysis_options']['group1_subjects']
+        group2_subjects = config['analysis_options']['group2_subjects']
         
         # Check each group has at least two subjects, otherwise no permutation testing is possible
         check_group_has_several_members(group1_subjects)
@@ -1225,8 +1237,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
             t_stats, p_values = ttest_rel(group1_data, group2_data, axis=0)
             
     elif analysis_type == "regression":
-        raise ValueError("Regression analysis is not yet supported. This is work in progress, please come back later.")
-        subjects = config['subjects_to_regress']
+        subjects = config['analysis_options']['subjects_to_regress']
         group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
         design_matrix = retrieve_info_from_participant_table(layout, subjects, config["analysis_options"]["covariate"], config["analysis_options"]["confounds"])
         t_stats, p_values = regression_analysis(group_data, design_matrix)
@@ -1245,7 +1256,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     # Threshold 3: Permutation-based threshold
     n_permutations = config["n_permutations"]
     if n_permutations < 5000:
-        warnings.warn("Running permutation analysis with less than 5000 permutations (you choose {n_permutations}).")
+        warnings.warn(f"Running permutation analysis with less than 5000 permutations (you choose {n_permutations}).")
         
     null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout, entities, {'observed_t_max': np.nanmax(t_stats), 'observed_t_min': np.nanmin(t_stats)}, design_matrix=design_matrix)
     
@@ -1396,7 +1407,7 @@ def autonomous_mode(run=False):
     
     # Step 4: Call the main function with guessed paths and settings
     if run:
-        print("... and now launching the participant-level analysis!")
+        print("... and now launching the analysis!")
         if analysis_level == 'participant':
             participant_level_analysis(bids_dir, connectomix_folder, fmriprep_dir, {})
         elif analysis_level == 'group':

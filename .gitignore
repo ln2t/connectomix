@@ -1,4 +1,4 @@
-connectomix/utils/__pycache__/*
+test_script.py
 venv/*
 .idea/*
 tests/data/*
