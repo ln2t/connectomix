@@ -131,9 +131,14 @@ def create_group_level_default_config_file(bids_dir, derivatives_dir):
     # Print some stuff for the primate using this function
     print("Generating default configuration file for default parameters, please wait while the dataset is explored...")   
     
-    # Load default configuration
-    config = set_unspecified_group_level_options_to_default({}, layout)
+    # Load default configuration for several types of analysis
+    independent_config = set_unspecified_group_level_options_to_default(dict(analysis_type='independent'), layout)
+    paired_config = set_unspecified_group_level_options_to_default(dict(analysis_type='paired'), layout)
+    regression_config = set_unspecified_group_level_options_to_default(dict(analysis_type='regression'), layout)
             
+    # The default configuration is 'independet' but we also use the other ones in comments to help the user
+    config = independent_config
+    
     # Prepare the YAML content with comments
     yaml_content_with_comments = f"""\
 # Connectomix Configuration File
@@ -171,9 +176,19 @@ analysis_options:
     # Groups to compare
     group1_subjects: {config["analysis_options"].get("group1_subjects")}
     group2_subjects: {config["analysis_options"].get("group2_subjects")}
+    # Paired analysis specifications
+        # subjects : {paired_config["analysis_options"]["subjects"]}  # Subjects to include in the paired analysis
+    # sample1_entities :  # These entities altogether must match exaclty two scans be subject
+        # tasks: {paired_config["analysis_options"]["sample1_entities"]["tasks"]}
+        # sessions: {paired_config["analysis_options"]["sample1_entities"]["sessions"]}
+        # runs: {paired_config["analysis_options"]["sample1_entities"]["runs"]}
+    # sample2_entities : 
+        # tasks: {paired_config["analysis_options"]["sample2_entities"]["tasks"]}
+        # sessions: {paired_config["analysis_options"]["sample2_entities"]["sessions"]}
+        # runs: {paired_config["analysis_options"]["sample2_entities"]["runs"]}
     # Regression parameters
-    # covariate: {config["analysis_options"].get("covariate")}  # Covariate for analysis type 'regression'
-    # confounds: {config["analysis_options"].get("confounds")}  # Confounds for analysis type 'regression' (optionnal)
+    # covariate: {regression_config["analysis_options"].get("covariate")}  # Covariate for analysis type 'regression'
+    # confounds: {regression_config["analysis_options"].get("confounds")}  # Confounds for analysis type 'regression' (optionnal)
 
 # Kind of connectivity used at participant-level
 connectivity_kind: {config.get("connectivity_kind")}
@@ -768,28 +783,44 @@ def set_unspecified_group_level_options_to_default(config, layout):
     config["method"] = config.get("method", "atlas")
     
     config["method_options"] = config.get("method_options", {})
-    config["analysis_options"] = config.get("analysis_options", {})
     
     config["analysis_label"] = config.get("analysis_label", "CUSTOMNAME")
-    if config.get("analysis_type") in ['independent', 'paired']:
-        if 'group1_subjects' not in config['analysis_options'].keys():
-            # Try to guess the groups from participants.tsv file
-            guessed_groups = guess_groups(layout)
-            if len(guessed_groups) == 2:
-                group1_name = list(guessed_groups.keys())[0]
-                group2_name = list(guessed_groups.keys())[1]
-                warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
-                config["analysis_options"]["group1_subjects"] = config.get("group1_subjects", list(guessed_groups.values())[0])
-                config["analysis_options"]["group2_subjects"] = config.get("group2_subjects", list(guessed_groups.values())[1])
-                config["analysis_label"] = f"{group1_name}VersuS{group2_name}"
-                warnings.warn(f"Setting analysis label to {config['analysis_label']}")
-            else:
-                config["group1_subjects"] = config.get("subjects", layout.derivatives['connectomix'].get_subjects())  # this is used only through the --helper tool
-                warnings.warn("Could not detect two groups, putting all subjects into first group.")
-    elif config.get("analysis_type") == 'regression':
-        config["analysis_options"]["subjects_to_regress"] = config["analysis_options"].get("subjects_to_regress", layout.derivatives['connectomix'].get_subjects())
-        config["analysis_options"]["covariate"] = config["analysis_options"].get("covariate", "COVARIATENAME")
-        config["analysis_options"]["confounds"] = config["analysis_options"].get("confounds", [])
+
+    
+    analysis_options = {}
+    
+    if config["analysis_type"] == 'independent':
+        guessed_groups = guess_groups(layout)
+        if len(guessed_groups) == 2:
+            group1_name = list(guessed_groups.keys())[0]
+            group2_name = list(guessed_groups.keys())[1]
+            warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
+            analysis_options["group1_subjects"] = list(guessed_groups.values())[0]
+            analysis_options["group2_subjects"] = list(guessed_groups.values())[1]
+            config["analysis_label"] = f"{group1_name}VersuS{group2_name}"  # This overwrites the above generic name to ensure people don't get confused with the automatic selection of subjects
+            warnings.warn(f"Setting analysis label to {config['analysis_label']}")
+        else:
+            config["group1_subjects"] = config.get("subjects", layout.derivatives['connectomix'].get_subjects())  # this is used only through the --helper tool (or the autonomous mode)
+            warnings.warn("Could not detect two groups, putting all subjects into first group.")
+            
+    elif config["analysis_type"] == 'paired':
+        analysis_options["subjects"] = layout.derivatives['connectomix'].get_subjects()
+        analysis_options["sample1_entities"] = dict(tasks=config.get("tasks"),
+                                                    sessions=config.get("sessions"),
+                                                    runs=config.get("runs"))
+        analysis_options["sample2_entities"] = dict(tasks=config.get("tasks"),
+                                                    sessions=config.get("sessions"),
+                                                    runs=config.get("runs"))
+        
+    elif config["analysis_type"] == 'regression':
+        analysis_options["subjects_to_regress"] = layout.derivatives['connectomix'].get_subjects()
+        analysis_options["covariate"] = "COVARIATENAME"
+        analysis_options["confounds"] = []
+        
+    
+    # Set the analysis_options field
+    config["analysis_options"] = config.get("analysis_options", analysis_options)
+    
     if config.get("method") == 'atlas':
         config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
     if config.get("method") == 'seeds':
@@ -1043,7 +1074,7 @@ def check_group_has_several_members(group_subjects):
 
 # Helper function to collect participant-level matrices
 def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method):
-    group_matrices = []
+    group_dict = {}
     for subject in subjects:
         conn_files = layout.derivatives["connectomix"].get(subject=subject,
                                                            suffix="matrix",
@@ -1056,10 +1087,10 @@ def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entit
         if len(conn_files) == 0:
             raise FileNotFoundError(f"Connectivity matrix for subject {subject} not found, are you sure you ran the participant-level pipeline?")
         elif len(conn_files) == 1:
-            group_matrices.append(np.load(conn_files[0]))  # Load the match
+            group_dict[subject] = np.load(conn_files[0])  # Load the match
         else:
             raise ValueError(f"There are multiple matches for subject {subject}, review your configuration. Matches are {conn_files}")
-    return group_matrices
+    return group_dict
 
 # Tool to extract covariate and confounds from participants.tsv in the same order as in given subject list
 def retrieve_info_from_participant_table(layout, subjects, covariate, confounds=None):
@@ -1161,6 +1192,37 @@ def regression_analysis(group_data, design_matrix, permutate=False):
 
     return t_values_matrix, p_values_matrix
 
+# Fucntion to get participant-level data for paired analysis
+def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
+    """
+    returns: A dict with key equal to each subject and whose value is a length-2 list with the loaded connectivity matrices
+    """
+    # Todo: complete this function
+    # Placeholder function
+    subjects =  config["analysis_options"]["subjects"]
+    sample1_entities = config["analysis_options"]["sample1_entities"]
+    sample2_entities = config["analysis_options"]["sample2_entities"]
+    method = config["method"]
+    
+    sample1_dict = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, sample1_entities, method)
+    sample2_dict = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, sample2_entities, method)
+    
+    # Let's make a consistency check, just to make sure we have what we think we have
+    # This is probably not necessary though
+    for subject in sample1_dict.keys():
+        if subject not in sample2_dict.keys():
+            raise KeyError(f"Second sample does not contain requested subject {subject}, something is wrong. Maybe a bug?")
+    for subject in sample2_dict.keys():
+        if subject not in sample1_dict.keys():
+            raise KeyError(f"First sample does not contain requested subject {subject}, something is wrong. Maybe a bug?")
+    
+    # Unify the data in one dict
+    paired_samples = {}
+    for subject in subjects:
+        paired_samples[subject] = [sample1_dict[subject], sample2_dict[subject]]
+    
+    return paired_samples
+
 # Group-level analysis
 def group_level_analysis(bids_dir, derivatives_dir, config):
     # Print version information
@@ -1206,6 +1268,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
 
     if analysis_type in ['independent', 'paired']:
         # Load group specifications from config
+        # Todo: change terminology from 'group' to 'samples' when performing independent samples tests so that it is consistent with the terminology when doing a paired test.
         group1_subjects = config['analysis_options']['group1_subjects']
         group2_subjects = config['analysis_options']['group2_subjects']
         
@@ -1216,6 +1279,10 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
         group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
         group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities, method)
+        
+        # For independent tests we dontt need to keep track of subjects labels
+        group1_matrices = list(group1_matrices.values())
+        group2_matrices  = list(group2_matrices.values())
     
         print(f"Group 1 contains {len(group1_matrices)} participants")
         print(f"Group 2 contains {len(group2_matrices)} participants")
@@ -1232,13 +1299,22 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
             t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
         elif analysis_type == "paired":
             # Paired t-test within the same subjects
-            if len(group1_subjects) != len(group2_subjects):
-                raise ValueError("Paired t-test requires an equal number of subjects in both groups.")
-            t_stats, p_values = ttest_rel(group1_data, group2_data, axis=0)
+            paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
+            
+            # Get the two samples from paired_samples (with this we are certain that they are in the right order)
+            sample1 = list(paired_samples.values())[:,0]
+            sample2 = list(paired_samples.values())[0,:]
+            
+            if len(sample1) != len(sample2):
+                raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
+                
+            t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
+            print(f"Debug: shape of computed t_stats in paired test: {t_stats.shape}")
             
     elif analysis_type == "regression":
         subjects = config['analysis_options']['subjects_to_regress']
         group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
+        group_data = list(group_data.values())
         design_matrix = retrieve_info_from_participant_table(layout, subjects, config["analysis_options"]["covariate"], config["analysis_options"]["confounds"])
         t_stats, p_values = regression_analysis(group_data, design_matrix)
 
