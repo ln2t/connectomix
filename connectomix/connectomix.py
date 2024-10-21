@@ -36,6 +36,7 @@ from statsmodels.stats.multitest import multipletests
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools.tools import add_constant
 from datetime import datetime
+from time import sleep
 
 # Define the version number
 __version__ = "1.0.0"
@@ -177,7 +178,7 @@ analysis_options:
     group1_subjects: {config["analysis_options"].get("group1_subjects")}
     group2_subjects: {config["analysis_options"].get("group2_subjects")}
     # Paired analysis specifications
-        # subjects : {paired_config["analysis_options"]["subjects"]}  # Subjects to include in the paired analysis
+    # subjects : {paired_config["analysis_options"]["subjects"]}  # Subjects to include in the paired analysis
     # sample1_entities :  # These entities altogether must match exaclty two scans be subject
         # tasks: {paired_config["analysis_options"]["sample1_entities"]["tasks"]}
         # sessions: {paired_config["analysis_options"]["sample1_entities"]["sessions"]}
@@ -187,6 +188,7 @@ analysis_options:
         # sessions: {paired_config["analysis_options"]["sample2_entities"]["sessions"]}
         # runs: {paired_config["analysis_options"]["sample2_entities"]["runs"]}
     # Regression parameters
+    # subjects_to_regress: {regression_config["analysis_options"].get("subjects_to_regress")}  # Subjects to include in the regression analysis
     # covariate: {regression_config["analysis_options"].get("covariate")}  # Covariate for analysis type 'regression'
     # confounds: {regression_config["analysis_options"].get("confounds")}  # Confounds for analysis type 'regression' (optionnal)
 
@@ -521,12 +523,34 @@ def compute_canica_components(func_filenames, layout, entities, options):
     
     return canica_filename, extractor
 
+# Tool to remove the entity defining the pairs to compare
+def remove_pair_making_entity(entities):
+    # Note that this function has no effect on entities in the case of independent samples comparison or during regression analysis
+    unique_entities = entities.copy()
+    
+    task = entities['task']
+    run = entities['run']
+    session = entities['session']
+    
+    if isinstance(task, list):
+        if len(task) > 1:
+            unique_entities['task'] = None
+    if isinstance(run, list):
+        if len(run) > 1:
+            unique_entities['run'] = None
+    if isinstance(session, list):
+        if len(session) > 1:
+            unique_entities['session'] = None
+        
+    return unique_entities
+
 # Permutation testing with stat max thresholding
 def generate_permuted_null_distributions(group_data, config, layout, entities, observed_stats, design_matrix=None):
     """
     Perform a two-sided permutation test to determine positive and negative thresholds separately.
     Returns separate maximum and minimum thresholds for positive and negative t-values.
     """   
+    # Todo: create plots of null distributions for the report
     # Extract values from config
     n_permutations = config.get("n_permutations")
     analysis_type = config.get("analysis_type")
@@ -547,12 +571,14 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
     elif len(perm_files) == 1:
         perm_file = perm_files[0]
         perm_data = np.load(perm_file)
+        print(f"Loading {perm_data.shape[0]} pre-existing permutations from {perm_file}")
     else:
+        # Note: if we compare task, then the task entity must disappear in the path, so we make it optional in the path_patterns
         perm_file = layout.derivatives["connectomix"].build_path({**entities,
                                                           "analysis_label": config["analysis_label"],
                                                           "method": config["method"],
                                                           },
-                                                     path_patterns=["group/{analysis_label}/permutations/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_permutations.npy"],
+                                                     path_patterns=["group/{analysis_label}/permutations/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_permutations.npy"],
                                                      validate=False)
         ensure_directory(perm_file)
         # If nothing has to be loaded, then initiate the null distribution with the observed values
@@ -565,10 +591,15 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
         if analysis_type in ['independent', 'paired']:
             group1_data = group_data[0]
             group2_data = group_data[1]
+            if analysis_type == 'independent':
+                permutation_type = 'independent'
+            elif analysis_type == 'paired':
+                permutation_type = 'samples'
             perm_test = permutation_test((group1_data, group2_data),
                                                           stat_func,
                                                           vectorized=False,
-                                                          n_resamples=1)
+                                                          n_resamples=1,
+                                                          permutation_type=permutation_type)
             permuted_t_scores = perm_test.null_distribution
             
         elif analysis_type == 'regression':
@@ -581,6 +612,7 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
         np.save(perm_file, perm_data)
         
     print('.')
+    print('Permutations computed.')
     return perm_data.reshape([-1,1])[0:], perm_data.reshape([-1,1])[1:]  # Returning all maxima and all minima
 
 # Define a function to compute the difference in connectivity between the two groups
@@ -819,6 +851,7 @@ def set_unspecified_group_level_options_to_default(config, layout):
         
     
     # Set the analysis_options field
+    # Todo: enable confounds to be optional in the config file. Currently it does not work if analysis_options are set in config file as it does not take the default value in the following line. But we want to be able to leave the confounds field empty in the config file.
     config["analysis_options"] = config.get("analysis_options", analysis_options)
     
     if config.get("method") == 'atlas':
@@ -991,7 +1024,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
             plt.close()
     print("Participant-level analysis completed.")
 
-def generate_group_analysis_report(layout, config):
+def generate_group_analysis_report(layout, bids_entities, config):
     """
     Generates a group analysis report based on the method and connectivity kind.
 
@@ -999,18 +1032,8 @@ def generate_group_analysis_report(layout, config):
 
     method = config.get("method")
     analysis_label = config.get('analysis_label')
-    task = config.get("tasks")
-    space = config.get("spaces")
     connectivity_kind = config.get("connectivity_kind")
-    session = config.get("sessions")
-    run = config.get("runs")
     analysis_type = config.get("analysis_type")
-    
-    bids_entities = dict(session=session,
-                        run=run,
-                        task=task,
-                        space=space,
-                        desc=connectivity_kind)
     
     entities = dict(**bids_entities ,
                     method=method,
@@ -1157,6 +1180,9 @@ def regression_analysis(group_data, design_matrix, permutate=False):
     # Extract name of columns to permute
     covariable_to_permute = design_matrix.columns[0]
 
+    # Since we add a constant in the design matrix, we must de-mean the columns of the design matrix
+    design_matrix = design_matrix.apply(lambda x: x - x.mean(), axis=0)
+
     # Extract the covariate (first column of design matrix) and other covariates
     X = add_constant(design_matrix)  # Add constant for the intercept
 
@@ -1200,8 +1226,18 @@ def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
     # Todo: complete this function
     # Placeholder function
     subjects =  config["analysis_options"]["subjects"]
-    sample1_entities = config["analysis_options"]["sample1_entities"]
-    sample2_entities = config["analysis_options"]["sample2_entities"]
+    
+    # Extract sample-defining entities - some manual operation is required here as BIDSLayout uses singular words (e.g. 'run' unstead of 'runs')
+    sample1_entities = entities.copy()
+    sample1_entities['task'] = config["analysis_options"]["sample1_entities"]['tasks']
+    sample1_entities['session'] = config["analysis_options"]["sample1_entities"]['sessions']
+    sample1_entities['run'] = config["analysis_options"]["sample1_entities"]['runs']
+    
+    sample2_entities = entities.copy()
+    sample2_entities['task'] = config["analysis_options"]["sample2_entities"]['tasks']
+    sample2_entities['session'] = config["analysis_options"]["sample2_entities"]['sessions']
+    sample2_entities['run'] = config["analysis_options"]["sample2_entities"]['runs']
+    
     method = config["method"]
     
     sample1_dict = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, sample1_entities, method)
@@ -1266,7 +1302,8 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
 
     design_matrix = None  # This will be necessary for regression analyses
 
-    if analysis_type in ['independent', 'paired']:
+    # Perform the appropriate group-level analysis
+    if analysis_type == 'independent':
         # Load group specifications from config
         # Todo: change terminology from 'group' to 'samples' when performing independent samples tests so that it is consistent with the terminology when doing a paired test.
         group1_subjects = config['analysis_options']['group1_subjects']
@@ -1288,28 +1325,28 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         print(f"Group 2 contains {len(group2_matrices)} participants")
         
         # Convert to 3D arrays: (subjects, nodes, nodes)
-        # Todo: make sure this is actually necessary
         group1_data = np.stack(group1_matrices, axis=0)
         group2_data = np.stack(group2_matrices, axis=0)
         group_data = [group1_data, group2_data]
         
-        # Perform the appropriate group-level analysis
-        if analysis_type == "independent":
-            # Independent t-test between different subjects
-            t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
-        elif analysis_type == "paired":
-            # Paired t-test within the same subjects
-            paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
+        # Independent t-test between different subjects
+        t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
+
+    if analysis_type == "paired":
+        # Paired t-test within the same subjects
+        paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
+        
+        # Get the two samples from paired_samples (with this we are certain that they are in the right order)
+        sample1 = np.array(list(paired_samples.values()))[:,0]
+        sample2 = np.array(list(paired_samples.values()))[:,1]
+        group_data = [sample1, sample2]
+        
+        if len(sample1) != len(sample2):
+            raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
             
-            # Get the two samples from paired_samples (with this we are certain that they are in the right order)
-            sample1 = list(paired_samples.values())[:,0]
-            sample2 = list(paired_samples.values())[0,:]
-            
-            if len(sample1) != len(sample2):
-                raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
-                
-            t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
-            print(f"Debug: shape of computed t_stats in paired test: {t_stats.shape}")
+        t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
+        
+        entities = remove_pair_making_entity(entities)
             
     elif analysis_type == "regression":
         subjects = config['analysis_options']['subjects_to_regress']
@@ -1360,7 +1397,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                                       "analysis_label": config["analysis_label"],
                                                       "method": config["method"]                                                      
                                                       },
-                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
+                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
                                                  validate=False)
     
     ensure_directory(threshold_file)
@@ -1423,9 +1460,11 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                     entities,
                                     coords)
     
+    sleep(10)
+    
     # Generate report
     # Todo: review generate_group_analysis_report when performing a regression analysis
-    generate_group_analysis_report(layout, config)    
+    generate_group_analysis_report(layout, entities, config)
 
     print("Group-level analysis completed.")
 
