@@ -9,6 +9,15 @@ Created: August 2022
 # General TODO list:
 # - add support for more atlases
 # - add more unittests functions
+# - create minimalistic examples datasets, for every cases:
+    # -- Participant-level analyses
+        # --- method: Atlas, Seeds, ICA
+        # --- correlation type: correlation, partial correlation
+        # --- non-trivial confounds from fMRIPrep in time series extraction
+    # -- Group-level analysis
+        # --- Independent samples testing
+        # --- Paired samples testing: inter-session OR inter-task OR inter-run comparison
+        # --- Regression: covariate and confounds removal
 
 import os
 import argparse
@@ -452,7 +461,6 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
     return timeseries, labels
 
 # Compute CanICA component images
-# Todo: add file with paths to func files used to compute ICA, generate hash, use hash to name both component IMG and text file.
 def compute_canica_components(func_filenames, layout, entities, options):
     # Build path to save canICA components
     canica_filename = layout.derivatives['connectomix'].build_path(entities,
