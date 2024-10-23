@@ -330,6 +330,22 @@ Ensure the following Python packages are installed:
 - **Multiple Matches for Subjects**: Ensure your configuration parameters uniquely identify each subject's data.
 - **Affine Mismatches**: If you encounter warnings about affine mismatches, Connectomix will attempt to resample the images. Ensure all functional images are in the same space and have compatible affines.
 
+## Test Datasets
+
+A series of datasets to test various types of analysis are available on [openneuro](https://www.openneuro.org). Each of these datasets contain the configuration file to run the analysis. Note that these are only minimalistic examples and contain very little data. They are meant to ease your task of writing the configuration file that corresponds to your analysis. The featured analysis are:
+
+- **Participant-level analysis**: dataset [dsXXX-1](https://www.openneuro.org/datasets/dsXXX-1), featuring:
+    - Atlas-based ROIs definition, using Schaefer2018 with 100 rois,
+    - Seed-based ROIs definition, using a table with seeds label and coordinates in MNI space,
+    - ICA-based ROIs definition.
+- **Group-level analysis - independent samples**: dataset [dsXXX-2](https://www.openneuro.org/datasets/dsXXX-2), featuring the automatic group detection from the `group` column of the `participants.tsv` file, and performing an independent-samples t-test, correcting for multiple comparisons using permutation statistics.
+- **Group-level analysis - session-based paired samples**: dataset [dsXXX-3](https://www.openneuro.org/datasets/dsXXX-3), feature how the samples to compare are defined using different `session` entity to compare session 1 versus session 2 across all participants.
+- **Group-level analysis - run-based paired samples**: dataset [dsXXX-4](https://www.openneuro.org/datasets/dsXXX-4), feature how the samples to compare are defined using different `run` entity to compare run 1 versus run 2 across all participants.
+- **Group-level analysis - task-based paired samples**: dataset [dsXXX-5](https://www.openneuro.org/datasets/dsXXX-5), feature how the samples to compare are defined using different `task` entity to compare one task versus another one across all participants.
+- **Group-level analysis - regression analysis**: dataset [dsXXX-6](https://www.openneuro.org/datasets/dsXXX-6), showing how to check if connectivities correlates with a clinical score given in the `participants.tsv` file, including a confounding variable (in this case: `age`).
+
+These analyses can also be used as tests for new versions of the software.
+
 ## Contact
 
 For questions, issues, or contributions, please visit the GitHub repository:
