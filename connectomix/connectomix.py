@@ -18,6 +18,7 @@ Created: August 2022
         # --- Independent samples testing
         # --- Paired samples testing: inter-session OR inter-task OR inter-run comparison
         # --- Regression: covariate and confounds removal
+# - include support for AROMA-denoised fMRI data. This requires to run fMRIPrep with the --output-spaces MNI152NLin6Asym:res-02 flag, and then to run fMRIPost-AROMA. Connectomix must then support MNI152NLin6Asym and look for the non-aggressively denoised series in the ouputs.
 
 import os
 import argparse
@@ -113,6 +114,8 @@ method_options:
     n_rois: {config["method_options"].get("n_rois")}  # Number of ROIs in the atlas to consider. This option is passed to nilearn.datasets.fetch_atlas_schaefer_2018.    
     high_pass: {config["method_options"].get("high_pass")} # High-pass filtering, in Hz, applied to BOLD data. Low (<0.008 Hz) values does minimal changes to the signal, while high (>0.01) values improves sensitivity.
     low_pass: {config["method_options"].get("low_pass")} # Low-pass filtering, in Hz, applied to BOLD data. High (>0.1 Hz) values does minimal changes to the signal, while low (< 0.08 Hz)values improves specificity.
+    # seeds_file: {config["method_options"]["seeds_file"]} # Path to seed file for seed-based ROIs
+    # radius: {config["method_options"]["radius"]} # Radius, in mm, to create the spheres at the coordinates of the seeds for seed-based ROIs
     """
     
     # Build filenames for each output
@@ -564,9 +567,10 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
     analysis_type = config.get("analysis_type")
     
     # Load pre-existing permuted data, if any
-    perm_files = layout.derivatives["connectomix"].get(extension=".npy",
-                                          suffix="permutations",
-                                          return_type='filename')
+    perm_files = layout.derivatives["connectomix"].get(desc=config["connectivity_kind"],
+                                                       extension=".npy",
+                                                       suffix="permutations",
+                                                       return_type='filename')
     perm_files = apply_nonbids_filter("analysis",
                          config["analysis_label"],
                          perm_files)
@@ -593,9 +597,9 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
         perm_data = np.array([list(observed_stats.values())])  # Size is (1,2) and order is max followed by min
     
     # Run the permutations until goal is reached
-    print(f"Running permutations (target is {n_permutations} permutations)...", end='')
+    print(f"Running permutations (target is {n_permutations} permutations)...", end='', flush=True)
     while perm_data.shape[0] <= n_permutations:
-        print('.', end='')
+        print('.', end='', flush=True)
         if analysis_type in ['independent', 'paired']:
             group1_data = group_data[0]
             group2_data = group_data[1]
@@ -746,14 +750,13 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     elif 'MNI152NLin6Asym' in config.get("spaces"):
         config["spaces"] = ['MNI152NLin6Asym']
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
-    if config.get("method") == 'atlas':
-        config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
-    if config.get("method") == 'seeds':
-        config["method_options"]["radius"] = config["method_options"].get("radius", 5)
-    config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.008)    
-    config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.1)
+    config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
+    config["method_options"]["seeds_file"] = config["method_options"].get("seeds_file", "/path/to/seeds.csv")
+    config["method_options"]["radius"] = config["method_options"].get("radius", 5)
+    config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.01)  # Default value from Ciric et al 2017
+    config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.08)  # Default value from Ciric et al 2017
 
-    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
+    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal', 'csf_wm']
     config["confound_columns"] = config.get("confound_columns", default_confound_columns)
 
     return config
@@ -1092,7 +1095,7 @@ def generate_group_analysis_report(layout, bids_entities, config):
                 for figure_file in figure_files:
                     report_file.write(f'<img src="{figure_file}" width="800">\n')
 
-        print("Group analysis report saved. To open, you may try to type the following command (might not work when using Docker")
+        print("Group analysis report saved. To open, you may try to type the following command (with some minor modification if using Docker)")
         print(f"open {report_output_path}")
 
 
@@ -1340,7 +1343,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         # Independent t-test between different subjects
         t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
 
-    if analysis_type == "paired":
+    elif analysis_type == "paired":
         # Paired t-test within the same subjects
         paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
         
