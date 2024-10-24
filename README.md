@@ -131,6 +131,10 @@ python connectomix.py /path/to/bids_dataset /path/to/derivatives/connectomix par
 
 The configuration file is then created in `/path/to/derivatives/connectomix/config` (the result is also printed in the terminal). Once you are happy with the configuration, you can launch the analysis with you configuration by using the option `--config /path/to/participant_config.yaml`
 
+**Important note about denoising**: the configuration file contain the confounding time-series that one wish to remove from the signal, as well as other denoising options such as low- and high-pass filtering cutoffs. Unfortunately, there is no one-fits-all method to denoising fMRI data.
+By default, connectomix will select 6 motion parameters and perform global signal as well as white matter + CSF signal regression.
+Moreover, the signal is demeaned and de-trended as well as filtered to keep the 0.01Hz-0.08Hz band. This is a classic 9P model, discussed e.g. in Ciric et al, "Benchmarking of participant-level confound regression strategies for the control of motion artifact in studies of functional connectivity", NeuroImage, 2017.
+
 #### Group-Level Analysis
 
 To run a group-level analysis:
