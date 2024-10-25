@@ -6,16 +6,16 @@ Author: Antonin Rovai
 Created: August 2022
 """
 
-import sys
+# import sys
 
-sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
- '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
- '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
- 'group',
- '--fmriprep_dir',
- '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
- '--config',
- '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_harvardoxford_test.yaml']
+# sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
+#  '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
+#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
+#  'group',
+#  '--fmriprep_dir',
+#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
+#  '--config',
+#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_harvardoxford_test.yaml']
 
 # General TODO list:
 # - add support for more atlases. Maybe switch from method-atlas to method-ATLASNAME? Like Scheaffer100 (for 100 rois), aal, ho, etc. DONE, UNTESTED
