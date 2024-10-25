@@ -6,7 +6,16 @@ Author: Antonin Rovai
 Created: August 2022
 """
 
-# import sys
+import sys
+
+sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
+            '/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
+            '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
+            'group',
+            '--fmriprep_dir',
+            '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
+            '--config',
+            '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_seeds.yaml']
 
 # sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
 #  '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
@@ -1608,8 +1617,8 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                     entities,
                                     coords)
     
-    # Todo: must update layout derivatives to index newly created figures.
-    
+    layout.derivatives.pop('connectomix')
+    layout.add_derivatives(derivatives_dir)
     # Generate report
     generate_group_analysis_report(layout, entities, config)
 
