@@ -6,6 +6,17 @@ Author: Antonin Rovai
 Created: August 2022
 """
 
+import sys
+
+sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
+ '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
+ '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
+ 'group',
+ '--fmriprep_dir',
+ '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
+ '--config',
+ '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_harvardoxford_test.yaml']
+
 # General TODO list:
 # - add support for more atlases. Maybe switch from method-atlas to method-ATLASNAME? Like Scheaffer100 (for 100 rois), aal, ho, etc. DONE, UNTESTED
 # - add more unittests functions
@@ -1395,7 +1406,7 @@ def get_atlas_data(atlas_name, get_cut_coords=False):
         labels = atlas["labels"]
     elif atlas_name == 'aal':
         warnings.warn("Using AAL atlas")
-        atlas = datasets.fech_atlas_aal()
+        atlas = datasets.fetch_atlas_aal()
         maps = atlas['maps']
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
         labels = atlas["labels"]
@@ -1404,6 +1415,7 @@ def get_atlas_data(atlas_name, get_cut_coords=False):
         atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
         maps = atlas['maps']
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
+        labels = atlas["labels"]
         labels=labels[1:] # Needed as first entry is 'background'
     return maps, labels, coords
 
@@ -1469,8 +1481,8 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         group1_matrices = list(group1_matrices.values())
         group2_matrices  = list(group2_matrices.values())
     
-        print(f"Group 1 contains {len(group1_matrices)} participants")
-        print(f"Group 2 contains {len(group2_matrices)} participants")
+        print(f"Group 1 contains {len(group1_matrices)} participants: {group1_subjects}")
+        print(f"Group 2 contains {len(group2_matrices)} participants: {group2_subjects}")
         
         # Convert to 3D arrays: (subjects, nodes, nodes)
         group1_data = np.stack(group1_matrices, axis=0)
@@ -1595,6 +1607,8 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                     layout,
                                     entities,
                                     coords)
+    
+    # Todo: must update layout derivatives to index newly created figures.
     
     # Generate report
     generate_group_analysis_report(layout, entities, config)
