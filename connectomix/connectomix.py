@@ -7,7 +7,7 @@ Created: August 2022
 """
 
 # General TODO list:
-# - add support for more atlases
+# - add support for more atlases. Maybe switch from method-atlas to method-ATLASNAME? Like Scheaffer100 (for 100 rois), aal, ho, etc. DONE, UNTESTED
 # - add more unittests functions
 # - create minimalistic examples datasets, for every cases:
     # -- Participant-level analyses
@@ -107,11 +107,10 @@ confound_columns: {config.get("confound_columns")}
 connectivity_kind: {config.get("connectivity_kind")}  # Choose from covariance, correlation, partial correlation or precision. This option is passed to nilearn.connectome.ConnectivityMeasure.
 
 # Method to define regions of interests to compute connectivity
-method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
+method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 with 100 rois by default. More options are described in the documentation.
   
 # Method-specific options
 method_options:
-    n_rois: {config["method_options"].get("n_rois")}  # Number of ROIs in the atlas to consider. This option is passed to nilearn.datasets.fetch_atlas_schaefer_2018.    
     high_pass: {config["method_options"].get("high_pass")} # High-pass filtering, in Hz, applied to BOLD data. Low (<0.008 Hz) values does minimal changes to the signal, while high (>0.01) values improves sensitivity.
     low_pass: {config["method_options"].get("low_pass")} # Low-pass filtering, in Hz, applied to BOLD data. High (>0.1 Hz) values does minimal changes to the signal, while low (< 0.08 Hz)values improves specificity.
     # seeds_file: {config["method_options"]["seeds_file"]} # Path to seed file for seed-based ROIs
@@ -208,11 +207,7 @@ analysis_options:
 connectivity_kind: {config.get("connectivity_kind")}
 
 # Method used at participant-level
-method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
-
-# Method-specific options
-method_options:
-    n_rois: {config["method_options"].get("n_rois")}  # Number of ROIs
+method: {config.get("method")}
     """
     
     # Build filenames for each output
@@ -404,27 +399,8 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
     high_pass = method_options.get('high_pass')
     low_pass = method_options.get('low_pass')
 
-    # Atlas-based extraction
-    if method == 'atlas':
-        # Load the default atlas and inform user
-        n_rois = method_options.get("n_rois")
-        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
-        warnings.warn(f"Using Schaefer 2018 atlas with {n_rois} rois")
-        labels = atlas["labels"]
-        
-        # Define masker object and proceed with timeseries computation
-        masker = NiftiLabelsMasker(
-            labels_img=atlas["maps"],
-            standardize=True,
-            detrend=True,
-            high_pass=high_pass,
-            low_pass=low_pass,
-            t_r=t_r
-        )
-        timeseries = masker.fit_transform(func_file, confounds=confounds.values)
-    
-    # seeds-based extraction
-    elif method == 'seeds':
+    # Seeds-based extraction
+    if method == 'seeds':
         # Read seed labels and coordinates from file
         if os.path.isfile(method_options['seeds_file']):
             with open(method_options['seeds_file']) as seed_file:
@@ -448,7 +424,7 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
             t_r=t_r
         )
         timeseries = masker.fit_transform(func_file, confounds=confounds.values)
-
+    
     # ICA-based extraction
     elif method == 'ica':
         warnings.warn("ICA-based method is still unstable, use with caution.")
@@ -458,8 +434,38 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         extractor.t_r = t_r
         timeseries = extractor.transform(func_file, confounds=confounds.values)
         labels = None
+        
+    # Atlas-based extraction
     else:
-        raise ValueError(f"Unknown method: {method}")
+        # Load the atlas and inform user
+        if method == 'schaeffer100':
+            atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
+            warnings.warn("Using Schaefer 2018 atlas with 100 rois")
+            maps = atlas['maps']
+            labels = atlas["labels"]
+        elif method == 'aal':
+            atlas = datasets.fech_atlas_aal()
+            warnings.warn("Using AAL atlas")
+            maps = atlas['maps']
+            labels = atlas["labels"]
+        elif method == 'harvardoxford':
+            atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
+            warnings.warn("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
+            maps = atlas['maps']
+            labels=labels[1:] # Needed as first entry is 'background'
+        else:
+            raise ValueError(f"Unknown method: {method}")
+        
+            # Define masker object and proceed with timeseries computation
+            masker = NiftiLabelsMasker(
+                labels_img=maps,
+                standardize=True,
+                detrend=True,
+                high_pass=high_pass,
+                low_pass=low_pass,
+                t_r=t_r
+            )
+            timeseries = masker.fit_transform(func_file, confounds=confounds.values)
 
     return timeseries, labels
 
@@ -738,7 +744,7 @@ def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, c
 # Function to manage default group-level options
 def set_unspecified_participant_level_options_to_default(config, layout):
     config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
-    config["method"] = config.get("method", "atlas")
+    config["method"] = config.get("method", "schaeffer100")
     config["method_options"] = config.get("method_options", {})
     config["subjects"] = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())
     config["tasks"] = config.get("tasks", layout.derivatives['fMRIPrep'].get_tasks())
@@ -750,7 +756,7 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     elif 'MNI152NLin6Asym' in config.get("spaces"):
         config["spaces"] = ['MNI152NLin6Asym']
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
-    config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
+    # config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
     config["method_options"]["seeds_file"] = config["method_options"].get("seeds_file", "/path/to/seeds.csv")
     config["method_options"]["radius"] = config["method_options"].get("radius", 5)
     config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.01)  # Default value from Ciric et al 2017
@@ -823,7 +829,7 @@ def set_unspecified_group_level_options_to_default(config, layout):
     config["n_permutations"] = config.get("n_permutations", 20)
     config["analysis_type"] = config.get("analysis_type", "independent")  # Options: 'independent' or 'paired' or 'regression'
     
-    config["method"] = config.get("method", "atlas")
+    config["method"] = config.get("method", "schaeffer100")
     
     config["method_options"] = config.get("method_options", {})
     
@@ -865,8 +871,6 @@ def set_unspecified_group_level_options_to_default(config, layout):
     # Todo: enable confounds to be optional in the config file. Currently it does not work if analysis_options are set in config file as it does not take the default value in the following line. But we want to be able to leave the confounds field empty in the config file.
     config["analysis_options"] = config.get("analysis_options", analysis_options)
     
-    if config.get("method") == 'atlas':
-        config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
     if config.get("method") == 'seeds':
         config["method_options"]["radius"] = config["method_options"].get("radius", 5)
         
@@ -1416,19 +1420,20 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         json.dump(thresholds, f, indent=4)
     
     # Generate plots
-    # Atlas-based extraction
     # Todo: put this in a function to fetch coords and label, and use this function also at participant-level in timeseries extraction
-    if method == 'atlas':
-        # Todo: n_rois has been put in config, but this still UNTESTED (appears in 2 places)
-        n_rois = config["method_options"].get("n_rois")
-        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
-        #atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
-        labels = atlas["labels"]
-        # labels=labels[1:] # not needed for Schaefer2018 atlas
-        # Grab center coordinates for atlas labels
+    if method == 'schaeffer100':
+        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
         coords = find_parcellation_cut_coords(labels_img=atlas['maps'])
+        labels = atlas["labels"]
+    elif method == 'aal':
+        atlas = datasets.fech_atlas_aal()
+        coords = find_parcellation_cut_coords(labels_img=atlas['maps'])
+        labels = atlas["labels"]
+    elif method == 'harvardoxford':
+        atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
+        coords = find_parcellation_cut_coords(labels_img=atlas['maps'])
+        labels=labels[1:] # Needed as first entry is 'background'
     elif method == 'seeds':
-        # Read seed labels and coordinates from file
         seed_file_path = config['method_options']['seeds_file']
         if os.path.isfile(seed_file_path):
             with open(seed_file_path) as seed_file:
@@ -1440,7 +1445,6 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                     coords.append(np.array(line[1:4], dtype=int))
         else:
             raise FileNotFoundError(f"Seeds file {seed_file_path} not found")
-    # ICA-based extraction
     elif method == 'ica':
         extracted_regions_entities = entities.copy()
         extracted_regions_entities.pop("desc")
