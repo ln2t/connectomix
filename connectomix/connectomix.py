@@ -46,7 +46,6 @@ from statsmodels.stats.multitest import multipletests
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools.tools import add_constant
 from datetime import datetime
-from time import sleep
 
 # Define the version number
 __version__ = "1.0.0"
@@ -57,6 +56,20 @@ __version__ = "1.0.0"
 def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmriprep_dir):
     """
     Create default configuration file in YAML format for default parameters, at participant level.
+    The configuration file is saved at 'derivatives_dir/config/default_participant_level_config.yaml'
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to BIDS directory.
+    derivatives_dir : str or Path
+        Path to derivatives.
+    fmriprep_dir : str or Path
+        Path to fMRIPrep derivatives.
+
+    Returns
+    -------
+    None.
 
     """
 
@@ -134,6 +147,18 @@ method_options:
 def create_group_level_default_config_file(bids_dir, derivatives_dir):
     """
     Create default configuration file in YAML format for default parameters, at group level.
+    Configuration file is saved at 'derivatives/config/default_group_level_config.yaml'.
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to BIDS directory.
+    derivatives_dir : str or Path
+        Path to derivatives.
+
+    Returns
+    -------
+    None.
 
     """
 
@@ -225,6 +250,27 @@ method: {config.get("method")}
 
 # Helper function to load the configuration file
 def load_config(config):
+    """
+    Load configuration either from dict or config file.
+
+    Parameters
+    ----------
+    config : dict, str or Path
+        If dict, a configuration dict. If str or Path, path to the configuration file to load.
+
+    Raises
+    ------
+    FileNotFoundError
+        If file to load configuration is not found.
+    TypeError
+        If type of config is not dict, str or Path.
+
+    Returns
+    -------
+    dict
+        Configuration dict.
+
+    """
     
     if isinstance(config, dict):
         return config
@@ -251,6 +297,27 @@ def load_config(config):
 
 # Helper function to select confounds
 def select_confounds(confounds_file, config):
+    """
+    Extract confounds selected for denoising from fMRIPrep confounds file.
+
+    Parameters
+    ----------
+    confounds_file : str or Path
+        Path to fMRIPrep confounds file.
+    config : dict
+        Configuration dict.
+
+    Raises
+    ------
+    ValueError
+        If requested confound is not found in the columns of fMRIPrep confounds file.
+
+    Returns
+    -------
+    selected_confounds : DataFrame
+        Confounds to regression from fMRI signal.
+
+    """
     confounds = pd.read_csv(confounds_file, delimiter='\t')
     
     # First check selected confound columns are valid names
@@ -269,12 +336,39 @@ def select_confounds(confounds_file, config):
 
 # Helper function to read the repetition time (TR) from a JSON file
 def get_repetition_time(json_file):
+    """
+    Extract repetition time from BOLD sidecar json file.
+
+    Parameters
+    ----------
+    json_file : str or Path
+        Path to BOLD sidecar file.
+
+    Returns
+    -------
+    float
+        Repetition time, in seconds.
+
+    """
     with open(json_file, 'r') as f:
         metadata = json.load(f)
     return metadata.get('RepetitionTime', None)
 
 # Helper function to generate a dataset_description.json file
 def create_dataset_description(output_dir):
+    """
+    Create the dataset_description.json file, mandatory if outputs are to be indexed by BIDSLayout.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Path to the output dir where to save the description.
+
+    Returns
+    -------
+    None.
+
+    """
     description = {
         "Name": "connectomix",
         "BIDSVersion": "1.6.0",
@@ -289,10 +383,25 @@ def create_dataset_description(output_dir):
 
 # Function to copy config to path
 def save_copy_of_config(config, path):
+    """
+    Save a copy of config to path, for reproducibility.
+
+    Parameters
+    ----------
+    config : dict or str or Path
+        Configuration dict or path to loaded configuration file.
+    path : str or Path
+        Path to the desired location to dump the config.
+
+    Returns
+    -------
+    None.
+
+    """
     # First make sure destination is valid
     ensure_directory(path)
     # If config is a str, assume it is a path and copy
-    if isinstance(config, str):
+    if isinstance(config, str) or isinstance(config, Path):
         shutil.copy(config, path)
     # Otherwise, it is a dict and must be dumped to path
     elif isinstance(config, dict):
@@ -437,35 +546,18 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         
     # Atlas-based extraction
     else:
-        # Load the atlas and inform user
-        if method == 'schaeffer100':
-            atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
-            warnings.warn("Using Schaefer 2018 atlas with 100 rois")
-            maps = atlas['maps']
-            labels = atlas["labels"]
-        elif method == 'aal':
-            atlas = datasets.fech_atlas_aal()
-            warnings.warn("Using AAL atlas")
-            maps = atlas['maps']
-            labels = atlas["labels"]
-        elif method == 'harvardoxford':
-            atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
-            warnings.warn("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
-            maps = atlas['maps']
-            labels=labels[1:] # Needed as first entry is 'background'
-        else:
-            raise ValueError(f"Unknown method: {method}")
+        maps, labels, _ = get_atlas_data(method, get_cut_coords=False)
         
-            # Define masker object and proceed with timeseries computation
-            masker = NiftiLabelsMasker(
-                labels_img=maps,
-                standardize=True,
-                detrend=True,
-                high_pass=high_pass,
-                low_pass=low_pass,
-                t_r=t_r
-            )
-            timeseries = masker.fit_transform(func_file, confounds=confounds.values)
+        # Define masker object and proceed with timeseries computation
+        masker = NiftiLabelsMasker(
+            labels_img=maps,
+            standardize=True,
+            detrend=True,
+            high_pass=high_pass,
+            low_pass=low_pass,
+            t_r=t_r
+        )
+        timeseries = masker.fit_transform(func_file, confounds=confounds.values)
 
     return timeseries, labels
 
@@ -1238,8 +1330,6 @@ def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
     """
     returns: A dict with key equal to each subject and whose value is a length-2 list with the loaded connectivity matrices
     """
-    # Todo: complete this function
-    # Placeholder function
     subjects =  config["analysis_options"]["subjects"]
     
     # Extract sample-defining entities - some manual operation is required here as BIDSLayout uses singular words (e.g. 'run' unstead of 'runs')
@@ -1273,6 +1363,49 @@ def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
         paired_samples[subject] = [sample1_dict[subject], sample2_dict[subject]]
     
     return paired_samples
+
+# Helper function to fetch atlas maps, labels and coords
+def get_atlas_data(atlas_name, get_cut_coords=False):
+    """
+    A wrapper function for nilearn.datasets atlas-fetching tools.
+
+    Parameters
+    ----------
+    atlas_name : str
+        Name of the atlas to fetch. Choose from 'schaeffer100', 'aal' or 'harvardoxford'.
+    get_cut_coords : bool, optional
+        If true, cut coords for the regions of the atlas will be computed. The default is False, as this is typically time-consuming.
+
+    Returns
+    -------
+    maps : Nifti1Image
+        The atlas maps.
+    labels : list of strings.
+        Labels of the atlas regions.
+    coords : list of list of three integers
+        The coordinates of the regions, in the same order as 'labels'.
+
+    """
+            
+    if atlas_name == 'schaeffer100':
+        warnings.warn("Using Schaefer 2018 atlas with 100 rois")
+        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
+        maps = atlas['maps']
+        coords = find_parcellation_cut_coords(labels_img=maps) if get_cut_coords else []
+        labels = atlas["labels"]
+    elif atlas_name == 'aal':
+        warnings.warn("Using AAL atlas")
+        atlas = datasets.fech_atlas_aal()
+        maps = atlas['maps']
+        coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
+        labels = atlas["labels"]
+    elif atlas_name == 'harvardoxford':
+        warnings.warn("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
+        atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
+        maps = atlas['maps']
+        coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
+        labels=labels[1:] # Needed as first entry is 'background'
+    return maps, labels, coords
 
 # Group-level analysis
 def group_level_analysis(bids_dir, derivatives_dir, config):
@@ -1419,21 +1552,8 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     with open(threshold_file, 'w') as f:
         json.dump(thresholds, f, indent=4)
     
-    # Generate plots
-    # Todo: put this in a function to fetch coords and label, and use this function also at participant-level in timeseries extraction
-    if method == 'schaeffer100':
-        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
-        coords = find_parcellation_cut_coords(labels_img=atlas['maps'])
-        labels = atlas["labels"]
-    elif method == 'aal':
-        atlas = datasets.fech_atlas_aal()
-        coords = find_parcellation_cut_coords(labels_img=atlas['maps'])
-        labels = atlas["labels"]
-    elif method == 'harvardoxford':
-        atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
-        coords = find_parcellation_cut_coords(labels_img=atlas['maps'])
-        labels=labels[1:] # Needed as first entry is 'background'
-    elif method == 'seeds':
+    # Get ROIs coords and labels for plotting purposes
+    if method == 'seeds':
         seed_file_path = config['method_options']['seeds_file']
         if os.path.isfile(seed_file_path):
             with open(seed_file_path) as seed_file:
@@ -1454,7 +1574,8 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
         labels = None
     else:
-        raise ValueError(f"Unknown method: {method}")
+        # Handle the case where method is an atlas
+        _, labels, coords = get_atlas_data(method, get_cut_coords=True)
 
     # Create plots of the thresholded group connectivity matrices and connectomes
     generate_group_matrix_plots(t_stats,
@@ -1475,10 +1596,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                     entities,
                                     coords)
     
-    sleep(10)
-    
     # Generate report
-    # Todo: review generate_group_analysis_report when performing a regression analysis
     generate_group_analysis_report(layout, entities, config)
 
     print("Group-level analysis completed.")
