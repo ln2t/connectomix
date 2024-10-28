@@ -27,7 +27,6 @@ sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
 #  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_harvardoxford_test.yaml']
 
 # General TODO list:
-# - add support for more atlases. Maybe switch from method-atlas to method-ATLASNAME? Like Scheaffer100 (for 100 rois), aal, ho, etc. DONE, UNTESTED
 # - add more unittests functions
 # - create minimalistic examples datasets, for every cases:
     # -- Participant-level analyses
