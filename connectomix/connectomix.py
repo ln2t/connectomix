@@ -449,6 +449,24 @@ def ensure_directory(file_path):
  
 # Custom non-valid entity filter
 def apply_nonbids_filter(entity, value, files):
+    """
+    Filter paths according to any type of entity, even if not allowed by BIDS.
+
+    Parameters
+    ----------
+    entity : str
+        The name of the entity to filter on (can be anything).
+    value : str
+        Entity value to filter.
+    files : list
+        List of paths to filters.
+
+    Returns
+    -------
+    filtered_files : list
+        List of paths after filtering is applied.
+
+    """
     filtered_files = []
     if not entity == "suffix":
         entity = f"{entity}-"
@@ -490,6 +508,25 @@ def check_affines_match(niimg1, niimg2):
 
 # Function to resample all functional images to a reference image
 def resample_to_reference(layout, func_files, reference_img):
+    """
+    Resamples files to reference, and save the result to a BIDS compliant location.
+    Skips resampling if file already exists.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+        Usual BIDS class for the dataset.
+    func_files : list
+        Paths to func files to resample.
+    reference_img : str or Nifti1Image
+        Rerefence image to which all the others will be resampled to.
+
+    Returns
+    -------
+    resampled_files : list
+        Paths to the resampled files.
+
+    """
     resampled_files = []
     for func_file in func_files:
         # Build BIDS-compliant filename for resampled data
@@ -518,6 +555,33 @@ def resample_to_reference(layout, func_files, reference_img):
 
 # Extract time series based on specified method
 def extract_timeseries(func_file, confounds_file, t_r, config):
+    """
+    Extract timeseries from fMRI data on Regions-Of-Interests (ROIs). Signal is denoised in the process.
+
+    Parameters
+    ----------
+    func_file : str or Path
+        Path to fMRI data.
+    confounds_file : DataFrame
+        Contains the confounds to remove from signal.
+    t_r : float
+        Repetition Time.
+    config : dict
+        Configuration parameters.
+
+    Raises
+    ------
+    FileNotFoundError
+        When ROIs are defined using seeds, the seeds are read from a seeds file. This error is raised if the seeds file is not found.
+
+    Returns
+    -------
+    timeseries : numpy.array
+        The extracted, denoised time series. Shape is number of ROIs x number of timepoints.
+    labels : list
+        List of ROIs labels, in the same order as in timeseries.
+
+    """
     confounds = select_confounds(confounds_file, config)
     
     method = config['method']
@@ -582,6 +646,28 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
 
 # Compute CanICA component images
 def compute_canica_components(func_filenames, layout, entities, options):
+    """
+    Wrapper for nilearn.decomposition.CanICA. Computes group-level ICA components as well as extracts connected regions from the decomposition.
+
+    Parameters
+    ----------
+    func_filenames : list
+        List of path to func files from which to compute the components.
+    layout : BIDSLayout
+        Layout of the BIDS dataset, including relevant derivatives.
+    entities : dict
+        BIDS entities to build paths for the output files.
+    options : dict
+        Options to be passed to the region extractor.
+
+    Returns
+    -------
+    canica_filename : str
+        Path to the savec canica components image.
+    extractor : Extractor
+        Extractor object from the nilearn package (and already fit to the data at hand).
+
+    """
     # Build path to save canICA components
     canica_filename = layout.derivatives['connectomix'].build_path(entities,
                       path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.nii.gz"],
@@ -653,6 +739,21 @@ def compute_canica_components(func_filenames, layout, entities, options):
 
 # Tool to remove the entity defining the pairs to compare
 def remove_pair_making_entity(entities):
+    """
+    When performing paired tests, only one type of entity can be a list with 2 values (those are used to form pairs).
+    This is the "pair making entity". This function sets this entity to None.
+
+    Parameters
+    ----------
+    entities : dict
+        Entities to be used to form pairs in paired test.
+
+    Returns
+    -------
+    unique_entities : dict
+        Same as entities, with one entity set to None if it was a list of length > 1 in the input.
+
+    """
     # Note that this function has no effect on entities in the case of independent samples comparison or during regression analysis
     unique_entities = entities.copy()
     
@@ -746,14 +847,56 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
 
 # Define a function to compute the difference in connectivity between the two groups
 # Todo: adapt this for paired tests
-def stat_func(x, y, axis=0):
+def stat_func(x, y):
+    """
+    Function defining the statistics to compute for the permutation-based analysis.
+    Essentially calls ttest_ind(x, y).
+
+    Parameters
+    ----------
+    x : as in ttest_ind(x, y)
+    y : as in ttest_ind(x, y)
+
+    Returns
+    -------
+    t_stat : float
+        t-statistics, as computed from ttest_ind(x, y).
+
+    """
     from scipy.stats import ttest_ind
     # Compute the t-statistic between two independent groups
     t_stat, _ = ttest_ind(x, y)
     return t_stat
 
 # Helper function to create and save matrix plots for each thresholding strategy
-def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, labels=None):    
+def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, labels=None):
+    """
+    Tool to generate thresholded connectivity matrix plots.
+
+    Parameters
+    ----------
+    t_stats : numpy.array
+        The unthresholded t-score matrix.
+    uncorr_mask : numpy.array
+        Mask defining the supra-threshold connections for the uncorrected strategy.
+    fdr_mask : numpy.array
+        Mask defining the supra-threshold connections for the fdr strategy.
+    perm_mask : numpy.array
+        Mask defining the supra-threshold connections for the fwe strategy.
+    config : dict
+        Configuration.
+    layout : BIDSLayout
+        Usual BIDS class for the dataset.
+    entities : dict
+        Entities to build output paths for the figures.
+    labels : list, optional
+        Labels for the axis of the plots (length is equal to the number of rows of the connectivity matrix). The default is None.
+
+    Returns
+    -------
+    None.
+
+    """
         
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "analysis_label": config["analysis_label"],
@@ -804,6 +947,14 @@ def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, confi
     
 # Helper function to create and save connectome plots for each thresholding strategy
 def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, coords):    
+    """
+    Same as generate_group_matrix_plots, but for the connectomes (i.e. glass-brains with connections represented as solid lines between nodes).
+
+    Returns
+    -------
+    None.
+
+    """
         
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "analysis_label": config["analysis_label"],
@@ -854,6 +1005,22 @@ def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, c
 
 # Function to manage default group-level options
 def set_unspecified_participant_level_options_to_default(config, layout):
+    """
+    Set the configuration fields to their default values if not explicitly specified in the input config.
+
+    Parameters
+    ----------
+    config : dict
+        Input configuration. Can be completely empty (config = {}).
+    layout : BIDSLayout
+        BIDS layout object of the dataset.
+
+    Returns
+    -------
+    config : dict
+        A complete configuration.
+
+    """
     config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
     config["method"] = config.get("method", "schaeffer100")
     config["method_options"] = config.get("method_options", {})
@@ -867,7 +1034,6 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     elif 'MNI152NLin6Asym' in config.get("spaces"):
         config["spaces"] = ['MNI152NLin6Asym']
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
-    # config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
     config["method_options"]["seeds_file"] = config["method_options"].get("seeds_file", "/path/to/seeds.csv")
     config["method_options"]["radius"] = config["method_options"].get("radius", 5)
     config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.01)  # Default value from Ciric et al 2017
@@ -928,7 +1094,22 @@ def guess_groups(layout):
 
 # Function to manage default group-level options
 def set_unspecified_group_level_options_to_default(config, layout):
-    
+    """
+    Set the configuration fields to their default values if not explicitly specified in the input config.
+
+    Parameters
+    ----------
+    config : dict
+        Input configuration. Can be completely empty (config = {}).
+    layout : BIDSLayout
+        BIDS layout object of the dataset.
+
+    Returns
+    -------
+    config : dict
+        A complete configuration.
+
+    """
     config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
     config["tasks"] = config.get("tasks", "restingstate" if "restingstate" in layout.derivatives['connectomix'].get_tasks() else layout.derivatives['connectomix'].get_tasks())
     config["runs"] = config.get("runs", layout.derivatives['connectomix'].get_runs())
@@ -989,6 +1170,32 @@ def set_unspecified_group_level_options_to_default(config, layout):
 
 # Participant-level analysis
 def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
+    """
+    Main function to run the participant analysis
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to bids_dir.
+    derivatives_dir : str or Path
+        Path to connectomix derivatives.
+    fmriprep_dir : str or Path
+        Path to data preprocessed with fMRIPrep.
+    config : dict or str or Path
+        Configuration dict or path to configuration file (can be a .json or .yaml or .yml).
+
+    Raises
+    ------
+    FileNotFoundError
+        fMRI files not found.
+    ValueError
+        fMRI files are too numerous (must match exactly one file).
+
+    Returns
+    -------
+    None.
+
+    """
     # Todo: add an 'overwrite' argument to recompute everything even if files exist
     # Print version information
     print(f"Running connectomix (Participant-level) version {__version__}")
@@ -1216,6 +1423,24 @@ def generate_group_analysis_report(layout, bids_entities, config):
 
 # Group size verification tool
 def check_group_has_several_members(group_subjects):
+    """
+    A basic tool to check if provided group of subjects actually contain more than one element.
+
+    Parameters
+    ----------
+    group_subjects : list
+        List of subjects.
+
+    Raises
+    ------
+    ValueError
+        Wrong size for the group list.
+
+    Returns
+    -------
+    None.
+
+    """
     if len(group_subjects) == 0:
         raise ValueError("One group has no member, please review your configuration file.")
     elif len(group_subjects) == 1:
@@ -1223,6 +1448,33 @@ def check_group_has_several_members(group_subjects):
 
 # Helper function to collect participant-level matrices
 def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method):
+    """
+    Tool to retrieve the paths to the connectivity matices computed at participant-level.
+
+    Parameters
+    ----------
+    subjects : list
+        List of participant ID to consider.
+    layout : BIDSLayout
+        The usual BIDS class for the dataset.
+    entities : dict
+        Entities used to filter BIDSLayout.get() call.
+    method : str
+        Name of method to select the appropriate files.
+
+    Raises
+    ------
+    FileNotFoundError
+        No connectivity matrix is found, probably an error in the entities.
+    ValueError
+        Too many connectivity matrices are found, probably an error in the entities.
+
+    Returns
+    -------
+    group_dict : dict
+        A dictionary with keys = subjects and values = path to the unique connectivity matrix to the subject.
+
+    """
     group_dict = {}
     for subject in subjects:
         conn_files = layout.derivatives["connectomix"].get(subject=subject,
@@ -1243,7 +1495,31 @@ def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entit
 
 # Tool to extract covariate and confounds from participants.tsv in the same order as in given subject list
 def retrieve_info_from_participant_table(layout, subjects, covariate, confounds=None):
-    
+    """
+    Tool to extract data of interest from the participants.tsv file of the dataset.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+        Usual BIDS class for the dataset.
+    subjects : list
+        Subjects for which the data must be extracted.
+    covariate : str
+        Column name of participants.tsv which is to be extracted.
+    confounds : list, optional
+        List of strings, each of which corresponding to a column name of participants.tsv, and to be loaded as confounds. The default is None.
+
+    Raises
+    ------
+    ValueError
+        Name of covariate or confound does not exist in the columns of participants.tsv.
+
+    Returns
+    -------
+    DataFrame
+        Table to specified subjects and covariate value, optionally also with selected confounds.
+
+    """
     # Load participants.tsv
     participants_file = layout.get(return_type='filename', extension='tsv', scope='raw')[0]
     participants_df = pd.read_csv(participants_file, sep='\t')
@@ -1429,6 +1705,23 @@ def get_atlas_data(atlas_name, get_cut_coords=False):
 
 # Group-level analysis
 def group_level_analysis(bids_dir, derivatives_dir, config):
+    """
+    Main function to launch group-level analysis.
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to bids_dir.
+    derivatives_dir : str or Path
+        Path to connectomix derivatives.
+    config : dict or str or Path
+        Configuration or path to configuration (can be a .json or .yaml or .yml).
+
+    Returns
+    -------
+    None.
+
+    """
     # Print version information
     print(f"Running connectomix (Group-level) version {__version__}")
 
@@ -1696,6 +1989,14 @@ def autonomous_mode(run=False):
 
 # Main function with subcommands for participant and group analysis
 def main():
+    """
+    Main function to launch the software. Ir reads arguments from sys.argv, which is filled automatically when calling the script from command line.
+
+    Returns
+    -------
+    None.
+
+    """
     parser = argparse.ArgumentParser(description="Connectomix: Functional Connectivity from fMRIPrep outputs using BIDS structure")
     
     # Define the autonomous flag
