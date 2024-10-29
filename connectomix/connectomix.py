@@ -8,23 +8,23 @@ Created: August 2022
 
 import sys
 
-sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
-            '/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
-            '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
-            'group',
-            '--fmriprep_dir',
-            '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
-            '--config',
-            '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_seeds.yaml']
-
 # sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
-#  '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
-#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
-#  'group',
-#  '--fmriprep_dir',
-#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
-#  '--config',
-#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_harvardoxford_test.yaml']
+#             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
+#             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
+#             'group',
+#             '--fmriprep_dir',
+#             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
+#             '--config',
+#             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_seeds.yaml']
+
+sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
+ '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
+ '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
+ 'group',
+ '--fmriprep_dir',
+ '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
+ '--config',
+ '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_harvardoxford_test.yaml']
 
 # General TODO list:
 # - add more unittests functions
@@ -69,8 +69,10 @@ from datetime import datetime
 # Define the version number
 __version__ = "1.0.0"
 
-## Helper functions
+# Set warnings to appear only once
+warnings.simplefilter('once')
 
+## Helper functions
 # Helper function to create default configuration file based on what the dataset contains at participant level
 def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmriprep_dir):
     """
@@ -1203,6 +1205,9 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Create derivative directory        
     derivatives_dir = Path(derivatives_dir)
     derivatives_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Setup logging options and output file
+    setup_logging(derivatives_dir / "connectomix.log")
 
     # Create the dataset_description.json file
     create_dataset_description(derivatives_dir)
@@ -1725,6 +1730,9 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     # Print version information
     print(f"Running connectomix (Group-level) version {__version__}")
 
+    # Setup logging options and output file
+    setup_logging(Path(derivatives_dir) / "connectomix.log")
+
     # Load config
     config = load_config(config)
     
@@ -1997,6 +2005,7 @@ def main():
     None.
 
     """
+    
     parser = argparse.ArgumentParser(description="Connectomix: Functional Connectivity from fMRIPrep outputs using BIDS structure")
     
     # Define the autonomous flag
@@ -2021,7 +2030,7 @@ def main():
     # Run autonomous mode if flag is used
     if args.autonomous:
         autonomous_mode(run=args.run)
-    else:   
+    else:
         # Run the appropriate analysis level
         if args.analysis_level == 'participant':
             
