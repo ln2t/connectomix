@@ -17,14 +17,14 @@ import sys
 #             '--config',
 #             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_seeds.yaml']
 
-sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
- '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
- '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
- 'group',
- '--fmriprep_dir',
- '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
- '--config',
- '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_harvardoxford_test.yaml']
+# sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
+#  '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
+#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
+#  'group',
+#  '--fmriprep_dir',
+#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
+#  '--config',
+#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_harvardoxford_test.yaml']
 
 # General TODO list:
 # - add more unittests functions
@@ -74,7 +74,7 @@ warnings.simplefilter('once')
 
 ## Helper functions
 # Helper function to create default configuration file based on what the dataset contains at participant level
-def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmriprep_dir):
+def create_participant_level_default_config_file(bids_dir, output_dir, fmriprep_dir):
     """
     Create default configuration file in YAML format for default parameters, at participant level.
     The configuration file is saved at 'derivatives_dir/config/default_participant_level_config.yaml'
@@ -83,7 +83,7 @@ def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmri
     ----------
     bids_dir : str or Path
         Path to BIDS directory.
-    derivatives_dir : str or Path
+    output_dir : str or Path
         Path to derivatives.
     fmriprep_dir : str or Path
         Path to fMRIPrep derivatives.
@@ -98,14 +98,14 @@ def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmri
     print("Generating default configuration file for default parameters, please wait while the dataset is explored...")
     
     # Create derivative directory        
-    derivatives_dir = Path(derivatives_dir)
-    derivatives_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create the dataset_description.json file
-    create_dataset_description(derivatives_dir)
+    create_dataset_description(output_dir)
 
     # Create a BIDSLayout to parse the BIDS dataset
-    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
+    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, output_dir])
     
     # Load all default values in config file
     config = set_unspecified_participant_level_options_to_default({}, layout)
@@ -137,6 +137,9 @@ spaces: {config.get("spaces")}
 # Confounding variables to include when extracting timeseries. Choose from confounds computed from fMRIPrep.
 confound_columns: {config.get("confound_columns")}
 
+# Use ICA-AROMA denoised data or not. If set to True, fMRIPrep output must be further processed using fMRIPost-AROMA (see https://github.com/nipreps/fmripost-aroma)
+ica_aroma: {config.get("ica_aroma")}
+
 # Kind of connectivity measure to compute
 connectivity_kind: {config.get("connectivity_kind")}  # Choose from covariance, correlation, partial correlation or precision. This option is passed to nilearn.connectome.ConnectivityMeasure.
 
@@ -152,7 +155,7 @@ method_options:
     """
     
     # Build filenames for each output
-    yaml_file = Path(derivatives_dir) / 'config' / 'default_participant_level_config.yaml'
+    yaml_file = Path(output_dir) / 'config' / 'default_participant_level_config.yaml'
     
     ensure_directory(yaml_file)
     
@@ -165,7 +168,7 @@ method_options:
     print(yaml_content_with_comments)
 
 # Helper function to create default configuration file based on what the dataset contains at group level
-def create_group_level_default_config_file(bids_dir, derivatives_dir):
+def create_group_level_default_config_file(bids_dir, output_dir):
     """
     Create default configuration file in YAML format for default parameters, at group level.
     Configuration file is saved at 'derivatives/config/default_group_level_config.yaml'.
@@ -184,7 +187,7 @@ def create_group_level_default_config_file(bids_dir, derivatives_dir):
     """
 
     # Create a BIDSLayout to parse the BIDS dataset
-    layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
+    layout = BIDSLayout(bids_dir, derivatives=[output_dir])
 
     # Print some stuff for the primate using this function
     print("Generating default configuration file for default parameters, please wait while the dataset is explored...")   
@@ -257,7 +260,7 @@ method: {config.get("method")}
     """
     
     # Build filenames for each output
-    yaml_file = Path(derivatives_dir) / 'config' / 'default_group_level_config.yaml'
+    yaml_file = Path(output_dir) / 'config' / 'default_group_level_config.yaml'
     
     ensure_directory(yaml_file)
     
@@ -1043,7 +1046,14 @@ def set_unspecified_participant_level_options_to_default(config, layout):
 
     default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal', 'csf_wm']
     config["confound_columns"] = config.get("confound_columns", default_confound_columns)
-
+    config["ica_aroma"] = config.get("ica_aroma", False)
+    if config["ica_aroma"]:
+        print("Defaulting to space MNI152NLin6Asym for ICA-AROMA denoising (overriding spaces from config file")
+        config["spaces"] = ['MNI152NLin6Asym']
+    elif "MNI152NLin6Asym" in config["spaces"]:
+        warnings.warn("Space 'MNI152NLin6Asym' was found in the list of spaces and ica_aroma was disabled. To avoid name conflicts, we force you to use ica_aroma with MNI152NLin6Asym. For now, 'MNI152NLin6Asym' will be removed from the list of spaces.")
+        config["spaces"] = [space for space in config["spaces"] if space != 'MNI152NLin6Asym']
+    
     return config
 
 def guess_groups(layout):
@@ -1171,7 +1181,7 @@ def set_unspecified_group_level_options_to_default(config, layout):
     return config
 
 # Participant-level analysis
-def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
+def participant_level_analysis(bids_dir, output_dir, derivatives, config):
     """
     Main function to run the participant analysis
 
@@ -1179,10 +1189,10 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     ----------
     bids_dir : str or Path
         Path to bids_dir.
-    derivatives_dir : str or Path
+    output_dir : str or Path
         Path to connectomix derivatives.
-    fmriprep_dir : str or Path
-        Path to data preprocessed with fMRIPrep.
+    derivatives : dict
+        Paths to data preprocessed with fMRIPrep and, optionally, fmripost-aroma: derivatives["fmriprep"]='/path/to/fmriprep', etc.
     config : dict or str or Path
         Configuration dict or path to configuration file (can be a .json or .yaml or .yml).
 
@@ -1203,17 +1213,14 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     print(f"Running connectomix (Participant-level) version {__version__}")
 
     # Create derivative directory        
-    derivatives_dir = Path(derivatives_dir)
-    derivatives_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Setup logging options and output file
-    setup_logging(derivatives_dir / "connectomix.log")
-
     # Create the dataset_description.json file
-    create_dataset_description(derivatives_dir)
+    create_dataset_description(output_dir)
 
-    # Create a BIDSLayout to parse the BIDS dataset
-    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
+    # Create a BIDSLayout to parse the BIDS dataset and index also the derivatives
+    layout = BIDSLayout(bids_dir, derivatives=[*list(derivatives.values()), output_dir])
     
     # Load the configuration file
     config = load_config(config)
@@ -1225,7 +1232,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
     # Save a copy of the config file to the config directory
-    config_filename = derivatives_dir / "config" / "backups" / f"participant_level_config_{timestamp}.json"
+    config_filename = output_dir / "config" / "backups" / f"participant_level_config_{timestamp}.json"
     save_copy_of_config(config, config_filename)
     print(f"Configuration file saved to {config_filename}")
         
@@ -1237,25 +1244,16 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     space = config.get("spaces")   
 
     # Select the functional, confound and metadata files
-    func_files = layout.derivatives['fMRIPrep'].get(
+    func_files = layout.derivatives['fMRIPost-AROMA' if config['ica_aroma'] else 'fMRIPrep'].get(
         suffix='bold',
         extension='nii.gz',
         return_type='filename',
         space=space,
-        desc='preproc',
+        desc='nonaggrDenoised' if config['ica_aroma'] else 'preproc',
         subject=subjects,
         task=task,
         run=run,
         session=session,
-    )
-    confound_files = layout.derivatives['fMRIPrep'].get(
-        suffix='timeseries',
-        extension='tsv',
-        return_type='filename',
-        subject=subjects,
-        task=task,
-        run=run,
-        session=session
     )
     json_files = layout.derivatives['fMRIPrep'].get(
         suffix='bold',
@@ -1263,6 +1261,15 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         return_type='filename',
         space=space,
         desc='preproc',
+        subject=subjects,
+        task=task,
+        run=run,
+        session=session
+    )
+    confound_files = layout.derivatives['fMRIPrep'].get(
+        suffix='timeseries',
+        extension='tsv',
+        return_type='filename',
         subject=subjects,
         task=task,
         run=run,
@@ -1276,7 +1283,8 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         raise FileNotFoundError("No confound files found")
     if len(func_files) != len(confound_files):
         raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and confound_files {len(confound_files)}")
-    # Todo: add more consistency checks
+    if len(func_files) != len(json_files):
+        raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and json_files {len(json_files)}")
 
     print(f"Found {len(func_files)} functional files:")
     [print(os.path.basename(fn)) for fn in func_files]
@@ -1300,7 +1308,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Compute CanICA components if necessary and store it in the methods options
     if config['method'] == 'ica':
         # Create a canICA directory to store component images
-        canica_dir = derivatives_dir / "canica"
+        canica_dir = output_dir / "canica"
         canica_dir.mkdir(parents=True, exist_ok=True)
         
         # Compute CanICA and export path and extractor in options to be passed to compute time series
@@ -1706,10 +1714,12 @@ def get_atlas_data(atlas_name, get_cut_coords=False):
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
         labels = atlas["labels"]
         labels=labels[1:] # Needed as first entry is 'background'
+    else:
+        raise ValueError(f"Requested atlas {atlas_name} is not supported. Check spelling of documentation.")
     return maps, labels, coords
 
 # Group-level analysis
-def group_level_analysis(bids_dir, derivatives_dir, config):
+def group_level_analysis(bids_dir, output_dir, config):
     """
     Main function to launch group-level analysis.
 
@@ -1717,7 +1727,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     ----------
     bids_dir : str or Path
         Path to bids_dir.
-    derivatives_dir : str or Path
+    output_dir : str or Path
         Path to connectomix derivatives.
     config : dict or str or Path
         Configuration or path to configuration (can be a .json or .yaml or .yml).
@@ -1730,14 +1740,11 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     # Print version information
     print(f"Running connectomix (Group-level) version {__version__}")
 
-    # Setup logging options and output file
-    setup_logging(Path(derivatives_dir) / "connectomix.log")
-
     # Load config
     config = load_config(config)
     
     # Create a BIDSLayout to handle files and outputs
-    layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
+    layout = BIDSLayout(bids_dir, derivatives=[output_dir])
 
     # Set unspecified config options to default values
     config = set_unspecified_group_level_options_to_default(config, layout)
@@ -1746,9 +1753,9 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
     # Save config file for reproducibility
-    derivatives_dir = Path(derivatives_dir)
-    derivatives_dir.mkdir(parents=True, exist_ok=True)
-    config_filename = derivatives_dir / "config" / "backups" / f"group_level_config_{timestamp}.json"
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config_filename = output_dir / "config" / "backups" / f"group_level_config_{timestamp}.json"
     save_copy_of_config(config, config_filename)
     print(f"Configuration file backed up at {config_filename}")
     
@@ -1917,8 +1924,10 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                     entities,
                                     coords)
     
+    # Refresh BIDS indexing of the derivatives to find data for the report
     layout.derivatives.pop('connectomix')
-    layout.add_derivatives(derivatives_dir)
+    layout.add_derivatives(output_dir)
+    
     # Generate report
     generate_group_analysis_report(layout, entities, config)
 
@@ -1980,7 +1989,7 @@ def autonomous_mode(run=False):
     if run:
         print("... and now launching the analysis!")
         if analysis_level == 'participant':
-            participant_level_analysis(bids_dir, connectomix_folder, fmriprep_dir, {})
+            participant_level_analysis(bids_dir, connectomix_folder, {'fmriprep': fmriprep_dir}, {})
         elif analysis_level == 'group':
             group_level_analysis(bids_dir, connectomix_folder, {})
     else:
@@ -1989,9 +1998,23 @@ def autonomous_mode(run=False):
         elif analysis_level == 'group':
             create_group_level_default_config_file(bids_dir, connectomix_folder)
 
-        cmd = f"python connectomix.py {bids_dir} {connectomix_folder} {analysis_level} --fmriprep_dir {fmriprep_dir}"
+        cmd = f"python connectomix.py {bids_dir} {connectomix_folder} {analysis_level} --derivatives fmriprep={fmriprep_dir}"
         print(f"Autonomous mode suggests the following command:\n{cmd}")
         print("If you are happy with this configuration, run this command or simply relaunch the autonomous mode add the --run flag.")
+
+
+# Tool to parse the various derivatives passed to CLI
+def parse_derivatives(derivatives_list):
+    """Convert list of 'key=value' items into a dictionary."""
+    derivatives_dict = {}
+    if derivatives_list:
+        for item in derivatives_list:
+            if '=' in item:
+                key, value = item.split('=', 1)
+                derivatives_dict[key] = value
+            else:
+                raise argparse.ArgumentTypeError(f"Invalid format for -d/--derivatives: '{item}' must be in 'key=value' format.")
+    return derivatives_dict
 
 
 
@@ -2016,41 +2039,47 @@ def main():
     
     # Define positional arguments for bids_dir, derivatives_dir, and analysis_level
     parser.add_argument('bids_dir', nargs='?', type=str, help='BIDS root directory containing the dataset.')
-    parser.add_argument('derivatives_dir', nargs='?', type=str, help='Directory where to store the outputs.')
+    parser.add_argument('output_dir', nargs='?', type=str, help='Directory where to store the outputs.')
     parser.add_argument('analysis_level', nargs='?', choices=['participant', 'group'], help="Analysis level: either 'participant' or 'group'.")
     
     # Define optional arguments that apply to both analysis levels
-    parser.add_argument('--fmriprep_dir', type=str, help='Directory where fMRIPrep outputs are stored.')
-    parser.add_argument('--config', type=str, help='Path to the configuration file.')
-    parser.add_argument('--participant_label', type=str, help='Participant label to process (e.g., "sub-01").')
+    parser.add_argument('-d', '--derivatives', nargs='+',
+                        help="Specify pre-computed derivatives as 'key=value' pairs (e.g., -d fmriprep=/path/to/fmriprep fmripost-aroma=/path/to/fmripost-aroma).")
+    parser.add_argument('-c', '--config', type=str, help='Path to the configuration file.')
+    parser.add_argument('-p', '--participant_label', type=str, help='Participant label to process (e.g., "sub-01").')
     parser.add_argument('--helper', help='Helper function to write default configuration files.', action='store_true')
 
     args = parser.parse_args()
 
+    # Convert the list of 'key=value' pairs to a dictionary
+    derivatives = parse_derivatives(args.derivatives)
+    
     # Run autonomous mode if flag is used
     if args.autonomous:
         autonomous_mode(run=args.run)
     else:
+        # Set derivatives to default values if unset by user
+        derivatives["fmriprep"] = derivatives.get("fmriprep", Path(args.bids_dir) / 'derivatives' / 'fmriprep')
+        derivatives["fmripost-aroma"] = derivatives.get("fmripost-aroma", Path(args.bids_dir) / 'derivatives' / 'fmripost-aroma')
+        
         # Run the appropriate analysis level
         if args.analysis_level == 'participant':
             
-            # Check if fMRIPrep directory must be guessed and if yes, if it exists.
-            if not args.fmriprep_dir:
-                args.fmriprep_dir = Path(args.bids_dir) / 'derivatives' / 'fmriprep'
-                if not Path(args.fmriprep_dir).exists():
-                    raise FileNotFoundError(f"fMRIPrep directory {args.fmriprep_dir} not found. Use --fmriprep_dir option to specify path manually.")
+            # Check if fMRIPrep directory exists
+            if not Path(derivatives["fmriprep"]).exists():
+                raise FileNotFoundError(f"fMRIPrep directory {derivatives['fmriprep']} not found. Use '--derivatives fmriprep=/path/to/fmriprep' to specify path manually.")
             
             # First check if only helper function must be called
             if args.helper:
-                create_participant_level_default_config_file(args.bids_dir, args.derivatives_dir, args.fmriprep_dir)
+                create_participant_level_default_config_file(args.bids_dir, args.output_dir, derivatives)
             else:
-                participant_level_analysis(args.bids_dir, args.derivatives_dir, args.fmriprep_dir, args.config)
+                participant_level_analysis(args.bids_dir, args.output_dir, derivatives, args.config)
         elif args.analysis_level == 'group':
             # First check if only helper function must be called
             if args.helper:
-                create_group_level_default_config_file(args.bids_dir, args.derivatives_dir)
+                create_group_level_default_config_file(args.bids_dir, args.output_dir)
             else:
-                group_level_analysis(args.bids_dir, args.derivatives_dir, args.config)
+                group_level_analysis(args.bids_dir, args.output_dir, args.config)
 
 if __name__ == '__main__':
     main()
