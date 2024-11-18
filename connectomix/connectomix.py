@@ -6,7 +6,7 @@ Author: Antonin Rovai
 Created: August 2022
 """
 
-import sys
+# import sys
 
 # sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
 #             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
@@ -1845,7 +1845,7 @@ def group_level_analysis(bids_dir, output_dir, config):
     # Threshold 3: Permutation-based threshold
     n_permutations = config["n_permutations"]
     if n_permutations < 5000:
-        warnings.warn(f"Running permutation analysis with less than 5000 permutations (you choose {n_permutations}).")
+        warnings.warn(f"Running permutation analysis with less than 5000 permutations (you chose {n_permutations}).")
         
     null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout, entities, {'observed_t_max': np.nanmax(t_stats), 'observed_t_min': np.nanmin(t_stats)}, design_matrix=design_matrix)
     
@@ -2071,7 +2071,7 @@ def main():
             
             # First check if only helper function must be called
             if args.helper:
-                create_participant_level_default_config_file(args.bids_dir, args.output_dir, derivatives)
+                create_participant_level_default_config_file(args.bids_dir, args.output_dir, derivatives["fmriprep"])
             else:
                 participant_level_analysis(args.bids_dir, args.output_dir, derivatives, args.config)
         elif args.analysis_level == 'group':
