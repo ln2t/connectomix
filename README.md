@@ -336,7 +336,7 @@ Ensure the following Python packages are installed:
 
 ## Test Datasets
 
-A series of datasets to test various types of analysis are available on [openneuro](https://www.openneuro.org). Each of these datasets contain the configuration file to run the analysis. Note that these are only minimalistic examples and contain very little data. They are meant to ease your task of writing the configuration file that corresponds to your analysis. The featured analysis are:
+A series of datasets to test various types of analysis are available on [openneuro](https://www.openneuro.org). Each of these dataset contains the configuration file to run the analysis. Note that these are only minimalistic examples and contain very little data. They are meant to ease your task of writing the configuration file that corresponds to your analysis. The featured analyzes are:
 
 - **Participant-level analysis**: dataset [dsXXX-1](https://www.openneuro.org/datasets/dsXXX-1), featuring:
     - Atlas-based ROIs definition, using Schaefer2018 with 100 rois,
