@@ -349,6 +349,19 @@ def select_confounds(confounds_file, config):
         if not confound_column in confounds.columns:
             raise ValueError(f"Confounds column {confound_column} is not a valid confound name.")
             
+    # If aroma denoising is used, make sure confounds do not contain motion parameters and warn user
+    if config["ica_aroma"]:
+        motion_parameters = ["trans_x", "trans_x_derivative1", "trans_x_derivative1_power2", "trans_x_power2",
+                             "trans_y", "trans_y_derivative1", "trans_y_derivative1_power2", "trans_y_power2",
+                             "trans_z", "trans_z_derivative1", "trans_z_power2", "trans_z_derivative1_power2",
+                             "rot_x", "rot_x_derivative1", "rot_x_derivative1_power2", "rot_x_power2",
+                             "rot_y", "rot_y_derivative1", "rot_y_power2", "rot_y_derivative1_power2",
+                             "rot_z", "rot_z_derivative1", "rot_z_power2", "rot_z_derivative1_power2"]
+        for motion_parameter in motion_parameters:
+            if motion_parameter  in config["confound_columns"]:
+                config["confound_columns"].remove(motion_parameter)
+                warnings.warn(f"Motion parameter {motion_parameter} is detected in the confounds list, but you have selected aroma-denoising, which already deals with motion paramters. Removing {motion_parameter} from the confounds list.")
+    
     # Select the confounds
     selected_confounds = confounds[config.get("confound_columns")]
     
