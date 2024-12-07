@@ -7,8 +7,12 @@ Created: August 2022
 """
 
 # General TODO list:
-# - add support for more atlases
 # - add more unittests functions
+# - create more test datasets for group-level analysis, in particular featuring:
+        # --- Independent samples testing DONE
+        # --- Paired samples testing: inter-session OR inter-task OR inter-run comparison
+        # --- Regression: covariate and confounds removal
+# - include plot of null distribution of max stat in report
 
 import os
 import argparse
@@ -38,14 +42,30 @@ from statsmodels.tools.tools import add_constant
 from datetime import datetime
 
 # Define the version number
-__version__ = "1.0.0"
+__version__ = "1.0.2"
+
+# Set warnings to appear only once
+warnings.simplefilter('once')
 
 ## Helper functions
-
 # Helper function to create default configuration file based on what the dataset contains at participant level
-def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmriprep_dir):
+def create_participant_level_default_config_file(bids_dir, output_dir, fmriprep_dir):
     """
     Create default configuration file in YAML format for default parameters, at participant level.
+    The configuration file is saved at 'derivatives_dir/config/default_participant_level_config.yaml'
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to BIDS directory.
+    output_dir : str or Path
+        Path to derivatives.
+    fmriprep_dir : str or Path
+        Path to fMRIPrep derivatives.
+
+    Returns
+    -------
+    None.
 
     """
 
@@ -53,14 +73,14 @@ def create_participant_level_default_config_file(bids_dir, derivatives_dir, fmri
     print("Generating default configuration file for default parameters, please wait while the dataset is explored...")
     
     # Create derivative directory        
-    derivatives_dir = Path(derivatives_dir)
-    derivatives_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create the dataset_description.json file
-    create_dataset_description(derivatives_dir)
+    create_dataset_description(output_dir)
 
     # Create a BIDSLayout to parse the BIDS dataset
-    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
+    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, output_dir])
     
     # Load all default values in config file
     config = set_unspecified_participant_level_options_to_default({}, layout)
@@ -92,21 +112,25 @@ spaces: {config.get("spaces")}
 # Confounding variables to include when extracting timeseries. Choose from confounds computed from fMRIPrep.
 confound_columns: {config.get("confound_columns")}
 
+# Use ICA-AROMA denoised data or not. If set to True, fMRIPrep output must be further processed using fMRIPost-AROMA (see https://github.com/nipreps/fmripost-aroma)
+ica_aroma: {config.get("ica_aroma")}
+
 # Kind of connectivity measure to compute
 connectivity_kind: {config.get("connectivity_kind")}  # Choose from covariance, correlation, partial correlation or precision. This option is passed to nilearn.connectome.ConnectivityMeasure.
 
 # Method to define regions of interests to compute connectivity
-method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
+method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 with 100 rois by default. More options are described in the documentation.
   
 # Method-specific options
 method_options:
-    n_rois: {config["method_options"].get("n_rois")}  # Number of ROIs in the atlas to consider. This option is passed to nilearn.datasets.fetch_atlas_schaefer_2018.    
     high_pass: {config["method_options"].get("high_pass")} # High-pass filtering, in Hz, applied to BOLD data. Low (<0.008 Hz) values does minimal changes to the signal, while high (>0.01) values improves sensitivity.
     low_pass: {config["method_options"].get("low_pass")} # Low-pass filtering, in Hz, applied to BOLD data. High (>0.1 Hz) values does minimal changes to the signal, while low (< 0.08 Hz)values improves specificity.
+    # seeds_file: {config["method_options"]["seeds_file"]} # Path to seed file for seed-based ROIs
+    # radius: {config["method_options"]["radius"]} # Radius, in mm, to create the spheres at the coordinates of the seeds for seed-based ROIs
     """
     
     # Build filenames for each output
-    yaml_file = Path(derivatives_dir) / 'config' / 'default_participant_level_config.yaml'
+    yaml_file = Path(output_dir) / 'config' / 'default_participant_level_config.yaml'
     
     ensure_directory(yaml_file)
     
@@ -119,21 +143,38 @@ method_options:
     print(yaml_content_with_comments)
 
 # Helper function to create default configuration file based on what the dataset contains at group level
-def create_group_level_default_config_file(bids_dir, derivatives_dir):
+def create_group_level_default_config_file(bids_dir, output_dir):
     """
     Create default configuration file in YAML format for default parameters, at group level.
+    Configuration file is saved at 'derivatives/config/default_group_level_config.yaml'.
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to BIDS directory.
+    derivatives_dir : str or Path
+        Path to derivatives.
+
+    Returns
+    -------
+    None.
 
     """
 
     # Create a BIDSLayout to parse the BIDS dataset
-    layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
+    layout = BIDSLayout(bids_dir, derivatives=[output_dir])
 
     # Print some stuff for the primate using this function
     print("Generating default configuration file for default parameters, please wait while the dataset is explored...")   
     
-    # Load default configuration
-    config = set_unspecified_group_level_options_to_default({}, layout)
+    # Load default configuration for several types of analysis
+    independent_config = set_unspecified_group_level_options_to_default(dict(analysis_type='independent'), layout)
+    paired_config = set_unspecified_group_level_options_to_default(dict(analysis_type='paired'), layout)
+    regression_config = set_unspecified_group_level_options_to_default(dict(analysis_type='regression'), layout)
             
+    # The default configuration is 'independet' but we also use the other ones in comments to help the user
+    config = independent_config
+    
     # Prepare the YAML content with comments
     yaml_content_with_comments = f"""\
 # Connectomix Configuration File
@@ -171,23 +212,30 @@ analysis_options:
     # Groups to compare
     group1_subjects: {config["analysis_options"].get("group1_subjects")}
     group2_subjects: {config["analysis_options"].get("group2_subjects")}
+    # Paired analysis specifications
+    # subjects : {paired_config["analysis_options"]["subjects"]}  # Subjects to include in the paired analysis
+    # sample1_entities :  # These entities altogether must match exaclty two scans be subject
+        # tasks: {paired_config["analysis_options"]["sample1_entities"]["tasks"]}
+        # sessions: {paired_config["analysis_options"]["sample1_entities"]["sessions"]}
+        # runs: {paired_config["analysis_options"]["sample1_entities"]["runs"]}
+    # sample2_entities : 
+        # tasks: {paired_config["analysis_options"]["sample2_entities"]["tasks"]}
+        # sessions: {paired_config["analysis_options"]["sample2_entities"]["sessions"]}
+        # runs: {paired_config["analysis_options"]["sample2_entities"]["runs"]}
     # Regression parameters
-    # covariate: {config["analysis_options"].get("covariate")}  # Covariate for analysis type 'regression'
-    # confounds: {config["analysis_options"].get("confounds")}  # Confounds for analysis type 'regression' (optionnal)
+    # subjects_to_regress: {regression_config["analysis_options"].get("subjects_to_regress")}  # Subjects to include in the regression analysis
+    # covariate: {regression_config["analysis_options"].get("covariate")}  # Covariate for analysis type 'regression'
+    # confounds: {regression_config["analysis_options"].get("confounds")}  # Confounds for analysis type 'regression' (optionnal)
 
 # Kind of connectivity used at participant-level
 connectivity_kind: {config.get("connectivity_kind")}
 
 # Method used at participant-level
-method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 atlas. More options are described in the documentation.
-
-# Method-specific options
-method_options:
-    n_rois: {config["method_options"].get("n_rois")}  # Number of ROIs
+method: {config.get("method")}
     """
     
     # Build filenames for each output
-    yaml_file = Path(derivatives_dir) / 'config' / 'default_group_level_config.yaml'
+    yaml_file = Path(output_dir) / 'config' / 'default_group_level_config.yaml'
     
     ensure_directory(yaml_file)
     
@@ -201,6 +249,27 @@ method_options:
 
 # Helper function to load the configuration file
 def load_config(config):
+    """
+    Load configuration either from dict or config file.
+
+    Parameters
+    ----------
+    config : dict, str or Path
+        If dict, a configuration dict. If str or Path, path to the configuration file to load.
+
+    Raises
+    ------
+    FileNotFoundError
+        If file to load configuration is not found.
+    TypeError
+        If type of config is not dict, str or Path.
+
+    Returns
+    -------
+    dict
+        Configuration dict.
+
+    """
     
     if isinstance(config, dict):
         return config
@@ -227,6 +296,27 @@ def load_config(config):
 
 # Helper function to select confounds
 def select_confounds(confounds_file, config):
+    """
+    Extract confounds selected for denoising from fMRIPrep confounds file.
+
+    Parameters
+    ----------
+    confounds_file : str or Path
+        Path to fMRIPrep confounds file.
+    config : dict
+        Configuration dict.
+
+    Raises
+    ------
+    ValueError
+        If requested confound is not found in the columns of fMRIPrep confounds file.
+
+    Returns
+    -------
+    selected_confounds : DataFrame
+        Confounds to regression from fMRI signal.
+
+    """
     confounds = pd.read_csv(confounds_file, delimiter='\t')
     
     # First check selected confound columns are valid names
@@ -234,6 +324,19 @@ def select_confounds(confounds_file, config):
         if not confound_column in confounds.columns:
             raise ValueError(f"Confounds column {confound_column} is not a valid confound name.")
             
+    # If aroma denoising is used, make sure confounds do not contain motion parameters and warn user
+    if config["ica_aroma"]:
+        motion_parameters = ["trans_x", "trans_x_derivative1", "trans_x_derivative1_power2", "trans_x_power2",
+                             "trans_y", "trans_y_derivative1", "trans_y_derivative1_power2", "trans_y_power2",
+                             "trans_z", "trans_z_derivative1", "trans_z_power2", "trans_z_derivative1_power2",
+                             "rot_x", "rot_x_derivative1", "rot_x_derivative1_power2", "rot_x_power2",
+                             "rot_y", "rot_y_derivative1", "rot_y_power2", "rot_y_derivative1_power2",
+                             "rot_z", "rot_z_derivative1", "rot_z_power2", "rot_z_derivative1_power2"]
+        for motion_parameter in motion_parameters:
+            if motion_parameter  in config["confound_columns"]:
+                config["confound_columns"].remove(motion_parameter)
+                warnings.warn(f"Motion parameter {motion_parameter} is detected in the confounds list, but you have selected aroma-denoising, which already deals with motion paramters. Removing {motion_parameter} from the confounds list.")
+    
     # Select the confounds
     selected_confounds = confounds[config.get("confound_columns")]
     
@@ -245,12 +348,39 @@ def select_confounds(confounds_file, config):
 
 # Helper function to read the repetition time (TR) from a JSON file
 def get_repetition_time(json_file):
+    """
+    Extract repetition time from BOLD sidecar json file.
+
+    Parameters
+    ----------
+    json_file : str or Path
+        Path to BOLD sidecar file.
+
+    Returns
+    -------
+    float
+        Repetition time, in seconds.
+
+    """
     with open(json_file, 'r') as f:
         metadata = json.load(f)
     return metadata.get('RepetitionTime', None)
 
 # Helper function to generate a dataset_description.json file
 def create_dataset_description(output_dir):
+    """
+    Create the dataset_description.json file, mandatory if outputs are to be indexed by BIDSLayout.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Path to the output dir where to save the description.
+
+    Returns
+    -------
+    None.
+
+    """
     description = {
         "Name": "connectomix",
         "BIDSVersion": "1.6.0",
@@ -265,10 +395,25 @@ def create_dataset_description(output_dir):
 
 # Function to copy config to path
 def save_copy_of_config(config, path):
+    """
+    Save a copy of config to path, for reproducibility.
+
+    Parameters
+    ----------
+    config : dict or str or Path
+        Configuration dict or path to loaded configuration file.
+    path : str or Path
+        Path to the desired location to dump the config.
+
+    Returns
+    -------
+    None.
+
+    """
     # First make sure destination is valid
     ensure_directory(path)
     # If config is a str, assume it is a path and copy
-    if isinstance(config, str):
+    if isinstance(config, str) or isinstance(config, Path):
         shutil.copy(config, path)
     # Otherwise, it is a dict and must be dumped to path
     elif isinstance(config, dict):
@@ -297,6 +442,24 @@ def ensure_directory(file_path):
  
 # Custom non-valid entity filter
 def apply_nonbids_filter(entity, value, files):
+    """
+    Filter paths according to any type of entity, even if not allowed by BIDS.
+
+    Parameters
+    ----------
+    entity : str
+        The name of the entity to filter on (can be anything).
+    value : str
+        Entity value to filter.
+    files : list
+        List of paths to filters.
+
+    Returns
+    -------
+    filtered_files : list
+        List of paths after filtering is applied.
+
+    """
     filtered_files = []
     if not entity == "suffix":
         entity = f"{entity}-"
@@ -338,6 +501,25 @@ def check_affines_match(niimg1, niimg2):
 
 # Function to resample all functional images to a reference image
 def resample_to_reference(layout, func_files, reference_img):
+    """
+    Resamples files to reference, and save the result to a BIDS compliant location.
+    Skips resampling if file already exists.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+        Usual BIDS class for the dataset.
+    func_files : list
+        Paths to func files to resample.
+    reference_img : str or Nifti1Image
+        Rerefence image to which all the others will be resampled to.
+
+    Returns
+    -------
+    resampled_files : list
+        Paths to the resampled files.
+
+    """
     resampled_files = []
     for func_file in func_files:
         # Build BIDS-compliant filename for resampled data
@@ -366,6 +548,33 @@ def resample_to_reference(layout, func_files, reference_img):
 
 # Extract time series based on specified method
 def extract_timeseries(func_file, confounds_file, t_r, config):
+    """
+    Extract timeseries from fMRI data on Regions-Of-Interests (ROIs). Signal is denoised in the process.
+
+    Parameters
+    ----------
+    func_file : str or Path
+        Path to fMRI data.
+    confounds_file : DataFrame
+        Contains the confounds to remove from signal.
+    t_r : float
+        Repetition Time.
+    config : dict
+        Configuration parameters.
+
+    Raises
+    ------
+    FileNotFoundError
+        When ROIs are defined using seeds, the seeds are read from a seeds file. This error is raised if the seeds file is not found.
+
+    Returns
+    -------
+    timeseries : numpy.array
+        The extracted, denoised time series. Shape is number of ROIs x number of timepoints.
+    labels : list
+        List of ROIs labels, in the same order as in timeseries.
+
+    """
     confounds = select_confounds(confounds_file, config)
     
     method = config['method']
@@ -375,27 +584,8 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
     high_pass = method_options.get('high_pass')
     low_pass = method_options.get('low_pass')
 
-    # Atlas-based extraction
-    if method == 'atlas':
-        # Load the default atlas and inform user
-        n_rois = method_options.get("n_rois")
-        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
-        warnings.warn(f"Using Schaefer 2018 atlas with {n_rois} rois")
-        labels = atlas["labels"]
-        
-        # Define masker object and proceed with timeseries computation
-        masker = NiftiLabelsMasker(
-            labels_img=atlas["maps"],
-            standardize=True,
-            detrend=True,
-            high_pass=high_pass,
-            low_pass=low_pass,
-            t_r=t_r
-        )
-        timeseries = masker.fit_transform(func_file, confounds=confounds.values)
-    
-    # seeds-based extraction
-    elif method == 'seeds':
+    # Seeds-based extraction
+    if method == 'seeds':
         # Read seed labels and coordinates from file
         if os.path.isfile(method_options['seeds_file']):
             with open(method_options['seeds_file']) as seed_file:
@@ -419,7 +609,7 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
             t_r=t_r
         )
         timeseries = masker.fit_transform(func_file, confounds=confounds.values)
-
+    
     # ICA-based extraction
     elif method == 'ica':
         warnings.warn("ICA-based method is still unstable, use with caution.")
@@ -429,14 +619,48 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         extractor.t_r = t_r
         timeseries = extractor.transform(func_file, confounds=confounds.values)
         labels = None
+        
+    # Atlas-based extraction
     else:
-        raise ValueError(f"Unknown method: {method}")
+        maps, labels, _ = get_atlas_data(method, get_cut_coords=False)
+        
+        # Define masker object and proceed with timeseries computation
+        masker = NiftiLabelsMasker(
+            labels_img=maps,
+            standardize=True,
+            detrend=True,
+            high_pass=high_pass,
+            low_pass=low_pass,
+            t_r=t_r
+        )
+        timeseries = masker.fit_transform(func_file, confounds=confounds.values)
 
     return timeseries, labels
 
 # Compute CanICA component images
-# Todo: add file with paths to func files used to compute ICA, generate hash, use hash to name both component IMG and text file.
 def compute_canica_components(func_filenames, layout, entities, options):
+    """
+    Wrapper for nilearn.decomposition.CanICA. Computes group-level ICA components as well as extracts connected regions from the decomposition.
+
+    Parameters
+    ----------
+    func_filenames : list
+        List of path to func files from which to compute the components.
+    layout : BIDSLayout
+        Layout of the BIDS dataset, including relevant derivatives.
+    entities : dict
+        BIDS entities to build paths for the output files.
+    options : dict
+        Options to be passed to the region extractor.
+
+    Returns
+    -------
+    canica_filename : str
+        Path to the savec canica components image.
+    extractor : Extractor
+        Extractor object from the nilearn package (and already fit to the data at hand).
+
+    """
     # Build path to save canICA components
     canica_filename = layout.derivatives['connectomix'].build_path(entities,
                       path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.nii.gz"],
@@ -506,20 +730,58 @@ def compute_canica_components(func_filenames, layout, entities, options):
     
     return canica_filename, extractor
 
+# Tool to remove the entity defining the pairs to compare
+def remove_pair_making_entity(entities):
+    """
+    When performing paired tests, only one type of entity can be a list with 2 values (those are used to form pairs).
+    This is the "pair making entity". This function sets this entity to None.
+
+    Parameters
+    ----------
+    entities : dict
+        Entities to be used to form pairs in paired test.
+
+    Returns
+    -------
+    unique_entities : dict
+        Same as entities, with one entity set to None if it was a list of length > 1 in the input.
+
+    """
+    # Note that this function has no effect on entities in the case of independent samples comparison or during regression analysis
+    unique_entities = entities.copy()
+    
+    task = entities['task']
+    run = entities['run']
+    session = entities['session']
+    
+    if isinstance(task, list):
+        if len(task) > 1:
+            unique_entities['task'] = None
+    if isinstance(run, list):
+        if len(run) > 1:
+            unique_entities['run'] = None
+    if isinstance(session, list):
+        if len(session) > 1:
+            unique_entities['session'] = None
+        
+    return unique_entities
+
 # Permutation testing with stat max thresholding
 def generate_permuted_null_distributions(group_data, config, layout, entities, observed_stats, design_matrix=None):
     """
     Perform a two-sided permutation test to determine positive and negative thresholds separately.
     Returns separate maximum and minimum thresholds for positive and negative t-values.
     """   
+    # Todo: create plots of null distributions for the report
     # Extract values from config
     n_permutations = config.get("n_permutations")
     analysis_type = config.get("analysis_type")
     
     # Load pre-existing permuted data, if any
-    perm_files = layout.derivatives["connectomix"].get(extension=".npy",
-                                          suffix="permutations",
-                                          return_type='filename')
+    perm_files = layout.derivatives["connectomix"].get(desc=config["connectivity_kind"],
+                                                       extension=".npy",
+                                                       suffix="permutations",
+                                                       return_type='filename')
     perm_files = apply_nonbids_filter("analysis",
                          config["analysis_label"],
                          perm_files)
@@ -532,28 +794,35 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
     elif len(perm_files) == 1:
         perm_file = perm_files[0]
         perm_data = np.load(perm_file)
+        print(f"Loading {perm_data.shape[0]} pre-existing permutations from {perm_file}")
     else:
+        # Note: if we compare task, then the task entity must disappear in the path, so we make it optional in the path_patterns
         perm_file = layout.derivatives["connectomix"].build_path({**entities,
                                                           "analysis_label": config["analysis_label"],
                                                           "method": config["method"],
                                                           },
-                                                     path_patterns=["group/{analysis_label}/permutations/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_permutations.npy"],
+                                                     path_patterns=["group/{analysis_label}/permutations/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_permutations.npy"],
                                                      validate=False)
         ensure_directory(perm_file)
         # If nothing has to be loaded, then initiate the null distribution with the observed values
         perm_data = np.array([list(observed_stats.values())])  # Size is (1,2) and order is max followed by min
     
     # Run the permutations until goal is reached
-    print(f"Running permutations (target is {n_permutations} permutations)...", end='')
+    print(f"Running permutations (target is {n_permutations} permutations)...", end='', flush=True)
     while perm_data.shape[0] <= n_permutations:
-        print('.', end='')
+        print('.', end='', flush=True)
         if analysis_type in ['independent', 'paired']:
             group1_data = group_data[0]
             group2_data = group_data[1]
+            if analysis_type == 'independent':
+                permutation_type = 'independent'
+            elif analysis_type == 'paired':
+                permutation_type = 'samples'
             perm_test = permutation_test((group1_data, group2_data),
                                                           stat_func,
                                                           vectorized=False,
-                                                          n_resamples=1)
+                                                          n_resamples=1,
+                                                          permutation_type=permutation_type)
             permuted_t_scores = perm_test.null_distribution
             
         elif analysis_type == 'regression':
@@ -566,18 +835,61 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
         np.save(perm_file, perm_data)
         
     print('.')
+    print('Permutations computed.')
     return perm_data.reshape([-1,1])[0:], perm_data.reshape([-1,1])[1:]  # Returning all maxima and all minima
 
 # Define a function to compute the difference in connectivity between the two groups
 # Todo: adapt this for paired tests
-def stat_func(x, y, axis=0):
+def stat_func(x, y):
+    """
+    Function defining the statistics to compute for the permutation-based analysis.
+    Essentially calls ttest_ind(x, y).
+
+    Parameters
+    ----------
+    x : as in ttest_ind(x, y)
+    y : as in ttest_ind(x, y)
+
+    Returns
+    -------
+    t_stat : float
+        t-statistics, as computed from ttest_ind(x, y).
+
+    """
     from scipy.stats import ttest_ind
     # Compute the t-statistic between two independent groups
     t_stat, _ = ttest_ind(x, y)
     return t_stat
 
 # Helper function to create and save matrix plots for each thresholding strategy
-def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, labels=None):    
+def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, labels=None):
+    """
+    Tool to generate thresholded connectivity matrix plots.
+
+    Parameters
+    ----------
+    t_stats : numpy.array
+        The unthresholded t-score matrix.
+    uncorr_mask : numpy.array
+        Mask defining the supra-threshold connections for the uncorrected strategy.
+    fdr_mask : numpy.array
+        Mask defining the supra-threshold connections for the fdr strategy.
+    perm_mask : numpy.array
+        Mask defining the supra-threshold connections for the fwe strategy.
+    config : dict
+        Configuration.
+    layout : BIDSLayout
+        Usual BIDS class for the dataset.
+    entities : dict
+        Entities to build output paths for the figures.
+    labels : list, optional
+        Labels for the axis of the plots (length is equal to the number of rows of the connectivity matrix). The default is None.
+
+    Returns
+    -------
+    None.
+
+    """
         
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "analysis_label": config["analysis_label"],
@@ -628,6 +940,14 @@ def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, confi
     
 # Helper function to create and save connectome plots for each thresholding strategy
 def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, config, layout, entities, coords):    
+    """
+    Same as generate_group_matrix_plots, but for the connectomes (i.e. glass-brains with connections represented as solid lines between nodes).
+
+    Returns
+    -------
+    None.
+
+    """
         
     fn_uncorr = layout.derivatives["connectomix"].build_path({**entities,
                                                       "analysis_label": config["analysis_label"],
@@ -678,8 +998,24 @@ def generate_group_connectome_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, c
 
 # Function to manage default group-level options
 def set_unspecified_participant_level_options_to_default(config, layout):
+    """
+    Set the configuration fields to their default values if not explicitly specified in the input config.
+
+    Parameters
+    ----------
+    config : dict
+        Input configuration. Can be completely empty (config = {}).
+    layout : BIDSLayout
+        BIDS layout object of the dataset.
+
+    Returns
+    -------
+    config : dict
+        A complete configuration.
+
+    """
     config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
-    config["method"] = config.get("method", "atlas")
+    config["method"] = config.get("method", "schaeffer100")
     config["method_options"] = config.get("method_options", {})
     config["subjects"] = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())
     config["tasks"] = config.get("tasks", layout.derivatives['fMRIPrep'].get_tasks())
@@ -691,16 +1027,21 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     elif 'MNI152NLin6Asym' in config.get("spaces"):
         config["spaces"] = ['MNI152NLin6Asym']
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
-    if config.get("method") == 'atlas':
-        config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
-    if config.get("method") == 'seeds':
-        config["method_options"]["radius"] = config["method_options"].get("radius", 5)
-    config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.008)    
-    config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.1)
+    config["method_options"]["seeds_file"] = config["method_options"].get("seeds_file", "/path/to/seeds.csv")
+    config["method_options"]["radius"] = config["method_options"].get("radius", 5)
+    config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.01)  # Default value from Ciric et al 2017
+    config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.08)  # Default value from Ciric et al 2017
 
-    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal']
+    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal', 'csf_wm']
     config["confound_columns"] = config.get("confound_columns", default_confound_columns)
-
+    config["ica_aroma"] = config.get("ica_aroma", False)
+    if config["ica_aroma"]:
+        print("Defaulting to space MNI152NLin6Asym for ICA-AROMA denoising (overriding spaces from config file")
+        config["spaces"] = ['MNI152NLin6Asym']
+    elif "MNI152NLin6Asym" in config["spaces"]:
+        warnings.warn("Space 'MNI152NLin6Asym' was found in the list of spaces and ica_aroma was disabled. To avoid name conflicts, we force you to use ica_aroma with MNI152NLin6Asym. For now, 'MNI152NLin6Asym' will be removed from the list of spaces.")
+        config["spaces"] = [space for space in config["spaces"] if space != 'MNI152NLin6Asym']
+    
     return config
 
 def guess_groups(layout):
@@ -753,7 +1094,22 @@ def guess_groups(layout):
 
 # Function to manage default group-level options
 def set_unspecified_group_level_options_to_default(config, layout):
-    
+    """
+    Set the configuration fields to their default values if not explicitly specified in the input config.
+
+    Parameters
+    ----------
+    config : dict
+        Input configuration. Can be completely empty (config = {}).
+    layout : BIDSLayout
+        BIDS layout object of the dataset.
+
+    Returns
+    -------
+    config : dict
+        A complete configuration.
+
+    """
     config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
     config["tasks"] = config.get("tasks", "restingstate" if "restingstate" in layout.derivatives['connectomix'].get_tasks() else layout.derivatives['connectomix'].get_tasks())
     config["runs"] = config.get("runs", layout.derivatives['connectomix'].get_runs())
@@ -765,53 +1121,94 @@ def set_unspecified_group_level_options_to_default(config, layout):
     config["n_permutations"] = config.get("n_permutations", 20)
     config["analysis_type"] = config.get("analysis_type", "independent")  # Options: 'independent' or 'paired' or 'regression'
     
-    config["method"] = config.get("method", "atlas")
+    config["method"] = config.get("method", "schaeffer100")
     
     config["method_options"] = config.get("method_options", {})
-    config["analysis_options"] = config.get("analysis_options", {})
     
     config["analysis_label"] = config.get("analysis_label", "CUSTOMNAME")
-    if config.get("analysis_type") in ['independent', 'paired']:
-        if 'group1_subjects' not in config['analysis_options'].keys():
-            # Try to guess the groups from participants.tsv file
-            guessed_groups = guess_groups(layout)
-            if len(guessed_groups) == 2:
-                group1_name = list(guessed_groups.keys())[0]
-                group2_name = list(guessed_groups.keys())[1]
-                warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
-                config["analysis_options"]["group1_subjects"] = config.get("group1_subjects", list(guessed_groups.values())[0])
-                config["analysis_options"]["group2_subjects"] = config.get("group2_subjects", list(guessed_groups.values())[1])
-                config["analysis_label"] = f"{group1_name}VersuS{group2_name}"
-                warnings.warn(f"Setting analysis label to {config['analysis_label']}")
-            else:
-                config["group1_subjects"] = config.get("subjects", layout.derivatives['connectomix'].get_subjects())  # this is used only through the --helper tool
-                warnings.warn("Could not detect two groups, putting all subjects into first group.")
-    elif config.get("analysis_type") == 'regression':
-        config["analysis_options"]["subjects_to_regress"] = config["analysis_options"].get("subjects_to_regress", layout.derivatives['connectomix'].get_subjects())
-        config["analysis_options"]["covariate"] = config["analysis_options"].get("covariate", "COVARIATENAME")
-        config["analysis_options"]["confounds"] = config["analysis_options"].get("confounds", [])
-    if config.get("method") == 'atlas':
-        config["method_options"]["n_rois"] = config["method_options"].get("n_rois", 100)
+
+    
+    analysis_options = {}
+    
+    if config["analysis_type"] == 'independent':
+        guessed_groups = guess_groups(layout)
+        if len(guessed_groups) == 2:
+            group1_name = list(guessed_groups.keys())[0]
+            group2_name = list(guessed_groups.keys())[1]
+            warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
+            analysis_options["group1_subjects"] = list(guessed_groups.values())[0]
+            analysis_options["group2_subjects"] = list(guessed_groups.values())[1]
+            config["analysis_label"] = f"{group1_name}VersuS{group2_name}"  # This overwrites the above generic name to ensure people don't get confused with the automatic selection of subjects
+            warnings.warn(f"Setting analysis label to {config['analysis_label']}")
+        else:
+            config["group1_subjects"] = config.get("subjects", layout.derivatives['connectomix'].get_subjects())  # this is used only through the --helper tool (or the autonomous mode)
+            warnings.warn("Could not detect two groups, putting all subjects into first group.")
+            
+    elif config["analysis_type"] == 'paired':
+        analysis_options["subjects"] = layout.derivatives['connectomix'].get_subjects()
+        analysis_options["sample1_entities"] = dict(tasks=config.get("tasks"),
+                                                    sessions=config.get("sessions"),
+                                                    runs=config.get("runs"))
+        analysis_options["sample2_entities"] = dict(tasks=config.get("tasks"),
+                                                    sessions=config.get("sessions"),
+                                                    runs=config.get("runs"))
+        
+    elif config["analysis_type"] == 'regression':
+        analysis_options["subjects_to_regress"] = layout.derivatives['connectomix'].get_subjects()
+        analysis_options["covariate"] = "COVARIATENAME"
+        analysis_options["confounds"] = []
+        
+    
+    # Set the analysis_options field
+    # Todo: enable confounds to be optional in the config file. Currently it does not work if analysis_options are set in config file as it does not take the default value in the following line. But we want to be able to leave the confounds field empty in the config file.
+    config["analysis_options"] = config.get("analysis_options", analysis_options)
+    
     if config.get("method") == 'seeds':
         config["method_options"]["radius"] = config["method_options"].get("radius", 5)
         
     return config
 
 # Participant-level analysis
-def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
+def participant_level_analysis(bids_dir, output_dir, derivatives, config):
+    """
+    Main function to run the participant analysis
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to bids_dir.
+    output_dir : str or Path
+        Path to connectomix derivatives.
+    derivatives : dict
+        Paths to data preprocessed with fMRIPrep and, optionally, fmripost-aroma: derivatives["fmriprep"]='/path/to/fmriprep', etc.
+    config : dict or str or Path
+        Configuration dict or path to configuration file (can be a .json or .yaml or .yml).
+
+    Raises
+    ------
+    FileNotFoundError
+        fMRI files not found.
+    ValueError
+        fMRI files are too numerous (must match exactly one file).
+
+    Returns
+    -------
+    None.
+
+    """
     # Todo: add an 'overwrite' argument to recompute everything even if files exist
     # Print version information
     print(f"Running connectomix (Participant-level) version {__version__}")
 
     # Create derivative directory        
-    derivatives_dir = Path(derivatives_dir)
-    derivatives_dir.mkdir(parents=True, exist_ok=True)
-
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
     # Create the dataset_description.json file
-    create_dataset_description(derivatives_dir)
+    create_dataset_description(output_dir)
 
-    # Create a BIDSLayout to parse the BIDS dataset
-    layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, derivatives_dir])
+    # Create a BIDSLayout to parse the BIDS dataset and index also the derivatives
+    layout = BIDSLayout(bids_dir, derivatives=[*list(derivatives.values()), output_dir])
     
     # Load the configuration file
     config = load_config(config)
@@ -823,7 +1220,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
     # Save a copy of the config file to the config directory
-    config_filename = derivatives_dir / "config" / "backups" / f"participant_level_config_{timestamp}.json"
+    config_filename = output_dir / "config" / "backups" / f"participant_level_config_{timestamp}.json"
     save_copy_of_config(config, config_filename)
     print(f"Configuration file saved to {config_filename}")
         
@@ -835,25 +1232,16 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     space = config.get("spaces")   
 
     # Select the functional, confound and metadata files
-    func_files = layout.derivatives['fMRIPrep'].get(
+    func_files = layout.derivatives['fMRIPost-AROMA' if config['ica_aroma'] else 'fMRIPrep'].get(
         suffix='bold',
         extension='nii.gz',
         return_type='filename',
         space=space,
-        desc='preproc',
+        desc='nonaggrDenoised' if config['ica_aroma'] else 'preproc',
         subject=subjects,
         task=task,
         run=run,
         session=session,
-    )
-    confound_files = layout.derivatives['fMRIPrep'].get(
-        suffix='timeseries',
-        extension='tsv',
-        return_type='filename',
-        subject=subjects,
-        task=task,
-        run=run,
-        session=session
     )
     json_files = layout.derivatives['fMRIPrep'].get(
         suffix='bold',
@@ -861,6 +1249,15 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         return_type='filename',
         space=space,
         desc='preproc',
+        subject=subjects,
+        task=task,
+        run=run,
+        session=session
+    )
+    confound_files = layout.derivatives['fMRIPrep'].get(
+        suffix='timeseries',
+        extension='tsv',
+        return_type='filename',
         subject=subjects,
         task=task,
         run=run,
@@ -874,7 +1271,8 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
         raise FileNotFoundError("No confound files found")
     if len(func_files) != len(confound_files):
         raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and confound_files {len(confound_files)}")
-    # Todo: add more consistency checks
+    if len(func_files) != len(json_files):
+        raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and json_files {len(json_files)}")
 
     print(f"Found {len(func_files)} functional files:")
     [print(os.path.basename(fn)) for fn in func_files]
@@ -898,7 +1296,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
     # Compute CanICA components if necessary and store it in the methods options
     if config['method'] == 'ica':
         # Create a canICA directory to store component images
-        canica_dir = derivatives_dir / "canica"
+        canica_dir = output_dir / "canica"
         canica_dir.mkdir(parents=True, exist_ok=True)
         
         # Compute CanICA and export path and extractor in options to be passed to compute time series
@@ -960,7 +1358,7 @@ def participant_level_analysis(bids_dir, derivatives_dir, fmriprep_dir, config):
             plt.close()
     print("Participant-level analysis completed.")
 
-def generate_group_analysis_report(layout, config):
+def generate_group_analysis_report(layout, bids_entities, config):
     """
     Generates a group analysis report based on the method and connectivity kind.
 
@@ -968,18 +1366,8 @@ def generate_group_analysis_report(layout, config):
 
     method = config.get("method")
     analysis_label = config.get('analysis_label')
-    task = config.get("tasks")
-    space = config.get("spaces")
     connectivity_kind = config.get("connectivity_kind")
-    session = config.get("sessions")
-    run = config.get("runs")
     analysis_type = config.get("analysis_type")
-    
-    bids_entities = dict(session=session,
-                        run=run,
-                        task=task,
-                        space=space,
-                        desc=connectivity_kind)
     
     entities = dict(**bids_entities ,
                     method=method,
@@ -1030,12 +1418,30 @@ def generate_group_analysis_report(layout, config):
                 for figure_file in figure_files:
                     report_file.write(f'<img src="{figure_file}" width="800">\n')
 
-        print("Group analysis report saved. To open, you may try to type the following command (might not work when using Docker")
+        print("Group analysis report saved. To open, you may try to type the following command (with some minor modification if using Docker)")
         print(f"open {report_output_path}")
 
 
 # Group size verification tool
 def check_group_has_several_members(group_subjects):
+    """
+    A basic tool to check if provided group of subjects actually contain more than one element.
+
+    Parameters
+    ----------
+    group_subjects : list
+        List of subjects.
+
+    Raises
+    ------
+    ValueError
+        Wrong size for the group list.
+
+    Returns
+    -------
+    None.
+
+    """
     if len(group_subjects) == 0:
         raise ValueError("One group has no member, please review your configuration file.")
     elif len(group_subjects) == 1:
@@ -1043,7 +1449,34 @@ def check_group_has_several_members(group_subjects):
 
 # Helper function to collect participant-level matrices
 def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method):
-    group_matrices = []
+    """
+    Tool to retrieve the paths to the connectivity matices computed at participant-level.
+
+    Parameters
+    ----------
+    subjects : list
+        List of participant ID to consider.
+    layout : BIDSLayout
+        The usual BIDS class for the dataset.
+    entities : dict
+        Entities used to filter BIDSLayout.get() call.
+    method : str
+        Name of method to select the appropriate files.
+
+    Raises
+    ------
+    FileNotFoundError
+        No connectivity matrix is found, probably an error in the entities.
+    ValueError
+        Too many connectivity matrices are found, probably an error in the entities.
+
+    Returns
+    -------
+    group_dict : dict
+        A dictionary with keys = subjects and values = path to the unique connectivity matrix to the subject.
+
+    """
+    group_dict = {}
     for subject in subjects:
         conn_files = layout.derivatives["connectomix"].get(subject=subject,
                                                            suffix="matrix",
@@ -1056,14 +1489,38 @@ def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entit
         if len(conn_files) == 0:
             raise FileNotFoundError(f"Connectivity matrix for subject {subject} not found, are you sure you ran the participant-level pipeline?")
         elif len(conn_files) == 1:
-            group_matrices.append(np.load(conn_files[0]))  # Load the match
+            group_dict[subject] = np.load(conn_files[0])  # Load the match
         else:
             raise ValueError(f"There are multiple matches for subject {subject}, review your configuration. Matches are {conn_files}")
-    return group_matrices
+    return group_dict
 
 # Tool to extract covariate and confounds from participants.tsv in the same order as in given subject list
 def retrieve_info_from_participant_table(layout, subjects, covariate, confounds=None):
-    
+    """
+    Tool to extract data of interest from the participants.tsv file of the dataset.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+        Usual BIDS class for the dataset.
+    subjects : list
+        Subjects for which the data must be extracted.
+    covariate : str
+        Column name of participants.tsv which is to be extracted.
+    confounds : list, optional
+        List of strings, each of which corresponding to a column name of participants.tsv, and to be loaded as confounds. The default is None.
+
+    Raises
+    ------
+    ValueError
+        Name of covariate or confound does not exist in the columns of participants.tsv.
+
+    Returns
+    -------
+    DataFrame
+        Table to specified subjects and covariate value, optionally also with selected confounds.
+
+    """
     # Load participants.tsv
     participants_file = layout.get(return_type='filename', extension='tsv', scope='raw')[0]
     participants_df = pd.read_csv(participants_file, sep='\t')
@@ -1126,6 +1583,9 @@ def regression_analysis(group_data, design_matrix, permutate=False):
     # Extract name of columns to permute
     covariable_to_permute = design_matrix.columns[0]
 
+    # Since we add a constant in the design matrix, we must de-mean the columns of the design matrix
+    design_matrix = design_matrix.apply(lambda x: x - x.mean(), axis=0)
+
     # Extract the covariate (first column of design matrix) and other covariates
     X = add_constant(design_matrix)  # Add constant for the intercept
 
@@ -1161,8 +1621,110 @@ def regression_analysis(group_data, design_matrix, permutate=False):
 
     return t_values_matrix, p_values_matrix
 
+# Fucntion to get participant-level data for paired analysis
+def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
+    """
+    returns: A dict with key equal to each subject and whose value is a length-2 list with the loaded connectivity matrices
+    """
+    subjects =  config["analysis_options"]["subjects"]
+    
+    # Extract sample-defining entities - some manual operation is required here as BIDSLayout uses singular words (e.g. 'run' unstead of 'runs')
+    sample1_entities = entities.copy()
+    sample1_entities['task'] = config["analysis_options"]["sample1_entities"]['tasks']
+    sample1_entities['session'] = config["analysis_options"]["sample1_entities"]['sessions']
+    sample1_entities['run'] = config["analysis_options"]["sample1_entities"]['runs']
+    
+    sample2_entities = entities.copy()
+    sample2_entities['task'] = config["analysis_options"]["sample2_entities"]['tasks']
+    sample2_entities['session'] = config["analysis_options"]["sample2_entities"]['sessions']
+    sample2_entities['run'] = config["analysis_options"]["sample2_entities"]['runs']
+    
+    method = config["method"]
+    
+    sample1_dict = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, sample1_entities, method)
+    sample2_dict = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, sample2_entities, method)
+    
+    # Let's make a consistency check, just to make sure we have what we think we have
+    # This is probably not necessary though
+    for subject in sample1_dict.keys():
+        if subject not in sample2_dict.keys():
+            raise KeyError(f"Second sample does not contain requested subject {subject}, something is wrong. Maybe a bug?")
+    for subject in sample2_dict.keys():
+        if subject not in sample1_dict.keys():
+            raise KeyError(f"First sample does not contain requested subject {subject}, something is wrong. Maybe a bug?")
+    
+    # Unify the data in one dict
+    paired_samples = {}
+    for subject in subjects:
+        paired_samples[subject] = [sample1_dict[subject], sample2_dict[subject]]
+    
+    return paired_samples
+
+# Helper function to fetch atlas maps, labels and coords
+def get_atlas_data(atlas_name, get_cut_coords=False):
+    """
+    A wrapper function for nilearn.datasets atlas-fetching tools.
+
+    Parameters
+    ----------
+    atlas_name : str
+        Name of the atlas to fetch. Choose from 'schaeffer100', 'aal' or 'harvardoxford'.
+    get_cut_coords : bool, optional
+        If true, cut coords for the regions of the atlas will be computed. The default is False, as this is typically time-consuming.
+
+    Returns
+    -------
+    maps : Nifti1Image
+        The atlas maps.
+    labels : list of strings.
+        Labels of the atlas regions.
+    coords : list of list of three integers
+        The coordinates of the regions, in the same order as 'labels'.
+
+    """
+            
+    if atlas_name == 'schaeffer100':
+        warnings.warn("Using Schaefer 2018 atlas with 100 rois")
+        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
+        maps = atlas['maps']
+        coords = find_parcellation_cut_coords(labels_img=maps) if get_cut_coords else []
+        labels = atlas["labels"]
+    elif atlas_name == 'aal':
+        warnings.warn("Using AAL atlas")
+        atlas = datasets.fetch_atlas_aal()
+        maps = atlas['maps']
+        coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
+        labels = atlas["labels"]
+    elif atlas_name == 'harvardoxford':
+        warnings.warn("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
+        atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
+        maps = atlas['maps']
+        coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
+        labels = atlas["labels"]
+        labels=labels[1:] # Needed as first entry is 'background'
+    else:
+        raise ValueError(f"Requested atlas {atlas_name} is not supported. Check spelling of documentation.")
+    return maps, labels, coords
+
 # Group-level analysis
-def group_level_analysis(bids_dir, derivatives_dir, config):
+def group_level_analysis(bids_dir, output_dir, config):
+    """
+    Main function to launch group-level analysis.
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to bids_dir.
+    output_dir : str or Path
+        Path to connectomix derivatives.
+    config : dict or str or Path
+        Configuration or path to configuration (can be a .json or .yaml or .yml).
+
+    Returns
+    -------
+    None.
+
+    """
     # Print version information
     print(f"Running connectomix (Group-level) version {__version__}")
 
@@ -1170,7 +1732,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     config = load_config(config)
     
     # Create a BIDSLayout to handle files and outputs
-    layout = BIDSLayout(bids_dir, derivatives=[derivatives_dir])
+    layout = BIDSLayout(bids_dir, derivatives=[output_dir])
 
     # Set unspecified config options to default values
     config = set_unspecified_group_level_options_to_default(config, layout)
@@ -1179,9 +1741,9 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
     # Save config file for reproducibility
-    derivatives_dir = Path(derivatives_dir)
-    derivatives_dir.mkdir(parents=True, exist_ok=True)
-    config_filename = derivatives_dir / "config" / "backups" / f"group_level_config_{timestamp}.json"
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config_filename = output_dir / "config" / "backups" / f"group_level_config_{timestamp}.json"
     save_copy_of_config(config, config_filename)
     print(f"Configuration file backed up at {config_filename}")
     
@@ -1204,8 +1766,10 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
 
     design_matrix = None  # This will be necessary for regression analyses
 
-    if analysis_type in ['independent', 'paired']:
+    # Perform the appropriate group-level analysis
+    if analysis_type == 'independent':
         # Load group specifications from config
+        # Todo: change terminology from 'group' to 'samples' when performing independent samples tests so that it is consistent with the terminology when doing a paired test.
         group1_subjects = config['analysis_options']['group1_subjects']
         group2_subjects = config['analysis_options']['group2_subjects']
         
@@ -1216,29 +1780,42 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
         group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
         group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities, method)
+        
+        # For independent tests we dontt need to keep track of subjects labels
+        group1_matrices = list(group1_matrices.values())
+        group2_matrices  = list(group2_matrices.values())
     
-        print(f"Group 1 contains {len(group1_matrices)} participants")
-        print(f"Group 2 contains {len(group2_matrices)} participants")
+        print(f"Group 1 contains {len(group1_matrices)} participants: {group1_subjects}")
+        print(f"Group 2 contains {len(group2_matrices)} participants: {group2_subjects}")
         
         # Convert to 3D arrays: (subjects, nodes, nodes)
-        # Todo: make sure this is actually necessary
         group1_data = np.stack(group1_matrices, axis=0)
         group2_data = np.stack(group2_matrices, axis=0)
         group_data = [group1_data, group2_data]
         
-        # Perform the appropriate group-level analysis
-        if analysis_type == "independent":
-            # Independent t-test between different subjects
-            t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
-        elif analysis_type == "paired":
-            # Paired t-test within the same subjects
-            if len(group1_subjects) != len(group2_subjects):
-                raise ValueError("Paired t-test requires an equal number of subjects in both groups.")
-            t_stats, p_values = ttest_rel(group1_data, group2_data, axis=0)
+        # Independent t-test between different subjects
+        t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
+
+    elif analysis_type == "paired":
+        # Paired t-test within the same subjects
+        paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
+        
+        # Get the two samples from paired_samples (with this we are certain that they are in the right order)
+        sample1 = np.array(list(paired_samples.values()))[:,0]
+        sample2 = np.array(list(paired_samples.values()))[:,1]
+        group_data = [sample1, sample2]
+        
+        if len(sample1) != len(sample2):
+            raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
+            
+        t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
+        
+        entities = remove_pair_making_entity(entities)
             
     elif analysis_type == "regression":
         subjects = config['analysis_options']['subjects_to_regress']
         group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
+        group_data = list(group_data.values())
         design_matrix = retrieve_info_from_participant_table(layout, subjects, config["analysis_options"]["covariate"], config["analysis_options"]["confounds"])
         t_stats, p_values = regression_analysis(group_data, design_matrix)
 
@@ -1256,7 +1833,7 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
     # Threshold 3: Permutation-based threshold
     n_permutations = config["n_permutations"]
     if n_permutations < 5000:
-        warnings.warn(f"Running permutation analysis with less than 5000 permutations (you choose {n_permutations}).")
+        warnings.warn(f"Running permutation analysis with less than 5000 permutations (you chose {n_permutations}).")
         
     null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout, entities, {'observed_t_max': np.nanmax(t_stats), 'observed_t_min': np.nanmin(t_stats)}, design_matrix=design_matrix)
     
@@ -1284,27 +1861,15 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                                       "analysis_label": config["analysis_label"],
                                                       "method": config["method"]                                                      
                                                       },
-                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
+                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
                                                  validate=False)
     
     ensure_directory(threshold_file)
     with open(threshold_file, 'w') as f:
         json.dump(thresholds, f, indent=4)
     
-    # Generate plots
-    # Atlas-based extraction
-    # Todo: put this in a function to fetch coords and label, and use this function also at participant-level in timeseries extraction
-    if method == 'atlas':
-        # Todo: n_rois has been put in config, but this still UNTESTED (appears in 2 places)
-        n_rois = config["method_options"].get("n_rois")
-        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=n_rois)
-        #atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
-        labels = atlas["labels"]
-        # labels=labels[1:] # not needed for Schaefer2018 atlas
-        # Grab center coordinates for atlas labels
-        coords = find_parcellation_cut_coords(labels_img=atlas['maps'])
-    elif method == 'seeds':
-        # Read seed labels and coordinates from file
+    # Get ROIs coords and labels for plotting purposes
+    if method == 'seeds':
         seed_file_path = config['method_options']['seeds_file']
         if os.path.isfile(seed_file_path):
             with open(seed_file_path) as seed_file:
@@ -1316,7 +1881,6 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                     coords.append(np.array(line[1:4], dtype=int))
         else:
             raise FileNotFoundError(f"Seeds file {seed_file_path} not found")
-    # ICA-based extraction
     elif method == 'ica':
         extracted_regions_entities = entities.copy()
         extracted_regions_entities.pop("desc")
@@ -1326,7 +1890,8 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
         coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
         labels = None
     else:
-        raise ValueError(f"Unknown method: {method}")
+        # Handle the case where method is an atlas
+        _, labels, coords = get_atlas_data(method, get_cut_coords=True)
 
     # Create plots of the thresholded group connectivity matrices and connectomes
     generate_group_matrix_plots(t_stats,
@@ -1347,9 +1912,12 @@ def group_level_analysis(bids_dir, derivatives_dir, config):
                                     entities,
                                     coords)
     
+    # Refresh BIDS indexing of the derivatives to find data for the report
+    layout.derivatives.pop('connectomix')
+    layout.add_derivatives(output_dir)
+    
     # Generate report
-    # Todo: review generate_group_analysis_report when performing a regression analysis
-    generate_group_analysis_report(layout, config)    
+    generate_group_analysis_report(layout, entities, config)
 
     print("Group-level analysis completed.")
 
@@ -1409,7 +1977,7 @@ def autonomous_mode(run=False):
     if run:
         print("... and now launching the analysis!")
         if analysis_level == 'participant':
-            participant_level_analysis(bids_dir, connectomix_folder, fmriprep_dir, {})
+            participant_level_analysis(bids_dir, connectomix_folder, {'fmriprep': fmriprep_dir}, {})
         elif analysis_level == 'group':
             group_level_analysis(bids_dir, connectomix_folder, {})
     else:
@@ -1418,14 +1986,37 @@ def autonomous_mode(run=False):
         elif analysis_level == 'group':
             create_group_level_default_config_file(bids_dir, connectomix_folder)
 
-        cmd = f"python connectomix.py {bids_dir} {connectomix_folder} {analysis_level} --fmriprep_dir {fmriprep_dir}"
+        cmd = f"python connectomix.py {bids_dir} {connectomix_folder} {analysis_level} --derivatives fmriprep={fmriprep_dir}"
         print(f"Autonomous mode suggests the following command:\n{cmd}")
         print("If you are happy with this configuration, run this command or simply relaunch the autonomous mode add the --run flag.")
+
+
+# Tool to parse the various derivatives passed to CLI
+def parse_derivatives(derivatives_list):
+    """Convert list of 'key=value' items into a dictionary."""
+    derivatives_dict = {}
+    if derivatives_list:
+        for item in derivatives_list:
+            if '=' in item:
+                key, value = item.split('=', 1)
+                derivatives_dict[key] = value
+            else:
+                raise argparse.ArgumentTypeError(f"Invalid format for -d/--derivatives: '{item}' must be in 'key=value' format.")
+    return derivatives_dict
 
 
 
 # Main function with subcommands for participant and group analysis
 def main():
+    """
+    Main function to launch the software. Ir reads arguments from sys.argv, which is filled automatically when calling the script from command line.
+
+    Returns
+    -------
+    None.
+
+    """
+    
     parser = argparse.ArgumentParser(description="Connectomix: Functional Connectivity from fMRIPrep outputs using BIDS structure")
     
     # Define the autonomous flag
@@ -1436,41 +2027,47 @@ def main():
     
     # Define positional arguments for bids_dir, derivatives_dir, and analysis_level
     parser.add_argument('bids_dir', nargs='?', type=str, help='BIDS root directory containing the dataset.')
-    parser.add_argument('derivatives_dir', nargs='?', type=str, help='Directory where to store the outputs.')
+    parser.add_argument('output_dir', nargs='?', type=str, help='Directory where to store the outputs.')
     parser.add_argument('analysis_level', nargs='?', choices=['participant', 'group'], help="Analysis level: either 'participant' or 'group'.")
     
     # Define optional arguments that apply to both analysis levels
-    parser.add_argument('--fmriprep_dir', type=str, help='Directory where fMRIPrep outputs are stored.')
-    parser.add_argument('--config', type=str, help='Path to the configuration file.')
-    parser.add_argument('--participant_label', type=str, help='Participant label to process (e.g., "sub-01").')
+    parser.add_argument('-d', '--derivatives', nargs='+',
+                        help="Specify pre-computed derivatives as 'key=value' pairs (e.g., -d fmriprep=/path/to/fmriprep fmripost-aroma=/path/to/fmripost-aroma).")
+    parser.add_argument('-c', '--config', type=str, help='Path to the configuration file.')
+    parser.add_argument('-p', '--participant_label', type=str, help='Participant label to process (e.g., "sub-01").')
     parser.add_argument('--helper', help='Helper function to write default configuration files.', action='store_true')
 
     args = parser.parse_args()
 
+    # Convert the list of 'key=value' pairs to a dictionary
+    derivatives = parse_derivatives(args.derivatives)
+    
     # Run autonomous mode if flag is used
     if args.autonomous:
         autonomous_mode(run=args.run)
-    else:   
+    else:
+        # Set derivatives to default values if unset by user
+        derivatives["fmriprep"] = derivatives.get("fmriprep", Path(args.bids_dir) / 'derivatives' / 'fmriprep')
+        derivatives["fmripost-aroma"] = derivatives.get("fmripost-aroma", Path(args.bids_dir) / 'derivatives' / 'fmripost-aroma')
+        
         # Run the appropriate analysis level
         if args.analysis_level == 'participant':
             
-            # Check if fMRIPrep directory must be guessed and if yes, if it exists.
-            if not args.fmriprep_dir:
-                args.fmriprep_dir = Path(args.bids_dir) / 'derivatives' / 'fmriprep'
-                if not Path(args.fmriprep_dir).exists():
-                    raise FileNotFoundError(f"fMRIPrep directory {args.fmriprep_dir} not found. Use --fmriprep_dir option to specify path manually.")
+            # Check if fMRIPrep directory exists
+            if not Path(derivatives["fmriprep"]).exists():
+                raise FileNotFoundError(f"fMRIPrep directory {derivatives['fmriprep']} not found. Use '--derivatives fmriprep=/path/to/fmriprep' to specify path manually.")
             
             # First check if only helper function must be called
             if args.helper:
-                create_participant_level_default_config_file(args.bids_dir, args.derivatives_dir, args.fmriprep_dir)
+                create_participant_level_default_config_file(args.bids_dir, args.output_dir, derivatives["fmriprep"])
             else:
-                participant_level_analysis(args.bids_dir, args.derivatives_dir, args.fmriprep_dir, args.config)
+                participant_level_analysis(args.bids_dir, args.output_dir, derivatives, args.config)
         elif args.analysis_level == 'group':
             # First check if only helper function must be called
             if args.helper:
-                create_group_level_default_config_file(args.bids_dir, args.derivatives_dir)
+                create_group_level_default_config_file(args.bids_dir, args.output_dir)
             else:
-                group_level_analysis(args.bids_dir, args.derivatives_dir, args.config)
+                group_level_analysis(args.bids_dir, args.output_dir, args.config)
 
 if __name__ == '__main__':
     main()

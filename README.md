@@ -131,6 +131,12 @@ python connectomix.py /path/to/bids_dataset /path/to/derivatives/connectomix par
 
 The configuration file is then created in `/path/to/derivatives/connectomix/config` (the result is also printed in the terminal). Once you are happy with the configuration, you can launch the analysis with you configuration by using the option `--config /path/to/participant_config.yaml`
 
+**Important note about denoising**: the configuration file contain the confounding time-series that one wish to remove from the signal, as well as other denoising options such as low- and high-pass filtering cutoffs. Unfortunately, there is no one-fits-all method to denoising fMRI data.
+By default, connectomix will select 6 motion parameters and perform global signal as well as white matter + CSF signal regression.
+Moreover, the signal is demeaned and de-trended as well as filtered to keep the 0.01Hz-0.08Hz band. This is a classic 9P model, discussed e.g. in Ciric et al, "Benchmarking of participant-level confound regression strategies for the control of motion artifact in studies of functional connectivity", NeuroImage, 2017.
+
+Another possibility supported by connectomix is to use ICA-AROMA denoised data. In that case, preprocessed data from fMRIPrep must be further processed AROMA. The recommended implementation is using [fmripost-aroma](https://github.com/nipreps/fmripost-aroma). using the `--denoising-method nonaggr` option.
+
 #### Group-Level Analysis
 
 To run a group-level analysis:
@@ -329,6 +335,25 @@ Ensure the following Python packages are installed:
 - **Mismatch in Number of Functional and Confound Files**: Verify that each functional file has a corresponding confound file from fMRIPrep.
 - **Multiple Matches for Subjects**: Ensure your configuration parameters uniquely identify each subject's data.
 - **Affine Mismatches**: If you encounter warnings about affine mismatches, Connectomix will attempt to resample the images. Ensure all functional images are in the same space and have compatible affines.
+
+## Test Datasets
+
+A series of datasets to test various types of analysis are available on [openneuro](https://www.openneuro.org). 
+Each of these dataset contains the configuration file to run the analysis, as well as the commands to run each of the analysis. Note that these are only minimalistic examples and contain very little data.
+On top of being useful to test connectomix, they are also meant to ease your task of writing the configuration file that corresponds to your analysis.
+The featured analyzes are:
+
+- **Participant-level analysis**: dataset [dsXXX-1](https://www.openneuro.org/datasets/dsXXX-1), featuring:
+    - Atlas-based ROIs definition, using Schaefer2018 with 100 rois,
+    - Seed-based ROIs definition, using a table with seeds label and coordinates in MNI space,
+    - ICA-based ROIs definition.
+- **Group-level analysis - independent samples**: dataset [dsXXX-2](https://www.openneuro.org/datasets/dsXXX-2), featuring the automatic group detection from the `group` column of the `participants.tsv` file, and performing an independent-samples t-test, correcting for multiple comparisons using permutation statistics.
+- **Group-level analysis - session-based paired samples**: dataset [dsXXX-3](https://www.openneuro.org/datasets/dsXXX-3), feature how the samples to compare are defined using different `session` entity to compare session 1 versus session 2 across all participants.
+- **Group-level analysis - run-based paired samples**: dataset [dsXXX-4](https://www.openneuro.org/datasets/dsXXX-4), feature how the samples to compare are defined using different `run` entity to compare run 1 versus run 2 across all participants.
+- **Group-level analysis - task-based paired samples**: dataset [dsXXX-5](https://www.openneuro.org/datasets/dsXXX-5), feature how the samples to compare are defined using different `task` entity to compare one task versus another one across all participants.
+- **Group-level analysis - regression analysis**: dataset [dsXXX-6](https://www.openneuro.org/datasets/dsXXX-6), showing how to check if connectivities correlates with a clinical score given in the `participants.tsv` file, including a confounding variable (in this case: `age`).
+
+These analyses can also be used as tests for new versions of the software.
 
 ## Contact
 
