@@ -6,38 +6,13 @@ Author: Antonin Rovai
 Created: August 2022
 """
 
-# import sys
-
-# sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
-#             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
-#             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
-#             'group',
-#             '--fmriprep_dir',
-#             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
-#             '--config',
-#             '/data/2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_seeds.yaml']
-
-# sys.argv = ['/home/arovai/git/arovai/connectomix/connectomix/connectomix.py',
-#  '/mnt/hdd_10Tb_internal/gin/datasets/2021-Hilarious_Mosquito-978d4dbc2f38/rawdata',
-#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix',
-#  'group',
-#  '--fmriprep_dir',
-#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/fmriprep_v23.1.3',
-#  '--config',
-#  '//mnt/hdd_10Tb_internal/gin/datasets//2021-Hilarious_Mosquito-978d4dbc2f38/derivatives/connectomix/config/group_level_config_harvardoxford_test.yaml']
-
 # General TODO list:
 # - add more unittests functions
-# - create minimalistic examples datasets, for every cases:
-    # -- Participant-level analyses
-        # --- method: Atlas, Seeds, ICA
-        # --- correlation type: correlation, partial correlation
-        # --- non-trivial confounds from fMRIPrep in time series extraction
-    # -- Group-level analysis
-        # --- Independent samples testing
+# - create more test datasets for group-level analysis, in particular featuring:
+        # --- Independent samples testing DONE
         # --- Paired samples testing: inter-session OR inter-task OR inter-run comparison
         # --- Regression: covariate and confounds removal
-# - include support for AROMA-denoised fMRI data. This requires to run fMRIPrep with the --output-spaces MNI152NLin6Asym:res-02 flag, and then to run fMRIPost-AROMA. Connectomix must then support MNI152NLin6Asym and look for the non-aggressively denoised series in the ouputs.
+# - include plot of null distribution of max stat in report
 
 import os
 import argparse
@@ -67,7 +42,7 @@ from statsmodels.tools.tools import add_constant
 from datetime import datetime
 
 # Define the version number
-__version__ = "1.0.0"
+__version__ = "1.0.2"
 
 # Set warnings to appear only once
 warnings.simplefilter('once')
