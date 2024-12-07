@@ -135,6 +135,8 @@ The configuration file is then created in `/path/to/derivatives/connectomix/conf
 By default, connectomix will select 6 motion parameters and perform global signal as well as white matter + CSF signal regression.
 Moreover, the signal is demeaned and de-trended as well as filtered to keep the 0.01Hz-0.08Hz band. This is a classic 9P model, discussed e.g. in Ciric et al, "Benchmarking of participant-level confound regression strategies for the control of motion artifact in studies of functional connectivity", NeuroImage, 2017.
 
+Another possibility supported by connectomix is to use ICA-AROMA denoised data. In that case, preprocessed data from fMRIPrep must be further processed AROMA. The recommended implementation is using [fmripost-aroma](https://github.com/nipreps/fmripost-aroma). using the `--denoising-method nonaggr` option.
+
 #### Group-Level Analysis
 
 To run a group-level analysis:
@@ -336,7 +338,10 @@ Ensure the following Python packages are installed:
 
 ## Test Datasets
 
-A series of datasets to test various types of analysis are available on [openneuro](https://www.openneuro.org). Each of these dataset contains the configuration file to run the analysis. Note that these are only minimalistic examples and contain very little data. They are meant to ease your task of writing the configuration file that corresponds to your analysis. The featured analyzes are:
+A series of datasets to test various types of analysis are available on [openneuro](https://www.openneuro.org). 
+Each of these dataset contains the configuration file to run the analysis, as well as the commands to run each of the analysis. Note that these are only minimalistic examples and contain very little data.
+On top of being useful to test connectomix, they are also meant to ease your task of writing the configuration file that corresponds to your analysis.
+The featured analyzes are:
 
 - **Participant-level analysis**: dataset [dsXXX-1](https://www.openneuro.org/datasets/dsXXX-1), featuring:
     - Atlas-based ROIs definition, using Schaefer2018 with 100 rois,
