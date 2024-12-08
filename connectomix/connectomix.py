@@ -13,6 +13,8 @@ Created: August 2022
         # --- Paired samples testing: inter-session OR inter-task OR inter-run comparison
         # --- Regression: covariate and confounds removal
 # - include plot of null distribution of max stat in report
+# - roi-to-voxel analyzes
+# - cluster-based inference (mass or size)
 
 import os
 import argparse
@@ -30,6 +32,7 @@ from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sym_matrix
 from nilearn.decomposition import CanICA
 from nilearn.regions import RegionExtractor
+from nilearn.glm.first_level import FirstLevelModel
 from nilearn import datasets
 from bids import BIDSLayout
 import csv
@@ -42,7 +45,7 @@ from statsmodels.tools.tools import add_constant
 from datetime import datetime
 
 # Define the version number
-__version__ = "1.0.2"
+__version__ = "dev"
 
 # Set warnings to appear only once
 warnings.simplefilter('once')
@@ -622,7 +625,11 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         
     # Atlas-based extraction
     else:
-        maps, labels, _ = get_atlas_data(method, get_cut_coords=False)
+        if method == 'roiToVoxel':
+            maps = config["method_options"]["roi_mask_path"]
+            labels = None
+        else:
+            maps, labels, _ = get_atlas_data(method, get_cut_coords=False)
         
         # Define masker object and proceed with timeseries computation
         masker = NiftiLabelsMasker(
@@ -1027,10 +1034,13 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     elif 'MNI152NLin6Asym' in config.get("spaces"):
         config["spaces"] = ['MNI152NLin6Asym']
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
-    config["method_options"]["seeds_file"] = config["method_options"].get("seeds_file", "/path/to/seeds.csv")
+    config["method_options"]["seeds_file"] = config["method_options"].get("seeds_file", "")
     config["method_options"]["radius"] = config["method_options"].get("radius", 5)
     config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.01)  # Default value from Ciric et al 2017
     config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.08)  # Default value from Ciric et al 2017
+
+    # Options for config["method"] = "roiToVoxel"
+    config["method_options"]["roi_mask_path"] = config["method_options"].get("roi_mask_path", "")
 
     default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal', 'csf_wm']
     config["confound_columns"] = config.get("confound_columns", default_confound_columns)
@@ -1288,10 +1298,11 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
 
     # Set up connectivity measures
     connectivity_types = config['connectivity_kind']
-    if isinstance(connectivity_types, str):
-        connectivity_types = [connectivity_types]
-    elif not isinstance(connectivity_types, list):
-        raise ValueError(f"The connectivity_types value must either be a string or a list. You provided {connectivity_types}.")
+    if not config['method'] == 'roiToVoxel':
+        if isinstance(connectivity_types, str):
+            connectivity_types = [connectivity_types]
+        elif not isinstance(connectivity_types, list):
+            raise ValueError(f"The connectivity_types value must either be a string or a list. You provided {connectivity_types}.")
 
     # Compute CanICA components if necessary and store it in the methods options
     if config['method'] == 'ica':
@@ -1328,34 +1339,44 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
                                         config)
         np.save(timeseries_path, timeseries)
         
-        # Iterate over each connectivity type
-        for connectivity_type in connectivity_types:
-            print(f"Computing connectivity: {connectivity_type}")
-            # Compute connectivityconnectivity_measure
-            # Todo: skip connectivity measure if files already present
-            connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
-            conn_matrix = connectivity_measure.fit_transform([timeseries])[0]
+        # Deal with roiToVoxel case
+        if config["method"] == 'roiToVoxel':
+            glm = FirstLevelModel(t_r=get_repetition_time(json_file),
+                                  high_pass=config["method_options"]["high_pass"],
+                                  hrf_modelstr=None)
+            confounds = select_confounds(str(confound_file), config)
+            glm.fit(run_imgs=str(func_file),
+                    confounds=[timeseries, confounds])  # TODO: check that structure of confounds field is correct
+            glm.compute_contrast([1, np.zeros(len(confounds))], output_type='z_score')  # TODO: check that contrast vector is correct
+            # TODO: save contrast map with BIDS name
+            # TODO: test this new feature
+        else:
+            # Iterate over each connectivity type
+            for connectivity_type in connectivity_types:
+                print(f"Computing connectivity: {connectivity_type}")
+                # Compute connectivityconnectivity_measure
+                connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
+                conn_matrix = connectivity_measure.fit_transform([timeseries])[0]
+                
+                # Mask out the major diagonal
+                np.fill_diagonal(conn_matrix, 0)
             
-            # Mask out the major diagonal
-            np.fill_diagonal(conn_matrix, 0)
-        
-            # Generate the BIDS-compliant filename for the connectivity matrix and save
-            # Todo: create a JSON file with component IMG hash and also path to file.
-            conn_matrix_path = layout.derivatives['connectomix'].build_path(entities,
-                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy' % (config["method"], connectivity_type)],
-                                                      validate=False)
-            ensure_directory(conn_matrix_path)
-            np.save(conn_matrix_path, conn_matrix)
-            
-            # Generate the BIDS-compliant filename for the figure, generate the figure and save
-            conn_matrix_plot_path = layout.derivatives['connectomix'].build_path(entities,
-                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg' % (config["method"], connectivity_type)],
-                                                      validate=False)
-            ensure_directory(conn_matrix_plot_path)
-            plt.figure(figsize=(10, 10))
-            plot_matrix(conn_matrix, labels=labels, colorbar=True)
-            plt.savefig(conn_matrix_plot_path)
-            plt.close()
+                # Generate the BIDS-compliant filename for the connectivity matrix and save
+                conn_matrix_path = layout.derivatives['connectomix'].build_path(entities,
+                                                          path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy' % (config["method"], connectivity_type)],
+                                                          validate=False)
+                ensure_directory(conn_matrix_path)
+                np.save(conn_matrix_path, conn_matrix)
+                
+                # Generate the BIDS-compliant filename for the figure, generate the figure and save
+                conn_matrix_plot_path = layout.derivatives['connectomix'].build_path(entities,
+                                                          path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg' % (config["method"], connectivity_type)],
+                                                          validate=False)
+                ensure_directory(conn_matrix_plot_path)
+                plt.figure(figsize=(10, 10))
+                plot_matrix(conn_matrix, labels=labels, colorbar=True)
+                plt.savefig(conn_matrix_plot_path)
+                plt.close()
     print("Participant-level analysis completed.")
 
 def generate_group_analysis_report(layout, bids_entities, config):
@@ -2003,7 +2024,6 @@ def parse_derivatives(derivatives_list):
             else:
                 raise argparse.ArgumentTypeError(f"Invalid format for -d/--derivatives: '{item}' must be in 'key=value' format.")
     return derivatives_dict
-
 
 
 # Main function with subcommands for participant and group analysis
