@@ -33,6 +33,7 @@ from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sy
 from nilearn.decomposition import CanICA
 from nilearn.regions import RegionExtractor
 from nilearn.glm.first_level import FirstLevelModel
+from nilearn.glm.first_level import make_first_level_design_matrix
 from nilearn import datasets
 from bids import BIDSLayout
 import csv
@@ -1342,12 +1343,18 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
         # Deal with roiToVoxel case
         if config["method"] == 'roiToVoxel':
             glm = FirstLevelModel(t_r=get_repetition_time(json_file),
-                                  high_pass=config["method_options"]["high_pass"],
-                                  hrf_modelstr=None)
+                                  high_pass=config["method_options"]["high_pass"])
             confounds = select_confounds(str(confound_file), config)
+            frame_times = np.arange(len(timeseries)) * get_repetition_time(json_file)
+            design_matrix = make_first_level_design_matrix(frame_times=frame_times,
+                                                           events=None,
+                                                           hrf_model=None,
+                                                           drift_model='cosine',
+                                                           high_pass=config["method_options"]["high_pass"])
             glm.fit(run_imgs=str(func_file),
-                    confounds=[timeseries, confounds])  # TODO: check that structure of confounds field is correct
-            glm.compute_contrast([1, np.zeros(len(confounds))], output_type='z_score')  # TODO: check that contrast vector is correct
+                    design_matrix=design_matrix,
+                    confounds=confounds)
+            glm.compute_contrast(np.vstack((1, np.zeros(len(confounds)))), output_type='z_score')  # TODO: check that contrast vector is correct
             # TODO: save contrast map with BIDS name
             # TODO: test this new feature
         else:
