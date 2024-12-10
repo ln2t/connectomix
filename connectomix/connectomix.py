@@ -26,8 +26,8 @@ import nibabel as nib
 import shutil
 import warnings
 from nibabel import Nifti1Image
-from nilearn.image import resample_img, load_img
-from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords, find_probabilistic_atlas_cut_coords
+from nilearn.image import resample_img, load_img, clean_img
+from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords, find_probabilistic_atlas_cut_coords, plot_stat_map
 from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sym_matrix
 from nilearn.decomposition import CanICA
@@ -550,10 +550,38 @@ def resample_to_reference(layout, func_files, reference_img):
             print(f"Functional file {os.path.basename(resampled_path)} already exist, skipping resampling.")
     return resampled_files
 
+# Denoise fmri data
+def denoise_fmri_images(func_file, confounds_file, t_r, config):
+    """
+    Tool to denoise fmri files based on confounds specified in config.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+    func_files : niimg
+    config : dict
+
+    Returns
+    -------
+    denoised_files : niimg
+    """
+    confounds = select_confounds(confounds_file, config)
+    method_options = config['method_options']
+
+    # Set filter options based on the config file
+    high_pass = method_options.get('high_pass')
+    low_pass = method_options.get('low_pass')
+    
+    return clean_img(func_file,
+                     low_pass=low_pass,
+                     high_pass=high_pass,
+                     t_r=t_r,
+                     confounds=confounds)
+
 # Extract time series based on specified method
 def extract_timeseries(func_file, confounds_file, t_r, config):
     """
-    Extract timeseries from fMRI data on Regions-Of-Interests (ROIs). Signal is denoised in the process.
+    Extract timeseries from fMRI data on Regions-Of-Interests (ROIs).
 
     Parameters
     ----------
@@ -574,7 +602,7 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
     Returns
     -------
     timeseries : numpy.array
-        The extracted, denoised time series. Shape is number of ROIs x number of timepoints.
+        The extracted time series. Shape is number of ROIs x number of timepoints.
     labels : list
         List of ROIs labels, in the same order as in timeseries.
 
@@ -606,20 +634,19 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         masker = NiftiSpheresMasker(
             seeds=coords,
             radius=float(radius),
-            standardize=True,
-            detrend=True,
-            high_pass=high_pass,
-            low_pass=low_pass,
+            standardize="zscore_sample",
+            detrend=False,
+            high_pass=None,
+            low_pass=None,
             t_r=t_r
         )
         timeseries = masker.fit_transform(func_file, confounds=confounds.values)
     
     # ICA-based extraction
     elif method == 'ica':
-        warnings.warn("ICA-based method is still unstable, use with caution.")
         extractor = method_options["extractor"]
-        extractor.high_pass = high_pass
-        extractor.low_pass  = low_pass
+        extractor.high_pass = None
+        extractor.low_pass  = None
         extractor.t_r = t_r
         timeseries = extractor.transform(func_file, confounds=confounds.values)
         labels = None
@@ -635,10 +662,10 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         # Define masker object and proceed with timeseries computation
         masker = NiftiLabelsMasker(
             labels_img=maps,
-            standardize=True,
-            detrend=True,
-            high_pass=high_pass,
-            low_pass=low_pass,
+            standardize="zscore_sample",
+            detrend=False,
+            high_pass=None,
+            low_pass=None,
             t_r=t_r
         )
         timeseries = masker.fit_transform(func_file, confounds=confounds.values)
@@ -716,7 +743,7 @@ def compute_canica_components(func_filenames, layout, entities, options):
         
     # Extract also regions from the canica components for connectivity analysis
     extractor_options = dict(threshold=options.get('threshold', 0.5),
-                             standardize=True,
+                             standardize="zscore_sample",
                              detrend=True,
                              min_region_size=options.get('min_region_size', 50))
         
@@ -1043,7 +1070,7 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     # Options for config["method"] = "roiToVoxel"
     config["method_options"]["roi_mask_path"] = config["method_options"].get("roi_mask_path", "")
 
-    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'global_signal', 'csf_wm']
+    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'csf_wm']
     config["confound_columns"] = config.get("confound_columns", default_confound_columns)
     config["ica_aroma"] = config.get("ica_aroma", False)
     if config["ica_aroma"]:
@@ -1324,16 +1351,32 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
     for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
         # Print status
         print(f"Processing file {func_file}")
-               
         
-        # Generate the BIDS-compliant filename for the timeseries and save
+        # Denoise fmri imgs and save result
         entities = layout.parse_file_entities(func_file)
+        denoised_path = func_file if config['ica_aroma'] else layout.derivatives['connectomix'].build_path(entities,
+                                                  path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_denoised.nii.gz'],
+                                                  validate=False)
+        if not Path(denoised_path).exists():
+            print("Data denoising in progress")
+            ensure_directory(denoised_path)
+            denoised_img = denoise_fmri_images(func_file,
+                                                str(confound_file),
+                                                get_repetition_time(json_file),
+                                                config)
+            denoised_img.to_filename(denoised_path)
+        else:
+            print(f"Denoised data for {func_file} already exists, skipping.")
+            
+
+        # Generate the BIDS-compliant filename for the timeseries and save
         timeseries_path = layout.derivatives['connectomix'].build_path(entities,
                                                   path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy' % config['method']],
                                                   validate=False)
         ensure_directory(timeseries_path)
         
         # Extract timeseries
+        # TODO: remove denoising in extract_timeseries when using denoised data
         timeseries, labels = extract_timeseries(str(func_file),
                                         str(confound_file),
                                         get_repetition_time(json_file),
@@ -1342,21 +1385,66 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
         
         # Deal with roiToVoxel case
         if config["method"] == 'roiToVoxel':
+            entites_for_mask = entities.copy()
+            entites_for_mask['desc'] = 'brain'
+            entites_for_mask['suffix'] = 'mask'
+            mask_img = layout.derivatives['fMRIPrep'].get(**entites_for_mask)
+            if len(mask_img) == 1:
+                mask_img = mask_img[0]
+            elif len(mask_img) == 0:
+                print(entites_for_mask)
+                raise ValueError(f"Mask img for {func_file} not found.")
+            else:
+                raise ValueError(f"More that one mask for {func_file} found: {mask_img}.")
+            
             glm = FirstLevelModel(t_r=get_repetition_time(json_file),
-                                  high_pass=config["method_options"]["high_pass"])
-            confounds = select_confounds(str(confound_file), config)
+                                  mask_img=mask_img,
+                                  high_pass=None)
             frame_times = np.arange(len(timeseries)) * get_repetition_time(json_file)
+            
+            # Prepare seed
+            # TODO: change this thing that is hardcorded
+            pcc_coords = (0, -53, 26)
+            seed_masker = NiftiSpheresMasker(
+                [pcc_coords],
+                radius=10,
+                detrend=False,
+                standardize="zscore_sample",
+                low_pass=None,
+                high_pass=None,
+                t_r=3.0)
+            timeseries = seed_masker.fit_transform(str(denoised_path))
+                        
             design_matrix = make_first_level_design_matrix(frame_times=frame_times,
                                                            events=None,
                                                            hrf_model=None,
-                                                           drift_model='cosine',
-                                                           high_pass=config["method_options"]["high_pass"])
-            glm.fit(run_imgs=str(func_file),
-                    design_matrix=design_matrix,
-                    confounds=confounds)
-            glm.compute_contrast(np.vstack((1, np.zeros(len(confounds)))), output_type='z_score')  # TODO: check that contrast vector is correct
-            # TODO: save contrast map with BIDS name
-            # TODO: test this new feature
+                                                           drift_model=None,
+                                                           add_regs=timeseries)
+                 
+            glm.fit(run_imgs=str(denoised_path),
+                    design_matrices=design_matrix)
+            contrast_vector = np.array([1] + [0] * (design_matrix.shape[1] - 1))
+            roi_to_voxel_img = glm.compute_contrast(contrast_vector, output_type='z_score')
+            roi_to_voxel_path = layout.derivatives['connectomix'].build_path(entities,
+                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-zScore_contrast.nii.gz' % config["method"]],
+                                                      validate=False)
+            roi_to_voxel_img.to_filename(roi_to_voxel_path)
+            
+            # Create plot of z-score map and save
+            roi_to_voxel_plot_path = layout.derivatives['connectomix'].build_path(entities,
+                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-zScore_plot.svg' % config["method"]],
+                                                      validate=False)
+            ensure_directory(roi_to_voxel_plot_path)
+            roi_to_voxel_plot = plot_stat_map(
+                                            roi_to_voxel_img,
+                                            threshold=3.0,
+                                            title="roi-to-voxel z-score",
+                                            cut_coords=pcc_coords)
+            roi_to_voxel_plot.add_markers(
+                                        marker_coords=[pcc_coords],
+                                        marker_color="g",
+                                        marker_size=100)
+            roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
         else:
             # Iterate over each connectivity type
             for connectivity_type in connectivity_types:
