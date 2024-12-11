@@ -34,6 +34,7 @@ from nilearn.decomposition import CanICA
 from nilearn.regions import RegionExtractor
 from nilearn.glm.first_level import FirstLevelModel
 from nilearn.glm.first_level import make_first_level_design_matrix
+from nilearn.glm.second_level import SecondLevelModel
 from nilearn import datasets
 from bids import BIDSLayout
 import csv
@@ -354,7 +355,54 @@ def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entit
             raise ValueError(f"There are multiple matches for subject {subject}, review your configuration. Matches are {conn_files}")
     return group_dict
 
+def get_maps_from_participant_level(subjects, layout, entities, method):
+    """
+    Tool to retrieve the paths to the effect maps computed at participant-level (this is for the roiToVoxel method)
 
+    Parameters
+    ----------
+    subjects : list
+        List of participant ID to consider.
+    layout : BIDSLayout
+        The usual BIDS class for the dataset.
+    entities : dict
+        Entities used to filter BIDSLayout.get() call.
+    method : str
+        Name of method to select the appropriate files.
+
+    Raises
+    ------
+    FileNotFoundError
+        No map is found, probably an error in the entities.
+    ValueError
+        Too many maps are found, probably an error in the entities.
+
+    Returns
+    -------
+    group_dict : dict
+        A dictionary with keys = subjects and values = path to the unique effect map to the subject.
+
+    """
+    group_dict = {}
+    for subject in subjects:
+        if 'desc' in entities.keys():
+            entities.pop('desc')
+        map_files = layout.derivatives["connectomix"].get(subject=subject,
+                                                           suffix="effectSize",
+                                                           **entities,
+                                                           return_type='filename',
+                                                           invalid_filters='allow',
+                                                           extension='.nii.gz')
+        # Refine selection with non-BIDS entity filtering
+        map_files = apply_nonbids_filter("method", method, map_files)
+        map_files = apply_nonbids_filter("seed", 'RDMN', map_files)
+        if len(map_files) == 0:
+            raise FileNotFoundError(f"Maps for subject {subject} not found, are you sure you ran the participant-level pipeline?")
+        elif len(map_files) == 1:
+            group_dict[subject] = map_files[0]
+        else:
+            raise ValueError(f"There are multiple matches for subject {subject}, review your configuration. Matches are {map_files}")
+    return group_dict
 
 # Fucntion to get participant-level data for paired analysis
 def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
@@ -946,45 +994,45 @@ def set_unspecified_group_level_options_to_default(config, layout):
     config["fwe_alpha"]= float(config.get("fwe_alpha", 0.05))
     config["n_permutations"] = config.get("n_permutations", 20)
     config["analysis_type"] = config.get("analysis_type", "independent")  # Options: 'independent' or 'paired' or 'regression'
-    
     config["method"] = config.get("method", "schaeffer100")
-    
     config["method_options"] = config.get("method_options", {})
-    
     config["analysis_label"] = config.get("analysis_label", "CUSTOMNAME")
-
     
     analysis_options = {}
     
-    if config["analysis_type"] == 'independent':
-        guessed_groups = guess_groups(layout)
-        if len(guessed_groups) == 2:
-            group1_name = list(guessed_groups.keys())[0]
-            group2_name = list(guessed_groups.keys())[1]
-            warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
-            analysis_options["group1_subjects"] = list(guessed_groups.values())[0]
-            analysis_options["group2_subjects"] = list(guessed_groups.values())[1]
-            config["analysis_label"] = f"{group1_name}VersuS{group2_name}"  # This overwrites the above generic name to ensure people don't get confused with the automatic selection of subjects
-            warnings.warn(f"Setting analysis label to {config['analysis_label']}")
+    # If "analysis_options" is not set by user, then try to create it
+    if "analysis_options" not in config.keys():
+        if config["analysis_type"] == 'regression':
+            analysis_options["subjects_to_regress"] = layout.derivatives['connectomix'].get_subjects()
+            analysis_options["covariate"] = "COVARIATENAME"
+            analysis_options["confounds"] = []
         else:
-            config["group1_subjects"] = config.get("subjects", layout.derivatives['connectomix'].get_subjects())  # this is used only through the --helper tool (or the autonomous mode)
-            warnings.warn("Could not detect two groups, putting all subjects into first group.")
             
-    elif config["analysis_type"] == 'paired':
-        analysis_options["subjects"] = layout.derivatives['connectomix'].get_subjects()
-        analysis_options["sample1_entities"] = dict(tasks=config.get("tasks"),
-                                                    sessions=config.get("sessions"),
-                                                    runs=config.get("runs"))
-        analysis_options["sample2_entities"] = dict(tasks=config.get("tasks"),
-                                                    sessions=config.get("sessions"),
-                                                    runs=config.get("runs"))
-        
-    elif config["analysis_type"] == 'regression':
-        analysis_options["subjects_to_regress"] = layout.derivatives['connectomix'].get_subjects()
-        analysis_options["covariate"] = "COVARIATENAME"
-        analysis_options["confounds"] = []
-        
-    
+            if config["analysis_type"] == 'independent':
+                
+                guessed_groups = guess_groups(layout)
+                if len(guessed_groups) == 2:
+                    group1_name = list(guessed_groups.keys())[0]
+                    group2_name = list(guessed_groups.keys())[1]
+                    warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
+                    analysis_options["group1_subjects"] = list(guessed_groups.values())[0]
+                    analysis_options["group2_subjects"] = list(guessed_groups.values())[1]
+                    config["analysis_label"] = f"{group1_name}VersuS{group2_name}"  # This overwrites the above generic name to ensure people don't get confused with the automatic selection of subjects
+                    warnings.warn(f"Setting analysis label to {config['analysis_label']}")
+                    analysis_options["group1_name"] = group1_name
+                    analysis_options["group2_name"] = group2_name
+                else:
+                    config["group1_subjects"] = config.get("subjects", layout.derivatives['connectomix'].get_subjects())  # this is used only through the --helper tool (or the autonomous mode)
+                    warnings.warn("Could not detect two groups, putting all subjects into first group.")
+                    
+            elif config["analysis_type"] == 'paired':
+                analysis_options["subjects"] = layout.derivatives['connectomix'].get_subjects()
+                analysis_options["sample1_entities"] = dict(tasks=config.get("tasks"),
+                                                            sessions=config.get("sessions"),
+                                                            runs=config.get("runs"))
+                analysis_options["sample2_entities"] = analysis_options["sample1_entities"]  # This does not make sense, but is done only to help the user to fine-tune the config file manually.
+                
+    # TODO: add more checks that config['analysis_options'] has all required information to work
     # Set the analysis_options field
     # Todo: enable confounds to be optional in the config file. Currently it does not work if analysis_options are set in config file as it does not take the default value in the following line. But we want to be able to leave the confounds field empty in the config file.
     config["analysis_options"] = config.get("analysis_options", analysis_options)
@@ -1154,7 +1202,9 @@ spaces: {config.get("spaces")}
 
 # Analysis options
 analysis_options:
-    # Groups to compare
+    # Groups to compare: names and subjects
+    group1_name: {config["analysis_options"].get("group1_name")}
+    group2_name: {config["analysis_options"].get("group2_name")}
     group1_subjects: {config["analysis_options"].get("group1_subjects")}
     group2_subjects: {config["analysis_options"].get("group2_subjects")}
     # Paired analysis specifications
@@ -1889,21 +1939,21 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
                     glm.fit(run_imgs=str(denoised_path),
                             design_matrices=design_matrix)
                     contrast_vector = np.array([1] + [0] * (design_matrix.shape[1] - 1))
-                    roi_to_voxel_img = glm.compute_contrast(contrast_vector, output_type='z_score')
+                    roi_to_voxel_img = glm.compute_contrast(contrast_vector, output_type='effect_size')
                     roi_to_voxel_path = layout.derivatives['connectomix'].build_path(entities,
-                                                              path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_desc-zScore_contrast.nii.gz' % (config["method"], label)],
+                                                              path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_effectSize.nii.gz' % (config["method"], label)],
                                                               validate=False)
                     roi_to_voxel_img.to_filename(roi_to_voxel_path)
                     
                     # Create plot of z-score map and save
                     roi_to_voxel_plot_path = layout.derivatives['connectomix'].build_path(entities,
-                                                              path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_desc-zScore_plot.svg' % (config["method"], label)],
+                                                              path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_plot.svg' % (config["method"], label)],
                                                               validate=False)
                     ensure_directory(roi_to_voxel_plot_path)
                     roi_to_voxel_plot = plot_stat_map(
                                                     roi_to_voxel_img,
                                                     threshold=3.0,
-                                                    title="roi-to-voxel z-score",
+                                                    title="roi-to-voxel effect size",
                                                     cut_coords=coord)
                     roi_to_voxel_plot.add_markers(
                                                 marker_coords=[coord],
@@ -2003,7 +2053,7 @@ def group_level_analysis(bids_dir, output_dir, config):
     run = config.get("runs")
     session = config.get("sessions")
     space = config.get("spaces")
-    analysis_type = config.get("analysis_type")
+    analysis_type = config.get("analysis_type")  # Label for the analysis, e.g. "patientVersusControls"
     
     entities = {
         "task": task,
@@ -2025,9 +2075,44 @@ def group_level_analysis(bids_dir, output_dir, config):
         # Check each group has at least two subjects, otherwise no permutation testing is possible
         check_group_has_several_members(group1_subjects)
         check_group_has_several_members(group2_subjects)
-    
+        
         if method == 'roiToVoxel':
-            raise ValueError("Group-level for method set to roiToVoxel is still work in progress.")
+            glm = SecondLevelModel(smoothing_fwhm=8)
+            group1_maps = get_maps_from_participant_level(group1_subjects, layout, entities, method)
+            group2_maps = get_maps_from_participant_level(group1_subjects, layout, entities, method)
+            group1_name = config["analysis_options"]["group1_name"]
+            group2_name = config["analysis_options"]["group2_name"]
+
+            # Gather images in one list            
+            maps = list(group1_maps.values()) + list(group2_maps.values())
+            
+            # Create corresponding design matrix
+            group1_n = len(group1_maps)
+            group2_n = len(group2_maps)
+            
+            # TODO: include the possibility of adding confounds using columns from participants.tsv file
+            design_matrix = pd.DataFrame({
+                group1_name: [1] * group1_n + [0] * group2_n,
+                group2_name: [0] * group1_n + [1] * group2_n
+            })
+            
+            glm.fit(maps, design_matrix=design_matrix)
+            
+            raise ValueError("Group-level for roiToVoxel still work in progress.")
+            
+            contrast_label = group1_name + '-' + group2_name
+            contrast_map = glm.compute_contrast(contrast_label, output_type="z_score")
+            
+            contrast_path = layout.derivatives["connectomix"].build_path({**entities,
+                                                              "analysis_label": config["analysis_label"],
+                                                              "method": config["method"]                                                      
+                                                              },
+                                                         path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_zScore.nii.gz"],
+                                                         validate=False)
+            ensure_directory(contrast_path)
+            contrast_map.to_filename(contrast_path)
+            
+            raise ValueError("DEBUG")
         else:
             # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
             group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
