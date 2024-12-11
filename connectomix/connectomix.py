@@ -2026,47 +2026,56 @@ def group_level_analysis(bids_dir, output_dir, config):
         check_group_has_several_members(group1_subjects)
         check_group_has_several_members(group2_subjects)
     
-        # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
-        group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
-        group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities, method)
+        if method == 'roiToVoxel':
+            raise ValueError("Group-level for method set to roiToVoxel is still work in progress.")
+        else:
+            # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
+            group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
+            group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities, method)
+            
+            # For independent tests we dontt need to keep track of subjects labels
+            group1_matrices = list(group1_matrices.values())
+            group2_matrices = list(group2_matrices.values())
         
-        # For independent tests we dontt need to keep track of subjects labels
-        group1_matrices = list(group1_matrices.values())
-        group2_matrices  = list(group2_matrices.values())
-    
-        print(f"Group 1 contains {len(group1_matrices)} participants: {group1_subjects}")
-        print(f"Group 2 contains {len(group2_matrices)} participants: {group2_subjects}")
-        
-        # Convert to 3D arrays: (subjects, nodes, nodes)
-        group1_data = np.stack(group1_matrices, axis=0)
-        group2_data = np.stack(group2_matrices, axis=0)
-        group_data = [group1_data, group2_data]
-        
-        # Independent t-test between different subjects
-        t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
+            print(f"Group 1 contains {len(group1_matrices)} participants: {group1_subjects}")
+            print(f"Group 2 contains {len(group2_matrices)} participants: {group2_subjects}")
+            
+            # Convert to 3D arrays: (subjects, nodes, nodes)
+            group1_data = np.stack(group1_matrices, axis=0)
+            group2_data = np.stack(group2_matrices, axis=0)
+            group_data = [group1_data, group2_data]
+            
+            # Independent t-test between different subjects
+            t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
 
     elif analysis_type == "paired":
-        # Paired t-test within the same subjects
-        paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
-        
-        # Get the two samples from paired_samples (with this we are certain that they are in the right order)
-        sample1 = np.array(list(paired_samples.values()))[:,0]
-        sample2 = np.array(list(paired_samples.values()))[:,1]
-        group_data = [sample1, sample2]
-        
-        if len(sample1) != len(sample2):
-            raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
+        if method == 'roiToVoxel':
+            raise ValueError("Group-level for method set to roiToVoxel is still work in progress.")
+        else:
+            # Paired t-test within the same subjects
+            paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
             
-        t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
-        
-        entities = remove_pair_making_entity(entities)
+            # Get the two samples from paired_samples (with this we are certain that they are in the right order)
+            sample1 = np.array(list(paired_samples.values()))[:,0]
+            sample2 = np.array(list(paired_samples.values()))[:,1]
+            group_data = [sample1, sample2]
+            
+            if len(sample1) != len(sample2):
+                raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
+                
+            t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
+            
+            entities = remove_pair_making_entity(entities)
             
     elif analysis_type == "regression":
         subjects = config['analysis_options']['subjects_to_regress']
-        group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
-        group_data = list(group_data.values())
-        design_matrix = retrieve_info_from_participant_table(layout, subjects, config["analysis_options"]["covariate"], config["analysis_options"]["confounds"])
-        t_stats, p_values = regression_analysis(group_data, design_matrix)
+        if method == 'roiToVoxel':
+            raise ValueError("Group-level for method set to roiToVoxel is still work in progress.")
+        else:
+            group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
+            group_data = list(group_data.values())
+            design_matrix = retrieve_info_from_participant_table(layout, subjects, config["analysis_options"]["covariate"], config["analysis_options"]["confounds"])
+            t_stats, p_values = regression_analysis(group_data, design_matrix)
 
     else:
         raise ValueError(f"Unknown analysis type: {analysis_type}")
