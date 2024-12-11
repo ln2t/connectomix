@@ -6,7 +6,7 @@ Author: Antonin Rovai
 Created: August 2022
 """
 
-# General TODO list:
+# TODO list:
 # - add more unittests functions
 # - create more test datasets for group-level analysis, in particular featuring:
         # --- Independent samples testing DONE
@@ -564,6 +564,29 @@ def load_config(config):
                 raise TypeError(f"Wrong configuration data {config}. Must provide either path (to .json or .yaml or .yml) or dict.")
 
 
+def load_seed_file(seeds_file):
+    # Read seed labels and coordinates from file
+    if os.path.isfile(seeds_file):
+        with open(seeds_file) as seeds_file:
+            tsv_file = csv.reader(seeds_file, delimiter="\t")
+            labels = []
+            coords = []
+            for line in tsv_file:
+                labels.append(line[0])
+                coords.append(np.array(line[1:4], dtype=int))
+    else:
+        raise FileNotFoundError(f"Seeds file {seeds_file} not found")
+        
+    # Remove spaces, dashes and underscores from labels
+    labels = [label.replace('_', '').replace(' ', '').replace('-', '') for label in labels]
+    
+    # Verify that we still have a unique label for each seed
+    if not len(labels) == len(set(labels)):
+        raise ValueError(f"All labels loaded from {seeds_file} are not unique after removing spaces, dashes or underscores. Please correct this in your seeds file.")
+    
+    return coords, labels
+
+
 # MAKERS
 # Function to create directory in which path is located
 def ensure_directory(file_path):
@@ -860,30 +883,31 @@ def set_unspecified_participant_level_options_to_default(config, layout):
         A complete configuration.
 
     """
-    config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
-    config["method"] = config.get("method", "schaeffer100")
-    config["method_options"] = config.get("method_options", {})
-    config["subjects"] = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())
-    config["tasks"] = config.get("tasks", layout.derivatives['fMRIPrep'].get_tasks())
-    config["runs"] = config.get("runs", layout.derivatives['fMRIPrep'].get_runs())
-    config["sessions"] = config.get("sessions", layout.derivatives['fMRIPrep'].get_sessions())
-    config["spaces"] = config.get("spaces", layout.derivatives['fMRIPrep'].get_spaces())
+    config["connectivity_kind"] = config.get("connectivity_kind", "correlation")  # The kind of connectivity measure, unused for roi-to-voxel
+    config["method"] = config.get("method", "schaeffer100")  # The method to define connectome, e.g. from a valid atlas name or "roiToVoxel"
+    config["method_options"] = config.get("method_options", {})  # Options specific to the method (see later)
+    config["subjects"] = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())  # Subjects to include in the analysis
+    config["tasks"] = config.get("tasks", layout.derivatives['fMRIPrep'].get_tasks())  # Tasks to include in the analysis
+    config["runs"] = config.get("runs", layout.derivatives['fMRIPrep'].get_runs())  # Runs to include in the analysis
+    config["sessions"] = config.get("sessions", layout.derivatives['fMRIPrep'].get_sessions())  # Sessions to include in the analysis
+    config["spaces"] = config.get("spaces", layout.derivatives['fMRIPrep'].get_spaces())  # Spaces to include in the analysis
     if 'MNI152NLin2009cAsym' in config.get("spaces"):
-        config["spaces"] = ['MNI152NLin2009cAsym']
+        config["spaces"] = ['MNI152NLin2009cAsym']  # First default to 'MNI152NLin2009cAsym'
     elif 'MNI152NLin6Asym' in config.get("spaces"):
-        config["spaces"] = ['MNI152NLin6Asym']
-    config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")
-    config["method_options"]["seeds_file"] = config["method_options"].get("seeds_file", "")
-    config["method_options"]["radius"] = config["method_options"].get("radius", 5)
-    config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.01)  # Default value from Ciric et al 2017
-    config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.08)  # Default value from Ciric et al 2017
+        config["spaces"] = ['MNI152NLin6Asym']  # Second default to 'MNI152NLin6Asym' (useful when using ica-aroma denoising)
+    config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")  # Reference functional file for resampling
+    config["method_options"]["seeds_file"] = config["method_options"].get("seeds_file", None)  # Path to file with seed coordinates for seed-based and roi-to-voxel
+    config["method_options"]["radius"] = config["method_options"].get("radius", 5)  # Radius of the sphere, in mm, for the seeds
+    config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.01)  # High-pass filter for data denoising - Default value from Ciric et al 2017
+    config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.08)  # Low-pass filter for data denoising - Default value from Ciric et al 2017
 
     # Options for config["method"] = "roiToVoxel"
-    config["method_options"]["roi_mask_path"] = config["method_options"].get("roi_mask_path", "")
-
-    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'csf_wm']
-    config["confound_columns"] = config.get("confound_columns", default_confound_columns)
-    config["ica_aroma"] = config.get("ica_aroma", False)
+    config["method_options"]["roi_mask_path"] = config["method_options"].get("roi_mask_path", "")  # Path to mask for roi-to-voxel, optional
+    
+    default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'csf_wm']  # List of default signal confounds for denoising
+    config["confound_columns"] = config.get("confound_columns", default_confound_columns)  # Signal confounds for denoising
+    config["ica_aroma"] = config.get("ica_aroma", False)  # ICA-AROMA denoising
+    # For ICA-AROMA, default to space 'MNI152NLin6Asym'
     if config["ica_aroma"]:
         print("Defaulting to space MNI152NLin6Asym for ICA-AROMA denoising (overriding spaces from config file")
         config["spaces"] = ['MNI152NLin6Asym']
@@ -1379,18 +1403,12 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
 
     # Seeds-based extraction
     if method == 'seeds':
-        # Read seed labels and coordinates from file
-        if os.path.isfile(method_options['seeds_file']):
-            with open(method_options['seeds_file']) as seed_file:
-                tsv_file = csv.reader(seed_file, delimiter="\t")
-                labels = []
-                coords = []
-                for line in tsv_file:
-                    labels.append(line[0])
-                    coords.append(np.array(line[1:4], dtype=int))
-        else:
-            raise FileNotFoundError(f"Seeds file {method_options['seeds_file']} not found")
-            
+        
+        if method_options['seeds_file'] is None:
+            raise ValueError("For seed-based analysis, you must provide the path to a seed file in the config file.")
+        
+        coords, labels = load_seed_file(method_options['seeds_file'])
+        
         radius = method_options['radius']
         masker = NiftiSpheresMasker(
             seeds=coords,
@@ -1826,23 +1844,8 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
                                                 config)
             denoised_img.to_filename(denoised_path)
         else:
-            print(f"Denoised data for {func_file} already exists, skipping.")
+            print(f"Denoised data {denoised_path} already exists, skipping.")
             
-
-        # Generate the BIDS-compliant filename for the timeseries and save
-        timeseries_path = layout.derivatives['connectomix'].build_path(entities,
-                                                  path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy' % config['method']],
-                                                  validate=False)
-        ensure_directory(timeseries_path)
-        
-        # Extract timeseries
-        # TODO: remove denoising in extract_timeseries when using denoised data
-        timeseries, labels = extract_timeseries(str(func_file),
-                                        str(confound_file),
-                                        get_repetition_time(json_file),
-                                        config)
-        np.save(timeseries_path, timeseries)
-        
         # Deal with roiToVoxel case
         if config["method"] == 'roiToVoxel':
             entites_for_mask = entities.copy()
@@ -1857,55 +1860,72 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
             else:
                 raise ValueError(f"More that one mask for {func_file} found: {mask_img}.")
             
-            glm = FirstLevelModel(t_r=get_repetition_time(json_file),
-                                  mask_img=mask_img,
-                                  high_pass=None)
-            frame_times = np.arange(len(timeseries)) * get_repetition_time(json_file)
+            if config['method_options']['seeds_file'] is not None:
+                radius = config['method_options']['radius']
             
-            # Prepare seed
-            # TODO: change this thing that is hardcorded
-            pcc_coords = (0, -53, 26)
-            seed_masker = NiftiSpheresMasker(
-                [pcc_coords],
-                radius=10,
-                detrend=False,
-                standardize="zscore_sample",
-                low_pass=None,
-                high_pass=None,
-                t_r=3.0)
-            timeseries = seed_masker.fit_transform(str(denoised_path))
-                        
-            design_matrix = make_first_level_design_matrix(frame_times=frame_times,
-                                                           events=None,
-                                                           hrf_model=None,
-                                                           drift_model=None,
-                                                           add_regs=timeseries)
+                coords, labels = load_seed_file(config['method_options']['seeds_file'])
+                
+                for coord, label in zip(coords, labels):
+                    seed_masker = NiftiSpheresMasker(
+                        [coord],
+                        radius=radius,
+                        detrend=False,
+                        standardize="zscore_sample",
+                        low_pass=None,
+                        high_pass=None,
+                    
+                        t_r=get_repetition_time(json_file))
+                    timeseries = seed_masker.fit_transform(str(denoised_path))
+                    glm = FirstLevelModel(t_r=get_repetition_time(json_file),
+                                          mask_img=mask_img,
+                                          high_pass=None)
+                    frame_times = np.arange(len(timeseries)) * get_repetition_time(json_file)
+                    design_matrix = make_first_level_design_matrix(frame_times=frame_times,
+                                                                   events=None,
+                                                                   hrf_model=None,
+                                                                   drift_model=None,
+                                                                   add_regs=timeseries)
+                    
+                    glm.fit(run_imgs=str(denoised_path),
+                            design_matrices=design_matrix)
+                    contrast_vector = np.array([1] + [0] * (design_matrix.shape[1] - 1))
+                    roi_to_voxel_img = glm.compute_contrast(contrast_vector, output_type='z_score')
+                    roi_to_voxel_path = layout.derivatives['connectomix'].build_path(entities,
+                                                              path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_desc-zScore_contrast.nii.gz' % (config["method"], label)],
+                                                              validate=False)
+                    roi_to_voxel_img.to_filename(roi_to_voxel_path)
+                    
+                    # Create plot of z-score map and save
+                    roi_to_voxel_plot_path = layout.derivatives['connectomix'].build_path(entities,
+                                                              path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_desc-zScore_plot.svg' % (config["method"], label)],
+                                                              validate=False)
+                    ensure_directory(roi_to_voxel_plot_path)
+                    roi_to_voxel_plot = plot_stat_map(
+                                                    roi_to_voxel_img,
+                                                    threshold=3.0,
+                                                    title="roi-to-voxel z-score",
+                                                    cut_coords=coord)
+                    roi_to_voxel_plot.add_markers(
+                                                marker_coords=[coord],
+                                                marker_color="b",
+                                                marker_size=2*radius)
+                    roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
+            
                  
-            glm.fit(run_imgs=str(denoised_path),
-                    design_matrices=design_matrix)
-            contrast_vector = np.array([1] + [0] * (design_matrix.shape[1] - 1))
-            roi_to_voxel_img = glm.compute_contrast(contrast_vector, output_type='z_score')
-            roi_to_voxel_path = layout.derivatives['connectomix'].build_path(entities,
-                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-zScore_contrast.nii.gz' % config["method"]],
-                                                      validate=False)
-            roi_to_voxel_img.to_filename(roi_to_voxel_path)
-            
-            # Create plot of z-score map and save
-            roi_to_voxel_plot_path = layout.derivatives['connectomix'].build_path(entities,
-                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-zScore_plot.svg' % config["method"]],
-                                                      validate=False)
-            ensure_directory(roi_to_voxel_plot_path)
-            roi_to_voxel_plot = plot_stat_map(
-                                            roi_to_voxel_img,
-                                            threshold=3.0,
-                                            title="roi-to-voxel z-score",
-                                            cut_coords=pcc_coords)
-            roi_to_voxel_plot.add_markers(
-                                        marker_coords=[pcc_coords],
-                                        marker_color="g",
-                                        marker_size=100)
-            roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
         else:
+            # Generate the BIDS-compliant filename for the timeseries and save
+            timeseries_path = layout.derivatives['connectomix'].build_path(entities,
+                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy' % config['method']],
+                                                      validate=False)
+            ensure_directory(timeseries_path)
+            
+            # Extract timeseries
+            timeseries, labels = extract_timeseries(str(func_file),
+                                            str(confound_file),
+                                            get_repetition_time(json_file),
+                                            config)
+            np.save(timeseries_path, timeseries)       
+            
             # Iterate over each connectivity type
             for connectivity_type in connectivity_types:
                 print(f"Computing connectivity: {connectivity_type}")
@@ -1933,12 +1953,6 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
                 plt.savefig(conn_matrix_plot_path)
                 plt.close()
     print("Participant-level analysis completed.")
-
-
-
-
-
-
 
 
 # Group-level analysis
@@ -2105,17 +2119,8 @@ def group_level_analysis(bids_dir, output_dir, config):
     
     # Get ROIs coords and labels for plotting purposes
     if method == 'seeds':
-        seed_file_path = config['method_options']['seeds_file']
-        if os.path.isfile(seed_file_path):
-            with open(seed_file_path) as seed_file:
-                tsv_file = csv.reader(seed_file, delimiter="\t")
-                labels = []
-                coords = []
-                for line in tsv_file:
-                    labels.append(line[0])
-                    coords.append(np.array(line[1:4], dtype=int))
-        else:
-            raise FileNotFoundError(f"Seeds file {seed_file_path} not found")
+        coords, labels = load_seed_file(config['method_options']['seeds_file'])
+        
     elif method == 'ica':
         extracted_regions_entities = entities.copy()
         extracted_regions_entities.pop("desc")
@@ -2155,9 +2160,6 @@ def group_level_analysis(bids_dir, output_dir, config):
     generate_group_analysis_report(layout, entities, config)
 
     print("Group-level analysis completed.")
-
-
-
 
 
 # Main function with subcommands for participant and group analysis
