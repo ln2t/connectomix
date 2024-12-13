@@ -559,8 +559,8 @@ def select_confounds(confounds_file, config):
     
     # Deal with NaN in confound values
     # Todo: implement better method to deal with NaN's. Those are always present when taking derivatives of confounds and nilearn trows an error. Maybe a bug in nilearn? Open an issue?
-    warnings.warn("If NaNs are present in the confounds, they are replaced by zero to ensure compatibility with nilearn. This is potentially very wrong.")
-    selected_confounds = selected_confounds.fillna(0)
+    # warnings.warn("If NaNs are present in the confounds, they are replaced by zero to ensure compatibility with nilearn. This is potentially very wrong.")
+    # selected_confounds = selected_confounds.fillna(0)
     return selected_confounds
 
 
@@ -1957,7 +1957,7 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
                                                     cut_coords=coord)
                     roi_to_voxel_plot.add_markers(
                                                 marker_coords=[coord],
-                                                marker_color="b",
+                                                marker_color="k",
                                                 marker_size=2*radius)
                     roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
             
