@@ -27,14 +27,13 @@ import shutil
 import warnings
 from nibabel import Nifti1Image
 from nilearn.image import resample_img, load_img, clean_img
-from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords, find_probabilistic_atlas_cut_coords, plot_stat_map
+from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords, find_probabilistic_atlas_cut_coords, plot_stat_map, plot_glass_brain
 from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sym_matrix
 from nilearn.decomposition import CanICA
 from nilearn.regions import RegionExtractor
-from nilearn.glm.first_level import FirstLevelModel
-from nilearn.glm.first_level import make_first_level_design_matrix
-from nilearn.glm.second_level import SecondLevelModel
+from nilearn.glm.first_level import FirstLevelModel, make_first_level_design_matrix
+from nilearn.glm.second_level import SecondLevelModel, non_parametric_inference
 from nilearn import datasets
 from bids import BIDSLayout
 import csv
@@ -384,18 +383,28 @@ def get_maps_from_participant_level(subjects, layout, entities, method):
 
     """
     group_dict = {}
+    
+    local_entities = entities.copy()
+    
+    if 'seed' in local_entities.keys():
+        seed = local_entities['seed']
+        local_entities.pop('seed')
+    else:
+        seed = None
+        
+    if 'desc' in local_entities.keys():
+        local_entities.pop('desc')
+
     for subject in subjects:
-        if 'desc' in entities.keys():
-            entities.pop('desc')
         map_files = layout.derivatives["connectomix"].get(subject=subject,
                                                            suffix="effectSize",
-                                                           **entities,
+                                                           **local_entities,
                                                            return_type='filename',
                                                            invalid_filters='allow',
                                                            extension='.nii.gz')
         # Refine selection with non-BIDS entity filtering
         map_files = apply_nonbids_filter("method", method, map_files)
-        map_files = apply_nonbids_filter("seed", 'RDMN', map_files)
+        map_files = map_files if seed is None else apply_nonbids_filter("seed", seed, map_files)
         if len(map_files) == 0:
             raise FileNotFoundError(f"Maps for subject {subject} not found, are you sure you ran the participant-level pipeline?")
         elif len(map_files) == 1:
@@ -1037,7 +1046,7 @@ def set_unspecified_group_level_options_to_default(config, layout):
     # Todo: enable confounds to be optional in the config file. Currently it does not work if analysis_options are set in config file as it does not take the default value in the following line. But we want to be able to leave the confounds field empty in the config file.
     config["analysis_options"] = config.get("analysis_options", analysis_options)
     
-    if config.get("method") == 'seeds':
+    if config.get("method") == 'seeds' or config.get("method") == 'roiToVoxel':
         config["method_options"]["radius"] = config["method_options"].get("radius", 5)
         
     return config
@@ -1953,7 +1962,7 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
                     roi_to_voxel_plot = plot_stat_map(
                                                     roi_to_voxel_img,
                                                     threshold=3.0,
-                                                    title="roi-to-voxel effect size",
+                                                    title=f"roi-to-voxel effect size for seed {label} (coords {coords})",
                                                     cut_coords=coord)
                     roi_to_voxel_plot.add_markers(
                                                 marker_coords=[coord],
@@ -2072,48 +2081,111 @@ def group_level_analysis(bids_dir, output_dir, config):
         group1_subjects = config['analysis_options']['group1_subjects']
         group2_subjects = config['analysis_options']['group2_subjects']
         
-        # Check each group has at least two subjects, otherwise no permutation testing is possible
-        check_group_has_several_members(group1_subjects)
-        check_group_has_several_members(group2_subjects)
-        
         if method == 'roiToVoxel':
-            glm = SecondLevelModel(smoothing_fwhm=8)
-            group1_maps = get_maps_from_participant_level(group1_subjects, layout, entities, method)
-            group2_maps = get_maps_from_participant_level(group1_subjects, layout, entities, method)
-            group1_name = config["analysis_options"]["group1_name"]
-            group2_name = config["analysis_options"]["group2_name"]
-
-            # Gather images in one list            
-            maps = list(group1_maps.values()) + list(group2_maps.values())
+            coords, labels = load_seed_file(config["method_options"]["seeds_file"])
+            for coord, label in zip(coords, labels):
+                entities["seed"] = label
+                glm = SecondLevelModel(smoothing_fwhm=8)
+                group1_maps = get_maps_from_participant_level(group1_subjects, layout, entities, method)
+                group2_maps = get_maps_from_participant_level(group2_subjects, layout, entities, method)
+                group1_name = config["analysis_options"]["group1_name"]
+                group2_name = config["analysis_options"]["group2_name"]
+    
+                # Gather images in one list            
+                maps = list(group1_maps.values()) + list(group2_maps.values())
+                
+                # Create corresponding design matrix
+                group1_n = len(group1_maps)
+                group2_n = len(group2_maps)
+                
+                # TODO: include the possibility of adding confounds using columns from participants.tsv file
+                design_matrix = pd.DataFrame({
+                    group1_name: [1] * group1_n + [0] * group2_n,
+                    group2_name: [0] * group1_n + [1] * group2_n
+                })
+                glm.fit(maps, design_matrix=design_matrix)
+                # raise ValueError("Group-level for roiToVoxel still work in progress.")
+                
+                contrast_label = group1_name + '-' + group2_name
+                contrast_map = glm.compute_contrast(contrast_label, output_type="z_score")
+                
+                contrast_path = layout.derivatives["connectomix"].build_path({**entities,
+                                                                  "analysis_label": config["analysis_label"],
+                                                                  "method": config["method"],
+                                                                  "seed": label
+                                                                  },
+                                                             path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.nii.gz"],
+                                                             validate=False)
+                ensure_directory(contrast_path)
+                contrast_map.to_filename(contrast_path)
             
-            # Create corresponding design matrix
-            group1_n = len(group1_maps)
-            group2_n = len(group2_maps)
+                # Create plot of contrast map and save
+                contrast_plot_path = layout.derivatives['connectomix'].build_path({**entities,
+                                                                  "analysis_label": config["analysis_label"],
+                                                                  "method": config["method"],
+                                                                  "seed": label
+                                                                  },
+                                                          path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.svg"],
+                                                          validate=False)
+                ensure_directory(contrast_plot_path)
+                contrast_plot = plot_stat_map(
+                                                contrast_map,
+                                                threshold=3.0,
+                                                title=f"roi-to-voxel contrast for seed {label} (coords {coords})",
+                                                cut_coords=coord)
+                contrast_plot.add_markers(
+                                            marker_coords=[coord],
+                                            marker_color="k",
+                                            marker_size=2*config["method_options"]["radius"])
+                contrast_plot.savefig(contrast_plot_path)
             
-            # TODO: include the possibility of adding confounds using columns from participants.tsv file
-            design_matrix = pd.DataFrame({
-                group1_name: [1] * group1_n + [0] * group2_n,
-                group2_name: [0] * group1_n + [1] * group2_n
-            })
             
-            glm.fit(maps, design_matrix=design_matrix)
-            
-            raise ValueError("Group-level for roiToVoxel still work in progress.")
-            
-            contrast_label = group1_name + '-' + group2_name
-            contrast_map = glm.compute_contrast(contrast_label, output_type="z_score")
-            
-            contrast_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                              "analysis_label": config["analysis_label"],
-                                                              "method": config["method"]                                                      
-                                                              },
-                                                         path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_zScore.nii.gz"],
-                                                         validate=False)
-            ensure_directory(contrast_path)
-            contrast_map.to_filename(contrast_path)
-            
-            raise ValueError("DEBUG")
+                print('DEBUG')
+                np_outputs = non_parametric_inference(glm.second_level_input_,
+                      design_matrix=design_matrix,
+                      second_level_contrast=contrast_label,
+                      smoothing_fwhm=8,
+                      two_sided_test=True,
+                      n_jobs=4,
+                      threshold=0.001,
+                      n_perm=100)
+                
+                np_logp_max_mass = np_outputs["logp_max_mass"]
+                
+                np_logp_max_mass_path = layout.derivatives["connectomix"].build_path({**entities,
+                                                                  "analysis_label": config["analysis_label"],
+                                                                  "method": config["method"],
+                                                                  "seed": label
+                                                                  },
+                                                             path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.nii.gz"],
+                                                             validate=False)
+                
+                ensure_directory(np_logp_max_mass_path)
+                np_logp_max_mass.to_filename(np_logp_max_mass_path)
+                np_logp_max_mass_plot_path = layout.derivatives["connectomix"].build_path({**entities,
+                                                                  "analysis_label": config["analysis_label"],
+                                                                  "method": config["method"],
+                                                                  "seed": label
+                                                                  },
+                                                             path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.svg"],
+                                                             validate=False)
+                ensure_directory(np_logp_max_mass_plot_path)
+                plot_glass_brain(
+                                np_logp_max_mass,
+                                colorbar=True,
+                                vmax=2.69,
+                                display_mode="z",
+                                plot_abs=False,
+                                cut_coords=coords,
+                                threshold=1)
+                raise ValueError('DEBUG')
+            raise ValueError("Group-level analyzes of roiToVoxel data do not deal with statistical thresholding yet.")
         else:
+            
+            # Check each group has at least two subjects, otherwise no permutation testing is possible
+            check_group_has_several_members(group1_subjects)
+            check_group_has_several_members(group2_subjects)
+            
             # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
             group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
             group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities, method)
