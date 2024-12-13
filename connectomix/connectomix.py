@@ -82,33 +82,27 @@ def apply_nonbids_filter(entity, value, files):
 
 
 # Function to compare affines of images, with some tolerance
-def check_affines_match(niimg1, niimg2):
+def check_affines_match(imgs):
     """
-    Check if the affines of two Niimg objects (or file paths) match.
+    Check if the affines of a list of Niimg objects (or file paths to .nii or .nii.gz) match.
 
     Parameters:
-    - niimg1: First Niimg object or file path.
-    - niimg2: Second Niimg object or file path.
+    - imgs: list of niimgs or paths
 
     Returns:
-    - True if the affines match, False otherwise.
+    - True if all affines match, False otherwise.
     """
-    # Load the images if file paths are provided
-    if isinstance(niimg1, str):
-        niimg1 = nib.load(niimg1)
-    if isinstance(niimg2, str):
-        niimg2 = nib.load(niimg2)
+    reference_img = imgs[0]
+    if isinstance(reference_img, str):
+        reference_img = nib.load(reference_img)
+    reference_affine = reference_img.affine
 
-    # Get the affines of both images
-    affine1 = niimg1.affine
-    affine2 = niimg2.affine
-
-    # Compare the affines
-    if np.allclose(affine1, affine2):
-        return True
-    else:
-        print("Doing some resampling, please wait...")
-        return False
+    for img in imgs[1:]:
+        if isinstance(img, str):
+            img = nib.load(img)
+        if not np.allclose(img.affine == reference_affine):
+            return False
+    return True
 
 
 # Group size verification tool
@@ -1292,9 +1286,10 @@ def resample_to_reference(layout, func_files, reference_img):
             img = load_img(func_file)
             # We round the affine as sometimes there are mismatch (small numerical errors?) in fMRIPrep's output
             img = Nifti1Image(img.get_fdata(), affine=np.round(img.affine, 2), header=img.header)
-            if check_affines_match(img, reference_img):
+            if check_affines_match([img, reference_img]):
                 resampled_img = img
             else:
+                print("Doing some resampling, please wait...")
                 resampled_img = resample_img(img, target_affine=reference_img.affine, target_shape=reference_img.shape[:3], interpolation='nearest')
                 
             resampled_img.to_filename(resampled_path)
@@ -2103,6 +2098,9 @@ def group_level_analysis(bids_dir, output_dir, config):
                     group1_name: [1] * group1_n + [0] * group2_n,
                     group2_name: [0] * group1_n + [1] * group2_n
                 })
+                
+
+                        
                 glm.fit(maps, design_matrix=design_matrix)
                 # raise ValueError("Group-level for roiToVoxel still work in progress.")
                 
