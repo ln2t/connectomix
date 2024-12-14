@@ -26,7 +26,7 @@ import nibabel as nib
 import shutil
 import warnings
 from nibabel import Nifti1Image
-from nilearn.image import resample_img, load_img, clean_img
+from nilearn.image import resample_img, load_img, clean_img, index_img
 from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords, find_probabilistic_atlas_cut_coords, plot_stat_map, plot_glass_brain
 from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sym_matrix
@@ -92,15 +92,12 @@ def check_affines_match(imgs):
     Returns:
     - True if all affines match, False otherwise.
     """
-    reference_img = imgs[0]
-    if isinstance(reference_img, str):
-        reference_img = nib.load(reference_img)
+    reference_img = nib.load(imgs[0]) if isinstance(imgs[0], (str, Path)) else imgs[0]
     reference_affine = reference_img.affine
 
     for img in imgs[1:]:
-        if isinstance(img, str):
-            img = nib.load(img)
-        if not np.allclose(img.affine == reference_affine):
+        img = nib.load(img) if isinstance(img, (str, Path)) else img
+        if not np.allclose(img.affine, reference_affine):
             return False
     return True
 
@@ -230,6 +227,30 @@ def remove_pair_making_entity(entities):
             unique_entities['session'] = None
         
     return unique_entities
+
+
+def convert_4D_to_3D(imgs):
+    """
+    Convert list of 4D (or 3D) images into list of 3D images, when the fourth dimension contains only one image.
+
+    Parameters
+    ----------
+    imgs : list
+        List of Niimg or str of Path
+
+    Returns
+    -------
+    imgs_3D : list
+    """
+    imgs_3D = []
+    for img in imgs:
+        img = nib.load(img) if isinstance(img, (str, Path)) else img
+        if len(img.shape) == 4:
+            if img.shape[3] == 1:
+                imgs_3D.append(index_img(img, 0))
+            else:
+                raise ValueError("More that one image in fourth dimension, cannot convert 4D image to 3D")
+    return imgs_3D
 
 
 # LOADERS
@@ -594,7 +615,7 @@ def load_config(config):
     if isinstance(config, dict):
         return config
     else:
-        if isinstance(config, str) or isinstance(config, Path):
+        if isinstance(config, (str, Path)):
             config = Path(config)
             if not config.exists():
                 raise FileNotFoundError(f"File not found: {config}")
@@ -904,7 +925,7 @@ def save_copy_of_config(config, path):
     # First make sure destination is valid
     ensure_directory(path)
     # If config is a str, assume it is a path and copy
-    if isinstance(config, str) or isinstance(config, Path):
+    if isinstance(config, (str, Path)):
         shutil.copy(config, path)
     # Otherwise, it is a dict and must be dumped to path
     elif isinstance(config, dict):
@@ -2080,7 +2101,6 @@ def group_level_analysis(bids_dir, output_dir, config):
             coords, labels = load_seed_file(config["method_options"]["seeds_file"])
             for coord, label in zip(coords, labels):
                 entities["seed"] = label
-                glm = SecondLevelModel(smoothing_fwhm=8)
                 group1_maps = get_maps_from_participant_level(group1_subjects, layout, entities, method)
                 group2_maps = get_maps_from_participant_level(group2_subjects, layout, entities, method)
                 group1_name = config["analysis_options"]["group1_name"]
@@ -2099,9 +2119,22 @@ def group_level_analysis(bids_dir, output_dir, config):
                     group2_name: [0] * group1_n + [1] * group2_n
                 })
                 
-
-                        
-                glm.fit(maps, design_matrix=design_matrix)
+                maps = convert_4D_to_3D(maps)
+                target_img = nib.load(maps[0]) if isinstance(maps[0], (str, Path)) else maps[0]
+                
+                resampled_maps = []
+                for img in maps:
+                    if check_affines_match([img, target_img]):
+                        resampled_maps.append(img)
+                    else:
+                        print("Doing some resampling, please wait...")
+                        resampled_maps.append(resample_img(img, target_affine=target_img.affine, target_shape=target_img.shape[:3], interpolation='nearest'))
+                
+                glm = SecondLevelModel(smoothing_fwhm=8,
+                                       target_shape=target_img.shape,
+                                       target_affine=target_img.affine)
+                glm.fit(resampled_maps,
+                        design_matrix=design_matrix)
                 # raise ValueError("Group-level for roiToVoxel still work in progress.")
                 
                 contrast_label = group1_name + '-' + group2_name
@@ -2138,7 +2171,6 @@ def group_level_analysis(bids_dir, output_dir, config):
                 contrast_plot.savefig(contrast_plot_path)
             
             
-                print('DEBUG')
                 np_outputs = non_parametric_inference(glm.second_level_input_,
                       design_matrix=design_matrix,
                       second_level_contrast=contrast_label,
@@ -2175,7 +2207,7 @@ def group_level_analysis(bids_dir, output_dir, config):
                                 display_mode="z",
                                 plot_abs=False,
                                 cut_coords=coords,
-                                threshold=1)
+                                threshold=0.1)
                 raise ValueError('DEBUG')
             raise ValueError("Group-level analyzes of roiToVoxel data do not deal with statistical thresholding yet.")
         else:
