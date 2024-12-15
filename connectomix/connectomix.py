@@ -16,6 +16,9 @@ Created: August 2022
 # - roi-to-voxel analyzes
 # - cluster-based inference (mass or size)
 
+# Restructure the config file as follows:
+    # method: seed-based or roi-to-roi or ICA or ReHo or ...
+
 import os
 import argparse
 import json
@@ -52,6 +55,117 @@ __version__ = "dev"
 warnings.simplefilter('once')
 
 # TOOLS
+
+def setup_layout_with_output_dir(bids_dir, output_dir, derivatives):
+    # Create derivative directory        
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create the dataset_description.json file
+    create_dataset_description(output_dir)
+
+    # Create a BIDSLayout to parse the BIDS dataset and index also the derivatives
+    return BIDSLayout(bids_dir, derivatives=[*list(derivatives.values()), output_dir])
+
+def setup_config(layout, config):
+    config = load_config(config)
+    
+    # Set unspecified config options to default values
+    config = set_unspecified_participant_level_options_to_default(config, layout)
+    
+    # Get the current date and time
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    # Save a copy of the config file to the config directory
+    config_filename = layout.derivatives['connectomix'].root / "config" / "backups" / f"participant_level_config_{timestamp}.json"
+    save_copy_of_config(config, config_filename)
+    print(f"Configuration file saved to {config_filename}")
+
+def get_bids_entities_from_config(config):
+    """
+    Extract BIDS entities from config file.
+
+    Parameters
+    ----------
+    config : dict
+
+    Returns
+    -------
+    dict
+        Fields: subjects, task, run, session and space. Each field may be str- or list of str- valued
+
+    """
+    subjects = config.get("subjects")
+    task = config.get("tasks")
+    run = config.get("runs")
+    session = config.get("sessions")
+    space = config.get("spaces")   
+    return dict(subjects=subjects, task=task, run=run, session=session, space=space)
+
+def get_files_for_analysis(layout, config):
+    """
+    Get functional, json and confound files from layout.derivatives,
+    according to parameters in config.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+    config : dict
+
+    Returns
+    -------
+    func_files : list
+    json_files : list
+    confound_files : list
+    """
+    # Get subjects, task, session, run and space from config file
+    
+    entities = get_bids_entities_from_config(config)
+    
+    # Select the functional, confound and metadata files
+    func_files = layout.derivatives['fMRIPost-AROMA' if config['ica_aroma'] else 'fMRIPrep'].get(
+        suffix='bold',
+        extension='nii.gz',
+        return_type='filename',
+        desc='nonaggrDenoised' if config['ica_aroma'] else 'preproc',
+        **entities
+    )
+    json_files = layout.derivatives['fMRIPrep'].get(
+       suffix='bold',
+        extension='json',
+        return_type='filename',
+        desc='preproc',
+        **entities
+    )
+    
+    entities.pop('space')
+    confound_files = layout.derivatives['fMRIPrep'].get(
+        suffix='timeseries',
+        extension='tsv',
+        return_type='filename',
+        **entities
+    )
+    
+    # TODO: add warning when some requested subjects don't have matching func files
+    if not func_files:
+        raise FileNotFoundError("No functional files found")
+    if not confound_files:
+        raise FileNotFoundError("No confound files found")
+    if len(func_files) != len(confound_files):
+        raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and confound_files {len(confound_files)}")
+    if len(func_files) != len(json_files):
+        raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and json_files {len(json_files)}")
+        
+    return func_files, json_files, confound_files
+
+def setup_and_check_connectivity_types(config):
+    # Set up connectivity measures
+    connectivity_types = config['connectivity_kind']
+    if isinstance(connectivity_types, str):
+        connectivity_types = [connectivity_types]
+    elif not isinstance(connectivity_types, list):
+        raise ValueError(f"The connectivity_types value must either be a string or a list. You provided {connectivity_types}.")
+
 # Custom non-valid entity filter
 def apply_nonbids_filter(entity, value, files):
     """
@@ -935,8 +1049,6 @@ def save_copy_of_config(config, path):
 
 
 # CONFIG
-
-
 # Function to manage default group-level options
 def set_unspecified_participant_level_options_to_default(config, layout):
     """
@@ -1063,7 +1175,10 @@ def set_unspecified_group_level_options_to_default(config, layout):
     
     if config.get("method") == 'seeds' or config.get("method") == 'roiToVoxel':
         config["method_options"]["radius"] = config["method_options"].get("radius", 5)
-        
+           
+    config["smoothing"] = config.get("smoothing", 8)  # In mm, smoothing for the cmaps
+    config["cluster_forming_alpha"] = config.get("cluster_forming_alpha", 0.01)  # p-value for cluster forming threshold in roiToVoxel analysiss
+    
     return config
 
 def create_participant_level_default_config_file(bids_dir, output_dir, fmriprep_dir):
@@ -1107,8 +1222,6 @@ def create_participant_level_default_config_file(bids_dir, output_dir, fmriprep_
 # Connectomix Configuration File
 # This file is generated automatically. Please modify the parameters as needed.
 # Full documentation is located at github.com/ln2t/connectomix
-# All parameters are set to their default value for the dataset located at
-# {bids_dir}
 # Important note: more parameters can be tuned than those shown here, this is only a starting point.
 
 # List of subjects
@@ -1271,7 +1384,7 @@ method: {config.get("method")}
 
 # PROCESSING
 # Function to resample all functional images to a reference image
-def resample_to_reference(layout, func_files, reference_img):
+def resample_to_reference(layout, func_files, config):
     """
     Resamples files to reference, and save the result to a BIDS compliant location.
     Skips resampling if file already exists.
@@ -1291,6 +1404,12 @@ def resample_to_reference(layout, func_files, reference_img):
         Paths to the resampled files.
 
     """
+    
+    # Choose the first functional file as the reference for alignment
+    if config.get("reference_functional_file") == "first_functional_file":
+        config["reference_functional_file"] = func_files[0]
+    reference_img = load_img(config.get("reference_functional_file"))
+    
     resampled_files = []
     for func_file in func_files:
         # Build BIDS-compliant filename for resampled data
@@ -1320,7 +1439,7 @@ def resample_to_reference(layout, func_files, reference_img):
 
 
 # Compute CanICA component images
-def compute_canica_components(func_filenames, layout, entities, options):
+def compute_canica_components(layout, func_filenames, config):
     """
     Wrapper for nilearn.decomposition.CanICA. Computes group-level ICA components as well as extracts connected regions from the decomposition.
 
@@ -1343,6 +1462,12 @@ def compute_canica_components(func_filenames, layout, entities, options):
         Extractor object from the nilearn package (and already fit to the data at hand).
 
     """
+    
+    entities = get_bids_entities_from_config(config)
+    entities.pop('subjects')
+    
+    options = config["method_options"]
+    
     # Build path to save canICA components
     canica_filename = layout.derivatives['connectomix'].build_path(entities,
                       path_patterns=["canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.nii.gz"],
@@ -1410,40 +1535,212 @@ def compute_canica_components(func_filenames, layout, entities, options):
     print(f"Saving extracted ROIs to {extracted_regions_filename}")
     extractor.regions_img_.to_filename(extracted_regions_filename)
     
-    return canica_filename, extractor
+    config['method_options']['components'] = canica_filename
+    config['method_options']['extractor'] = extractor
+    
+    return config
 
-
-# Denoise fmri data
-def denoise_fmri_images(func_file, confounds_file, t_r, config):
+def denoise_fmri_data(layout, resampled_files, confound_files, json_files, config):
     """
     Tool to denoise fmri files based on confounds specified in config.
 
     Parameters
     ----------
     layout : BIDSLayout
-    func_files : niimg
+    resampled_files : str or Path
+    confound_files: str or Path
+    json_files: str or Path
     config : dict
 
     Returns
     -------
-    denoised_files : niimg
+    denoised_files : list
     """
-    confounds = select_confounds(confounds_file, config)
-    method_options = config['method_options']
-
-    # Set filter options based on the config file
-    high_pass = method_options.get('high_pass')
-    low_pass = method_options.get('low_pass')
     
-    return clean_img(func_file,
-                     low_pass=low_pass,
-                     high_pass=high_pass,
-                     t_r=t_r,
-                     confounds=confounds)
+    # Denoise the data
+    denoised_paths = []
+    for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
+        print(f"Denoising file {func_file}")
+        entities = layout.parse_file_entities(func_file)
+        denoised_path = func_file if config['ica_aroma'] else layout.derivatives['connectomix'].build_path(entities,
+                                                  path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_denoised.nii.gz'],
+                                                  validate=False)
+        denoised_paths.append(denoised_path)
+        
+        if not Path(denoised_path).exists():
+            print("Data denoising in progress")
+            ensure_directory(denoised_path)
+            
+            confounds = select_confounds(str(confound_file), config)
 
+            # Set filter options based on the config file
+            high_pass = config['method_options']['high_pass']
+            low_pass = config['method_options']['low_pass']
+            
+            clean_img(func_file,
+                        low_pass=low_pass,
+                        high_pass=high_pass,
+                        t_r=get_repetition_time(json_file),
+                        confounds=confounds).to_filename(denoised_path)
+        else:
+            print(f"Denoised data {denoised_path} already exists, skipping.")
+    return denoised_paths
+
+def run_roi_to_voxel_analysis(layout, func_files, json_files, config):
+    """
+    Run roi-to-voxel analysis on denoised data. Save the outputs in BIDS derivative format.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+    func_files : list
+    json_files : list
+    config : dict
+
+    Returns
+    -------
+    None.
+
+    """
+    # Iterate through each functional file
+    for (func_file, json_file) in zip(func_files, json_files):
+        # Print status
+        print(f"Processing file {func_file}")
+        entities = layout.parse_file_entities(func_file)
+            
+        entites_for_mask = entities.copy()
+        entites_for_mask['desc'] = 'brain'
+        entites_for_mask['suffix'] = 'mask'
+        mask_img = layout.derivatives['fMRIPrep'].get(**entites_for_mask)
+        if len(mask_img) == 1:
+            mask_img = mask_img[0]
+        elif len(mask_img) == 0:
+            print(entites_for_mask)
+            raise ValueError(f"Mask img for {func_file} not found.")
+        else:
+            raise ValueError(f"More that one mask for {func_file} found: {mask_img}.")
+        
+        if config['method_options']['seeds_file'] is not None:
+            radius = config['method_options']['radius']
+        
+            coords, labels = load_seed_file(config['method_options']['seeds_file'])
+            
+            for coord, label in zip(coords, labels):
+                seed_masker = NiftiSpheresMasker(
+                    [coord],
+                    radius=radius,
+                    detrend=False,
+                    standardize="zscore_sample",
+                    low_pass=None,
+                    high_pass=None,
+                
+                    t_r=get_repetition_time(json_file))
+                timeseries = seed_masker.fit_transform(str(func_file))
+                glm = FirstLevelModel(t_r=get_repetition_time(json_file),
+                                      mask_img=mask_img,
+                                      high_pass=None)
+                frame_times = np.arange(len(timeseries)) * get_repetition_time(json_file)
+                design_matrix = make_first_level_design_matrix(frame_times=frame_times,
+                                                               events=None,
+                                                               hrf_model=None,
+                                                               drift_model=None,
+                                                               add_regs=timeseries)
+                
+                glm.fit(run_imgs=str(func_file),
+                        design_matrices=design_matrix)
+                contrast_vector = np.array([1] + [0] * (design_matrix.shape[1] - 1))
+                roi_to_voxel_img = glm.compute_contrast(contrast_vector, output_type='effect_size')
+                roi_to_voxel_path = layout.derivatives['connectomix'].build_path(entities,
+                                                          path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_effectSize.nii.gz' % (config["method"], label)],
+                                                          validate=False)
+                roi_to_voxel_img.to_filename(roi_to_voxel_path)
+                
+                # Create plot of z-score map and save
+                roi_to_voxel_plot_path = layout.derivatives['connectomix'].build_path(entities,
+                                                          path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_plot.svg' % (config["method"], label)],
+                                                          validate=False)
+                ensure_directory(roi_to_voxel_plot_path)
+                roi_to_voxel_plot = plot_stat_map(
+                                                roi_to_voxel_img,
+                                                threshold=3.0,
+                                                title=f"roi-to-voxel effect size for seed {label} (coords {coords})",
+                                                cut_coords=coord)
+                roi_to_voxel_plot.add_markers(
+                                            marker_coords=[coord],
+                                            marker_color="k",
+                                            marker_size=2*radius)
+                roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
+
+
+def run_roi_to_roi_analysis(layout, func_files, json_files, config):
+    """
+    Run roi-to-roi analysis on denoised data. Save the outputs in BIDS derivative format.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+    func_files : list
+    json_files : list
+    config : dict
+
+    Returns
+    -------
+    None.
+
+    """
+    
+    connectivity_types = setup_and_check_connectivity_types(config)
+    
+    # Compute CanICA components if necessary and store it in the methods options
+    config = compute_canica_components(layout, func_files, config) if config['method'] == 'ica' else config
+    
+    # Iterate through each functional file
+    for (func_file, json_file) in zip(func_files, json_files):
+        # Print status
+        print(f"Processing file {func_file}")
+        entities = layout.parse_file_entities(func_file)
+        
+        # Generate the BIDS-compliant filename for the timeseries and save
+        timeseries_path = layout.derivatives['connectomix'].build_path(entities,
+                                                  path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy' % config['method']],
+                                                  validate=False)
+        ensure_directory(timeseries_path)
+        
+        # Extract timeseries
+        timeseries, labels = extract_timeseries(str(func_file),
+                                                get_repetition_time(json_file),
+                                                config)
+        np.save(timeseries_path, timeseries)       
+        
+        # Iterate over each connectivity type
+        for connectivity_type in connectivity_types:
+            print(f"Computing connectivity: {connectivity_type}")
+            # Compute connectivityconnectivity_measure
+            connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
+            conn_matrix = connectivity_measure.fit_transform([timeseries])[0]
+            
+            # Mask out the major diagonal
+            np.fill_diagonal(conn_matrix, 0)
+        
+            # Generate the BIDS-compliant filename for the connectivity matrix and save
+            conn_matrix_path = layout.derivatives['connectomix'].build_path(entities,
+                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy' % (config["method"], connectivity_type)],
+                                                      validate=False)
+            ensure_directory(conn_matrix_path)
+            np.save(conn_matrix_path, conn_matrix)
+            
+            # Generate the BIDS-compliant filename for the figure, generate the figure and save
+            conn_matrix_plot_path = layout.derivatives['connectomix'].build_path(entities,
+                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg' % (config["method"], connectivity_type)],
+                                                      validate=False)
+            ensure_directory(conn_matrix_plot_path)
+            plt.figure(figsize=(10, 10))
+            plot_matrix(conn_matrix, labels=labels, colorbar=True)
+            plt.savefig(conn_matrix_plot_path)
+            plt.close()
 
 # Extract time series based on specified method
-def extract_timeseries(func_file, confounds_file, t_r, config):
+def extract_timeseries(func_file, t_r, config):
     """
     Extract timeseries from fMRI data on Regions-Of-Interests (ROIs).
 
@@ -1451,8 +1748,6 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
     ----------
     func_file : str or Path
         Path to fMRI data.
-    confounds_file : DataFrame
-        Contains the confounds to remove from signal.
     t_r : float
         Repetition Time.
     config : dict
@@ -1471,8 +1766,6 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         List of ROIs labels, in the same order as in timeseries.
 
     """
-    confounds = select_confounds(confounds_file, config)
-    
     method = config['method']
     method_options = config['method_options']
 
@@ -1492,9 +1785,9 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
             detrend=False,
             high_pass=None,
             low_pass=None,
-            t_r=t_r
+            t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
         )
-        timeseries = masker.fit_transform(func_file, confounds=confounds.values)
+        timeseries = masker.fit_transform(func_file)
     
     # ICA-based extraction
     elif method == 'ica':
@@ -1502,7 +1795,7 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
         extractor.high_pass = None
         extractor.low_pass  = None
         extractor.t_r = t_r
-        timeseries = extractor.transform(func_file, confounds=confounds.values)
+        timeseries = extractor.transform(func_file)
         labels = None
         
     # Atlas-based extraction
@@ -1520,9 +1813,9 @@ def extract_timeseries(func_file, confounds_file, t_r, config):
             detrend=False,
             high_pass=None,
             low_pass=None,
-            t_r=t_r
+            t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
         )
-        timeseries = masker.fit_transform(func_file, confounds=confounds.values)
+        timeseries = masker.fit_transform(func_file)
 
     return timeseries, labels
 
@@ -1787,246 +2080,31 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
     None.
 
     """
-    # Todo: add an 'overwrite' argument to recompute everything even if files exist
     # Print version information
     print(f"Running connectomix (Participant-level) version {__version__}")
 
-    # Create derivative directory        
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Create BIDSLayout with pipeline and other derivatives
+    layout = setup_layout_with_output_dir(bids_dir, output_dir, derivatives)
     
-    # Create the dataset_description.json file
-    create_dataset_description(output_dir)
+    # Load and backup the configuration file
+    config = setup_config(layout, config)
 
-    # Create a BIDSLayout to parse the BIDS dataset and index also the derivatives
-    layout = BIDSLayout(bids_dir, derivatives=[*list(derivatives.values()), output_dir])
-    
-    # Load the configuration file
-    config = load_config(config)
-    
-    # Set unspecified config options to default values
-    config = set_unspecified_participant_level_options_to_default(config, layout)
-    
-    # Get the current date and time
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    
-    # Save a copy of the config file to the config directory
-    config_filename = output_dir / "config" / "backups" / f"participant_level_config_{timestamp}.json"
-    save_copy_of_config(config, config_filename)
-    print(f"Configuration file saved to {config_filename}")
-        
-    # Get subjects, task, session, run and space from config file    
-    subjects = config.get("subjects")
-    task = config.get("tasks")
-    run = config.get("runs")
-    session = config.get("sessions")
-    space = config.get("spaces")   
-
-    # Select the functional, confound and metadata files
-    func_files = layout.derivatives['fMRIPost-AROMA' if config['ica_aroma'] else 'fMRIPrep'].get(
-        suffix='bold',
-        extension='nii.gz',
-        return_type='filename',
-        space=space,
-        desc='nonaggrDenoised' if config['ica_aroma'] else 'preproc',
-        subject=subjects,
-        task=task,
-        run=run,
-        session=session,
-    )
-    json_files = layout.derivatives['fMRIPrep'].get(
-        suffix='bold',
-        extension='json',
-        return_type='filename',
-        space=space,
-        desc='preproc',
-        subject=subjects,
-        task=task,
-        run=run,
-        session=session
-    )
-    confound_files = layout.derivatives['fMRIPrep'].get(
-        suffix='timeseries',
-        extension='tsv',
-        return_type='filename',
-        subject=subjects,
-        task=task,
-        run=run,
-        session=session
-    )
-
-    # Todo: add warning when some requested subjects don't have matching func files
-    if not func_files:
-        raise FileNotFoundError("No functional files found")
-    if not confound_files:
-        raise FileNotFoundError("No confound files found")
-    if len(func_files) != len(confound_files):
-        raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and confound_files {len(confound_files)}")
-    if len(func_files) != len(json_files):
-        raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and json_files {len(json_files)}")
-
+    # Select all files needed for analysis
+    func_files, json_files, confound_files = get_files_for_analysis(layout, config)
     print(f"Found {len(func_files)} functional files:")
     [print(os.path.basename(fn)) for fn in func_files]
 
-    # Choose the first functional file as the reference for alignment
-    if config.get("reference_functional_file") == "first_functional_file":
-        config["reference_functional_file"] = func_files[0]
-    reference_func_file = load_img(config.get("reference_functional_file"))
-
     # Resample all functional files to the reference image
-    resampled_files = resample_to_reference(layout, func_files, reference_func_file)
+    resampled_files = resample_to_reference(layout, func_files, config)
     print("All functional files resampled to match the reference image.")
 
-    # Set up connectivity measures
-    connectivity_types = config['connectivity_kind']
-    if not config['method'] == 'roiToVoxel':
-        if isinstance(connectivity_types, str):
-            connectivity_types = [connectivity_types]
-        elif not isinstance(connectivity_types, list):
-            raise ValueError(f"The connectivity_types value must either be a string or a list. You provided {connectivity_types}.")
+    denoised_files = denoise_fmri_data(layout, resampled_files, confound_files, json_files, config)
 
-    # Compute CanICA components if necessary and store it in the methods options
-    if config['method'] == 'ica':
-        # Create a canICA directory to store component images
-        canica_dir = output_dir / "canica"
-        canica_dir.mkdir(parents=True, exist_ok=True)
+    if config["method"] == 'roiToVoxel':
+        run_roi_to_voxel_analysis(layout, denoised_files, json_files, config)
+    else:
+        run_roi_to_roi_analysis(layout, denoised_files, json_files, config)
         
-        # Compute CanICA and export path and extractor in options to be passed to compute time series
-        config['method_options']['components'], config['method_options']['extractor'] = compute_canica_components(resampled_files,
-                                                                                                                      layout,
-                                                                                                                      dict(task=task,
-                                                                                                                           run=run,
-                                                                                                                           session=session,
-                                                                                                                           space=space),
-                                                                                                                      config["method_options"])
-        
-    # Iterate through each functional file
-    for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
-        # Print status
-        print(f"Processing file {func_file}")
-        
-        # Denoise fmri imgs and save result
-        entities = layout.parse_file_entities(func_file)
-        denoised_path = func_file if config['ica_aroma'] else layout.derivatives['connectomix'].build_path(entities,
-                                                  path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_denoised.nii.gz'],
-                                                  validate=False)
-        if not Path(denoised_path).exists():
-            print("Data denoising in progress")
-            ensure_directory(denoised_path)
-            denoised_img = denoise_fmri_images(func_file,
-                                                str(confound_file),
-                                                get_repetition_time(json_file),
-                                                config)
-            denoised_img.to_filename(denoised_path)
-        else:
-            print(f"Denoised data {denoised_path} already exists, skipping.")
-            
-        # Deal with roiToVoxel case
-        if config["method"] == 'roiToVoxel':
-            entites_for_mask = entities.copy()
-            entites_for_mask['desc'] = 'brain'
-            entites_for_mask['suffix'] = 'mask'
-            mask_img = layout.derivatives['fMRIPrep'].get(**entites_for_mask)
-            if len(mask_img) == 1:
-                mask_img = mask_img[0]
-            elif len(mask_img) == 0:
-                print(entites_for_mask)
-                raise ValueError(f"Mask img for {func_file} not found.")
-            else:
-                raise ValueError(f"More that one mask for {func_file} found: {mask_img}.")
-            
-            if config['method_options']['seeds_file'] is not None:
-                radius = config['method_options']['radius']
-            
-                coords, labels = load_seed_file(config['method_options']['seeds_file'])
-                
-                for coord, label in zip(coords, labels):
-                    seed_masker = NiftiSpheresMasker(
-                        [coord],
-                        radius=radius,
-                        detrend=False,
-                        standardize="zscore_sample",
-                        low_pass=None,
-                        high_pass=None,
-                    
-                        t_r=get_repetition_time(json_file))
-                    timeseries = seed_masker.fit_transform(str(denoised_path))
-                    glm = FirstLevelModel(t_r=get_repetition_time(json_file),
-                                          mask_img=mask_img,
-                                          high_pass=None)
-                    frame_times = np.arange(len(timeseries)) * get_repetition_time(json_file)
-                    design_matrix = make_first_level_design_matrix(frame_times=frame_times,
-                                                                   events=None,
-                                                                   hrf_model=None,
-                                                                   drift_model=None,
-                                                                   add_regs=timeseries)
-                    
-                    glm.fit(run_imgs=str(denoised_path),
-                            design_matrices=design_matrix)
-                    contrast_vector = np.array([1] + [0] * (design_matrix.shape[1] - 1))
-                    roi_to_voxel_img = glm.compute_contrast(contrast_vector, output_type='effect_size')
-                    roi_to_voxel_path = layout.derivatives['connectomix'].build_path(entities,
-                                                              path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_effectSize.nii.gz' % (config["method"], label)],
-                                                              validate=False)
-                    roi_to_voxel_img.to_filename(roi_to_voxel_path)
-                    
-                    # Create plot of z-score map and save
-                    roi_to_voxel_plot_path = layout.derivatives['connectomix'].build_path(entities,
-                                                              path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_plot.svg' % (config["method"], label)],
-                                                              validate=False)
-                    ensure_directory(roi_to_voxel_plot_path)
-                    roi_to_voxel_plot = plot_stat_map(
-                                                    roi_to_voxel_img,
-                                                    threshold=3.0,
-                                                    title=f"roi-to-voxel effect size for seed {label} (coords {coords})",
-                                                    cut_coords=coord)
-                    roi_to_voxel_plot.add_markers(
-                                                marker_coords=[coord],
-                                                marker_color="k",
-                                                marker_size=2*radius)
-                    roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
-            
-                 
-        else:
-            # Generate the BIDS-compliant filename for the timeseries and save
-            timeseries_path = layout.derivatives['connectomix'].build_path(entities,
-                                                      path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy' % config['method']],
-                                                      validate=False)
-            ensure_directory(timeseries_path)
-            
-            # Extract timeseries
-            timeseries, labels = extract_timeseries(str(func_file),
-                                            str(confound_file),
-                                            get_repetition_time(json_file),
-                                            config)
-            np.save(timeseries_path, timeseries)       
-            
-            # Iterate over each connectivity type
-            for connectivity_type in connectivity_types:
-                print(f"Computing connectivity: {connectivity_type}")
-                # Compute connectivityconnectivity_measure
-                connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
-                conn_matrix = connectivity_measure.fit_transform([timeseries])[0]
-                
-                # Mask out the major diagonal
-                np.fill_diagonal(conn_matrix, 0)
-            
-                # Generate the BIDS-compliant filename for the connectivity matrix and save
-                conn_matrix_path = layout.derivatives['connectomix'].build_path(entities,
-                                                          path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy' % (config["method"], connectivity_type)],
-                                                          validate=False)
-                ensure_directory(conn_matrix_path)
-                np.save(conn_matrix_path, conn_matrix)
-                
-                # Generate the BIDS-compliant filename for the figure, generate the figure and save
-                conn_matrix_plot_path = layout.derivatives['connectomix'].build_path(entities,
-                                                          path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg' % (config["method"], connectivity_type)],
-                                                          validate=False)
-                ensure_directory(conn_matrix_plot_path)
-                plt.figure(figsize=(10, 10))
-                plot_matrix(conn_matrix, labels=labels, colorbar=True)
-                plt.savefig(conn_matrix_plot_path)
-                plt.close()
     print("Participant-level analysis completed.")
 
 
@@ -2174,11 +2252,11 @@ def group_level_analysis(bids_dir, output_dir, config):
                 np_outputs = non_parametric_inference(glm.second_level_input_,
                       design_matrix=design_matrix,
                       second_level_contrast=contrast_label,
-                      smoothing_fwhm=8,
+                      smoothing_fwhm=config["smoothing"],
                       two_sided_test=True,
                       n_jobs=4,
-                      threshold=0.001,
-                      n_perm=100)
+                      threshold=float(config["cluster_forming_alpha"]),
+                      n_perm=config["n_permutations"])
                 
                 np_logp_max_mass = np_outputs["logp_max_mass"]
                 
@@ -2203,12 +2281,11 @@ def group_level_analysis(bids_dir, output_dir, config):
                 plot_glass_brain(
                                 np_logp_max_mass,
                                 colorbar=True,
-                                vmax=2.69,
+                                vmax=2.69,  # this is hardcoded but that's not a problem as it is only for plots
                                 display_mode="z",
                                 plot_abs=False,
                                 cut_coords=coords,
-                                threshold=0.1)
-                raise ValueError('DEBUG')
+                                threshold=float(config["fwe_alpha"])).savefig(np_logp_max_mass_plot_path)
             raise ValueError("Group-level analyzes of roiToVoxel data do not deal with statistical thresholding yet.")
         else:
             
@@ -2267,93 +2344,96 @@ def group_level_analysis(bids_dir, output_dir, config):
     else:
         raise ValueError(f"Unknown analysis type: {analysis_type}")
         
-    # Threshold 1: Uncorrected p-value
-    uncorr_alpha = config["uncorrected_alpha"]
-    uncorr_mask = p_values < uncorr_alpha
-
-    # Threshold 2: FDR correction
-    fdr_alpha = config["fdr_alpha"]
-    fdr_mask = multipletests(p_values.flatten(), alpha=fdr_alpha, method='fdr_bh')[0].reshape(p_values.shape)
-
-    # Threshold 3: Permutation-based threshold
-    n_permutations = config["n_permutations"]
-    if n_permutations < 5000:
-        warnings.warn(f"Running permutation analysis with less than 5000 permutations (you chose {n_permutations}).")
-        
-    null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout, entities, {'observed_t_max': np.nanmax(t_stats), 'observed_t_min': np.nanmin(t_stats)}, design_matrix=design_matrix)
-    
-    # Compute thresholds at desired significance
-    fwe_alpha = float(config["fwe_alpha"])
-    t_max = np.percentile(null_max_distribution, (1 - fwe_alpha / 2) * 100)
-    t_min = np.percentile(null_min_distribution, fwe_alpha / 2 * 100)
-    print(f"Thresholds for max and min stat from null distribution estimated by permutations: {t_max} and {t_min} (n_perms = {n_permutations})")
-    
-    perm_mask = (t_stats > t_max) | (t_stats < t_min)
-    
-    # Save thresholds to a BIDS-compliant JSON file
-    thresholds = {
-        "uncorrected_alpha": uncorr_alpha,
-        "fdr_alpha": fdr_alpha,
-        "fwe_alpha": fwe_alpha,
-        "fwe_permutations_results": {
-            "max_t": t_max,
-            "min_t": t_min,
-            "n_permutations": n_permutations
-        }
-    }
-    
-    threshold_file = layout.derivatives["connectomix"].build_path({**entities,
-                                                      "analysis_label": config["analysis_label"],
-                                                      "method": config["method"]                                                      
-                                                      },
-                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
-                                                 validate=False)
-    
-    ensure_directory(threshold_file)
-    with open(threshold_file, 'w') as f:
-        json.dump(thresholds, f, indent=4)
-    
-    # Get ROIs coords and labels for plotting purposes
-    if method == 'seeds':
-        coords, labels = load_seed_file(config['method_options']['seeds_file'])
-        
-    elif method == 'ica':
-        extracted_regions_entities = entities.copy()
-        extracted_regions_entities.pop("desc")
-        extracted_regions_entities["suffix"] = "extractedregions"
-        extracted_regions_entities["extension"] = ".nii.gz"
-        extracted_regions_filename = layout.derivatives["connectomix"].get(**extracted_regions_entities)[0]
-        coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
-        labels = None
+    if method == 'roiToVoxel':
+        raise ValueError("Group-level for method set to roiToVoxel is still work in progress.")
     else:
-        # Handle the case where method is an atlas
-        _, labels, coords = get_atlas_data(method, get_cut_coords=True)
-
-    # Create plots of the thresholded group connectivity matrices and connectomes
-    generate_group_matrix_plots(t_stats,
-                                uncorr_mask,
-                                fdr_mask,
-                                perm_mask,
-                                config,
-                                layout,
-                                entities,
-                                labels)
+        # Threshold 1: Uncorrected p-value
+        uncorr_alpha = config["uncorrected_alpha"]
+        uncorr_mask = p_values < uncorr_alpha
     
-    generate_group_connectome_plots(t_stats,
+        # Threshold 2: FDR correction
+        fdr_alpha = config["fdr_alpha"]
+        fdr_mask = multipletests(p_values.flatten(), alpha=fdr_alpha, method='fdr_bh')[0].reshape(p_values.shape)
+    
+        # Threshold 3: Permutation-based threshold
+        n_permutations = config["n_permutations"]
+        if n_permutations < 5000:
+            warnings.warn(f"Running permutation analysis with less than 5000 permutations (you chose {n_permutations}).")
+            
+        null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout, entities, {'observed_t_max': np.nanmax(t_stats), 'observed_t_min': np.nanmin(t_stats)}, design_matrix=design_matrix)
+        
+        # Compute thresholds at desired significance
+        fwe_alpha = float(config["fwe_alpha"])
+        t_max = np.percentile(null_max_distribution, (1 - fwe_alpha / 2) * 100)
+        t_min = np.percentile(null_min_distribution, fwe_alpha / 2 * 100)
+        print(f"Thresholds for max and min stat from null distribution estimated by permutations: {t_max} and {t_min} (n_perms = {n_permutations})")
+        
+        perm_mask = (t_stats > t_max) | (t_stats < t_min)
+        
+        # Save thresholds to a BIDS-compliant JSON file
+        thresholds = {
+            "uncorrected_alpha": uncorr_alpha,
+            "fdr_alpha": fdr_alpha,
+            "fwe_alpha": fwe_alpha,
+            "fwe_permutations_results": {
+                "max_t": t_max,
+                "min_t": t_min,
+                "n_permutations": n_permutations
+            }
+        }
+        
+        threshold_file = layout.derivatives["connectomix"].build_path({**entities,
+                                                          "analysis_label": config["analysis_label"],
+                                                          "method": config["method"]                                                      
+                                                          },
+                                                     path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
+                                                     validate=False)
+        
+        ensure_directory(threshold_file)
+        with open(threshold_file, 'w') as f:
+            json.dump(thresholds, f, indent=4)
+        
+        # Get ROIs coords and labels for plotting purposes
+        if method == 'seeds':
+            coords, labels = load_seed_file(config['method_options']['seeds_file'])
+            
+        elif method == 'ica':
+            extracted_regions_entities = entities.copy()
+            extracted_regions_entities.pop("desc")
+            extracted_regions_entities["suffix"] = "extractedregions"
+            extracted_regions_entities["extension"] = ".nii.gz"
+            extracted_regions_filename = layout.derivatives["connectomix"].get(**extracted_regions_entities)[0]
+            coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
+            labels = None
+        else:
+            # Handle the case where method is an atlas
+            _, labels, coords = get_atlas_data(method, get_cut_coords=True)
+    
+        # Create plots of the thresholded group connectivity matrices and connectomes
+        generate_group_matrix_plots(t_stats,
                                     uncorr_mask,
                                     fdr_mask,
                                     perm_mask,
                                     config,
                                     layout,
                                     entities,
-                                    coords)
-    
-    # Refresh BIDS indexing of the derivatives to find data for the report
-    layout.derivatives.pop('connectomix')
-    layout.add_derivatives(output_dir)
-    
-    # Generate report
-    generate_group_analysis_report(layout, entities, config)
+                                    labels)
+        
+        generate_group_connectome_plots(t_stats,
+                                        uncorr_mask,
+                                        fdr_mask,
+                                        perm_mask,
+                                        config,
+                                        layout,
+                                        entities,
+                                        coords)
+        
+        # Refresh BIDS indexing of the derivatives to find data for the report
+        layout.derivatives.pop('connectomix')
+        layout.add_derivatives(output_dir)
+        
+        # Generate report
+        generate_group_analysis_report(layout, entities, config)
 
     print("Group-level analysis completed.")
 
