@@ -36,7 +36,7 @@ from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sy
 from nilearn.decomposition import CanICA
 from nilearn.regions import RegionExtractor
 from nilearn.glm.first_level import FirstLevelModel, make_first_level_design_matrix
-from nilearn.glm.second_level import SecondLevelModel, non_parametric_inference
+from nilearn.glm.second_level import SecondLevelModel, non_parametric_inference, make_second_level_design_matrix
 from nilearn import datasets
 from bids import BIDSLayout
 import csv
@@ -55,8 +55,7 @@ __version__ = "dev"
 warnings.simplefilter('once')
 
 # TOOLS
-
-def setup_layout_with_output_dir(bids_dir, output_dir, derivatives):
+def setup_layout(bids_dir, output_dir, derivatives=dict()):
     # Create derivative directory        
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -67,19 +66,23 @@ def setup_layout_with_output_dir(bids_dir, output_dir, derivatives):
     # Create a BIDSLayout to parse the BIDS dataset and index also the derivatives
     return BIDSLayout(bids_dir, derivatives=[*list(derivatives.values()), output_dir])
 
-def setup_config(layout, config):
+def setup_config(layout, config, level):
     config = load_config(config)
     
     # Set unspecified config options to default values
-    config = set_unspecified_participant_level_options_to_default(config, layout)
+    if level == "participant":
+        config = set_unspecified_participant_level_options_to_default(config, layout)
+    elif level == "group":
+        config = set_unspecified_group_level_options_to_default(config, layout)
     
     # Get the current date and time
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
     # Save a copy of the config file to the config directory
-    config_filename = layout.derivatives['connectomix'].root / "config" / "backups" / f"participant_level_config_{timestamp}.json"
+    config_filename = Path(layout.derivatives['connectomix'].root) / "config" / "backups" / f"participant_level_config_{timestamp}.json"
     save_copy_of_config(config, config_filename)
     print(f"Configuration file saved to {config_filename}")
+    return config
 
 def get_bids_entities_from_config(config):
     """
@@ -100,7 +103,7 @@ def get_bids_entities_from_config(config):
     run = config.get("runs")
     session = config.get("sessions")
     space = config.get("spaces")   
-    return dict(subjects=subjects, task=task, run=run, session=session, space=space)
+    return dict(subject=subjects, task=task, run=run, session=session, space=space)
 
 def get_files_for_analysis(layout, config):
     """
@@ -1067,40 +1070,49 @@ def set_unspecified_participant_level_options_to_default(config, layout):
         A complete configuration.
 
     """
-    config["connectivity_kind"] = config.get("connectivity_kind", "correlation")  # The kind of connectivity measure, unused for roi-to-voxel
-    config["method"] = config.get("method", "schaeffer100")  # The method to define connectome, e.g. from a valid atlas name or "roiToVoxel"
-    config["method_options"] = config.get("method_options", {})  # Options specific to the method (see later)
-    config["subjects"] = config.get("subjects", layout.derivatives['fMRIPrep'].get_subjects())  # Subjects to include in the analysis
+    # BIDS stuff
+    config["subject"] = config.get("subject", layout.derivatives['fMRIPrep'].get_subjects())  # Subjects to include in the analysis
     config["tasks"] = config.get("tasks", layout.derivatives['fMRIPrep'].get_tasks())  # Tasks to include in the analysis
     config["runs"] = config.get("runs", layout.derivatives['fMRIPrep'].get_runs())  # Runs to include in the analysis
     config["sessions"] = config.get("sessions", layout.derivatives['fMRIPrep'].get_sessions())  # Sessions to include in the analysis
     config["spaces"] = config.get("spaces", layout.derivatives['fMRIPrep'].get_spaces())  # Spaces to include in the analysis
+
     if 'MNI152NLin2009cAsym' in config.get("spaces"):
         config["spaces"] = ['MNI152NLin2009cAsym']  # First default to 'MNI152NLin2009cAsym'
     elif 'MNI152NLin6Asym' in config.get("spaces"):
         config["spaces"] = ['MNI152NLin6Asym']  # Second default to 'MNI152NLin6Asym' (useful when using ica-aroma denoising)
-    config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")  # Reference functional file for resampling
-    config["method_options"]["seeds_file"] = config["method_options"].get("seeds_file", None)  # Path to file with seed coordinates for seed-based and roi-to-voxel
-    config["method_options"]["radius"] = config["method_options"].get("radius", 5)  # Radius of the sphere, in mm, for the seeds
-    config["method_options"]["high_pass"] = config["method_options"].get("high_pass", 0.01)  # High-pass filter for data denoising - Default value from Ciric et al 2017
-    config["method_options"]["low_pass"] = config["method_options"].get("low_pass", 0.08)  # Low-pass filter for data denoising - Default value from Ciric et al 2017
-
-    # Options for config["method"] = "roiToVoxel"
-    config["method_options"]["roi_mask_path"] = config["method_options"].get("roi_mask_path", "")  # Path to mask for roi-to-voxel, optional
+ 
+    # Analysis parameters
+    config["method"] = config.get("method", "roiToVoxel")  # The method to define connectome, e.g. from a valid atlas name or "roiToVoxel"
+    config["seeds_file"] = config.get("seeds_file", None)  # Path to file with seed coordinates for seed-based and roi-to-voxel
+    config["radius"] = config.get("radius", 5)  # Radius of the sphere, in mm, for the seeds
     
+    # Preprocessing parameters
+    config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")  # Reference functional file for resampling
+    config["high_pass"] = config.get("high_pass", 0.01)  # High-pass filter for data denoising - Default value from Ciric et al 2017
+    config["low_pass"] = config.get("low_pass", 0.08)  # Low-pass filter for data denoising - Default value from Ciric et al 2017
     default_confound_columns = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'csf_wm']  # List of default signal confounds for denoising
     config["confound_columns"] = config.get("confound_columns", default_confound_columns)  # Signal confounds for denoising
     config["ica_aroma"] = config.get("ica_aroma", False)  # ICA-AROMA denoising
-    # For ICA-AROMA, default to space 'MNI152NLin6Asym'
-    if config["ica_aroma"]:
+
+    if config["ica_aroma"]:  # For ICA-AROMA, default to space 'MNI152NLin6Asym'
         print("Defaulting to space MNI152NLin6Asym for ICA-AROMA denoising (overriding spaces from config file")
         config["spaces"] = ['MNI152NLin6Asym']
     elif "MNI152NLin6Asym" in config["spaces"]:
         warnings.warn("Space 'MNI152NLin6Asym' was found in the list of spaces and ica_aroma was disabled. To avoid name conflicts, we force you to use ica_aroma with MNI152NLin6Asym. For now, 'MNI152NLin6Asym' will be removed from the list of spaces.")
         config["spaces"] = [space for space in config["spaces"] if space != 'MNI152NLin6Asym']
     
-    return config
+    # Roi-to-roi specific parameters
+    config["connectivity_kind"] = config.get("connectivity_kind", "correlation")  # The kind of connectivity measure, unused for roi-to-voxel
+    # .. canica options
+    config["canica_threshold"] = config.get('canica_threshold', 0.5)
+    config["canica_min_region_size"] = config.get('canica_min_region_size', 50)    # Extract also regions from the canica components for connectivity analysis
 
+    
+    # Roi-to-voxel specific parameters
+    config["roi_mask_path"] = config.get("roi_mask_path", "")  # Path to mask for roi-to-voxel
+
+    return config
 
 # Function to manage default group-level options
 def set_unspecified_group_level_options_to_default(config, layout):
@@ -1120,64 +1132,77 @@ def set_unspecified_group_level_options_to_default(config, layout):
         A complete configuration.
 
     """
-    config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
+    
+    # BIDS stuff
+    config["subject"] = config.get("subject", layout.derivatives['connectomix'].get_subjects())  # Subjects to include in the analysis
     config["tasks"] = config.get("tasks", "restingstate" if "restingstate" in layout.derivatives['connectomix'].get_tasks() else layout.derivatives['connectomix'].get_tasks())
     config["runs"] = config.get("runs", layout.derivatives['connectomix'].get_runs())
     config["sessions"] = config.get("sessions", layout.derivatives['connectomix'].get_sessions())
     config["spaces"] = config.get("spaces", "MNI152NLin2009cAsym" if "MNI152NLin2009cAsym" in layout.derivatives['connectomix'].get_spaces() else layout.derivatives['connectomix'].get_spaces())
+    
+    # Participant-level parameters
+    config["method"] = config.get("method", "roiToVoxel")
+    config["radius"] = config.get("radius", 5)
+    
+    # Analysis parameters
+    config["analysis_type"] = config.get("analysis_type", "independent")  # Options: 'independent' or 'paired' or 'regression'
+    config["analysis_label"] = config.get("analysis_label", "CUSTOMNAME")
+    config["smoothing"] = config.get("smoothing", 8)  # In mm, smoothing for the cmaps
+    config["group_confounds"] = config.get("group_confounds", [])
+
+    # Stats and permutations
     config["uncorrected_alpha"] = config.get("uncorrected_alpha", 0.001)
     config["fdr_alpha"] = config.get("fdr_alpha", 0.05)
     config["fwe_alpha"]= float(config.get("fwe_alpha", 0.05))
     config["n_permutations"] = config.get("n_permutations", 20)
-    config["analysis_type"] = config.get("analysis_type", "independent")  # Options: 'independent' or 'paired' or 'regression'
-    config["method"] = config.get("method", "schaeffer100")
-    config["method_options"] = config.get("method_options", {})
-    config["analysis_label"] = config.get("analysis_label", "CUSTOMNAME")
     
-    analysis_options = {}
+    # Toi-to-voxel parameters
+    config["cluster_forming_alpha"] = config.get("cluster_forming_alpha", 0.01)  # p-value for cluster forming threshold in roiToVoxel analysiss
     
-    # If "analysis_options" is not set by user, then try to create it
-    if "analysis_options" not in config.keys():
-        if config["analysis_type"] == 'regression':
-            analysis_options["subjects_to_regress"] = layout.derivatives['connectomix'].get_subjects()
-            analysis_options["covariate"] = "COVARIATENAME"
-            analysis_options["confounds"] = []
-        else:
+    # Roi-to-roi specific parameters
+    config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
+    
+    # analysis_options = {}
+    
+    # # If "analysis_options" is not set by user, then try to create it
+    # if "analysis_options" not in config.keys():
+    #     if config["analysis_type"] == 'regression':
+    #         analysis_options["subjects_to_regress"] = layout.derivatives['connectomix'].get_subjects()
+    #         analysis_options["covariate"] = "COVARIATENAME"
+    #         analysis_options["confounds"] = []
+    #     else:
             
-            if config["analysis_type"] == 'independent':
+    #         if config["analysis_type"] == 'independent':
                 
-                guessed_groups = guess_groups(layout)
-                if len(guessed_groups) == 2:
-                    group1_name = list(guessed_groups.keys())[0]
-                    group2_name = list(guessed_groups.keys())[1]
-                    warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
-                    analysis_options["group1_subjects"] = list(guessed_groups.values())[0]
-                    analysis_options["group2_subjects"] = list(guessed_groups.values())[1]
-                    config["analysis_label"] = f"{group1_name}VersuS{group2_name}"  # This overwrites the above generic name to ensure people don't get confused with the automatic selection of subjects
-                    warnings.warn(f"Setting analysis label to {config['analysis_label']}")
-                    analysis_options["group1_name"] = group1_name
-                    analysis_options["group2_name"] = group2_name
-                else:
-                    config["group1_subjects"] = config.get("subjects", layout.derivatives['connectomix'].get_subjects())  # this is used only through the --helper tool (or the autonomous mode)
-                    warnings.warn("Could not detect two groups, putting all subjects into first group.")
+    #             guessed_groups = guess_groups(layout)
+    #             if len(guessed_groups) == 2:
+    #                 group1_name = list(guessed_groups.keys())[0]
+    #                 group2_name = list(guessed_groups.keys())[1]
+    #                 warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
+    #                 analysis_options["group1_subjects"] = list(guessed_groups.values())[0]
+    #                 analysis_options["group2_subjects"] = list(guessed_groups.values())[1]
+    #                 config["analysis_label"] = f"{group1_name}VersuS{group2_name}"  # This overwrites the above generic name to ensure people don't get confused with the automatic selection of subjects
+    #                 warnings.warn(f"Setting analysis label to {config['analysis_label']}")
+    #                 analysis_options["group1_name"] = group1_name
+    #                 analysis_options["group2_name"] = group2_name
+    #             else:
+    #                 config["group1_subjects"] = config.get("subjects", layout.derivatives['connectomix'].get_subjects())  # this is used only through the --helper tool (or the autonomous mode)
+    #                 warnings.warn("Could not detect two groups, putting all subjects into first group.")
                     
-            elif config["analysis_type"] == 'paired':
-                analysis_options["subjects"] = layout.derivatives['connectomix'].get_subjects()
-                analysis_options["sample1_entities"] = dict(tasks=config.get("tasks"),
-                                                            sessions=config.get("sessions"),
-                                                            runs=config.get("runs"))
-                analysis_options["sample2_entities"] = analysis_options["sample1_entities"]  # This does not make sense, but is done only to help the user to fine-tune the config file manually.
+    #         elif config["analysis_type"] == 'paired':
+    #             analysis_options["subjects"] = layout.derivatives['connectomix'].get_subjects()
+    #             analysis_options["sample1_entities"] = dict(tasks=config.get("tasks"),
+    #                                                         sessions=config.get("sessions"),
+    #                                                         runs=config.get("runs"))
+    #             analysis_options["sample2_entities"] = analysis_options["sample1_entities"]  # This does not make sense, but is done only to help the user to fine-tune the config file manually.
                 
     # TODO: add more checks that config['analysis_options'] has all required information to work
     # Set the analysis_options field
     # Todo: enable confounds to be optional in the config file. Currently it does not work if analysis_options are set in config file as it does not take the default value in the following line. But we want to be able to leave the confounds field empty in the config file.
-    config["analysis_options"] = config.get("analysis_options", analysis_options)
+    # config["analysis_options"] = config.get("analysis_options", analysis_options)
     
-    if config.get("method") == 'seeds' or config.get("method") == 'roiToVoxel':
-        config["method_options"]["radius"] = config["method_options"].get("radius", 5)
-           
-    config["smoothing"] = config.get("smoothing", 8)  # In mm, smoothing for the cmaps
-    config["cluster_forming_alpha"] = config.get("cluster_forming_alpha", 0.01)  # p-value for cluster forming threshold in roiToVoxel analysiss
+    # if config.get("method") == 'seeds' or config.get("method") == 'roiToVoxel':
+    #     config["radius"] = config.get("radius", 5)
     
     return config
 
@@ -1251,12 +1276,11 @@ connectivity_kind: {config.get("connectivity_kind")}  # Choose from covariance, 
 # Method to define regions of interests to compute connectivity
 method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 with 100 rois by default. More options are described in the documentation.
   
-# Method-specific options
-method_options:
-    high_pass: {config["method_options"].get("high_pass")} # High-pass filtering, in Hz, applied to BOLD data. Low (<0.008 Hz) values does minimal changes to the signal, while high (>0.01) values improves sensitivity.
-    low_pass: {config["method_options"].get("low_pass")} # Low-pass filtering, in Hz, applied to BOLD data. High (>0.1 Hz) values does minimal changes to the signal, while low (< 0.08 Hz)values improves specificity.
-    # seeds_file: {config["method_options"]["seeds_file"]} # Path to seed file for seed-based ROIs
-    # radius: {config["method_options"]["radius"]} # Radius, in mm, to create the spheres at the coordinates of the seeds for seed-based ROIs
+# Other parameters
+high_pass: {config.get("high_pass")} # High-pass filtering, in Hz, applied to BOLD data. Low (<0.008 Hz) values does minimal changes to the signal, while high (>0.01) values improves sensitivity.
+low_pass: {config.get("low_pass")} # Low-pass filtering, in Hz, applied to BOLD data. High (>0.1 Hz) values does minimal changes to the signal, while low (< 0.08 Hz)values improves specificity.
+seeds_file: {config["seeds_file"]} # Path to seed file for seed-based ROIs
+radius: {config["radius"]} # Radius, in mm, to create the spheres at the coordinates of the seeds for seed-based ROIs
     """
     
     # Build filenames for each output
@@ -1464,9 +1488,7 @@ def compute_canica_components(layout, func_filenames, config):
     """
     
     entities = get_bids_entities_from_config(config)
-    entities.pop('subjects')
-    
-    options = config["method_options"]
+    entities.pop('subject')
     
     # Build path to save canICA components
     canica_filename = layout.derivatives['connectomix'].build_path(entities,
@@ -1512,12 +1534,11 @@ def compute_canica_components(layout, func_filenames, config):
         canica.components_img_.to_filename(canica_filename)
     else:
         print(f"ICA component file {os.path.basename(canica_filename)} already exist, skipping computation.")
-        
-    # Extract also regions from the canica components for connectivity analysis
-    extractor_options = dict(threshold=options.get('threshold', 0.5),
+    
+    extractor_options = dict(threshold=config["canica_threshold"],
+                             min_region_size=config["canica_min_region_size"],
                              standardize="zscore_sample",
-                             detrend=True,
-                             min_region_size=options.get('min_region_size', 50))
+                             detrend=True)
         
     # Dump config to file for reproducibility
     with open(extracted_regions_sidecar, "w") as fp:
@@ -1535,8 +1556,8 @@ def compute_canica_components(layout, func_filenames, config):
     print(f"Saving extracted ROIs to {extracted_regions_filename}")
     extractor.regions_img_.to_filename(extracted_regions_filename)
     
-    config['method_options']['components'] = canica_filename
-    config['method_options']['extractor'] = extractor
+    config['components'] = canica_filename
+    config['extractor'] = extractor
     
     return config
 
@@ -1574,8 +1595,8 @@ def denoise_fmri_data(layout, resampled_files, confound_files, json_files, confi
             confounds = select_confounds(str(confound_file), config)
 
             # Set filter options based on the config file
-            high_pass = config['method_options']['high_pass']
-            low_pass = config['method_options']['low_pass']
+            high_pass = config['high_pass']
+            low_pass = config['low_pass']
             
             clean_img(func_file,
                         low_pass=low_pass,
@@ -1586,7 +1607,127 @@ def denoise_fmri_data(layout, resampled_files, confound_files, json_files, confi
             print(f"Denoised data {denoised_path} already exists, skipping.")
     return denoised_paths
 
-def run_roi_to_voxel_analysis(layout, func_files, json_files, config):
+def make_second_level_input(layout, label, config):
+    second_level_input = pd.DataFrame(columns=['subject_label', 'map_name', 'effects_size_path'])
+    # TODO: include preprocessing?
+    
+    entities = get_bids_entities_from_config(config)
+    
+    map_files = layout.derivatives['connectomix'].get(return_type='filename',
+                                          extension='.nii.gz',
+                                          **entities)
+    map_files = apply_nonbids_filter('seed', label, map_files)
+    map_files = apply_nonbids_filter('method', config['method'], map_files)
+    map_files = apply_nonbids_filter('analysis_label', config['analysis_label'], map_files)
+    
+    # TODO: for paired analysis, compute difference of maps and save result to folder.
+    if config['analysis_type'] == 'paired':
+        raise ValueError('Paired analysis not yet supported')
+    
+    for file in map_files:
+        file_entities = layout.parse_file_entities(file)
+        second_level_input.loc[len(second_level_input)] = [file_entities['subject'], label, file]
+    
+    return second_level_input
+
+def get_group_level_confounds(layout, subjects_label, config):
+    participants_file = layout.get(return_type='filename', extension='tsv', scope='raw')[0]
+    participants_df = pd.read_csv(participants_file, sep='\t')
+    print('DEBUG')
+    print(config)
+    return participants_df[['participant_id', *config['group_confounds']]]
+
+def make_group_level_design_matrix(layout, second_level_input, label, config):
+    subjects_label = list(second_level_input['subject_label'])
+    confounds = get_group_level_confounds(layout, subjects_label, config)
+    design_matrix = make_second_level_design_matrix(subjects_label, confounds=confounds)
+    return design_matrix
+
+def compute_group_level_contrast(layout, glm, label, config):
+    entities = get_bids_entities_from_config(config)
+    entities.pop("subjects")
+    entities["seed"] = label
+    contrast_label = config['group_level_contrast']
+    contrast_path = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "analysis_label": config["analysis_label"],
+                                                      "method": config["method"],
+                                                      "seed": label
+                                                      },
+                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.nii.gz"],
+                                                 validate=False)
+    ensure_directory(contrast_path)
+    glm.compute_contrast(contrast_label, output_type="z_score").to_filename(contrast_path)
+    return contrast_path
+
+def save_group_level_contrast_plots(layout, contrast_path, coord, label, config):
+    # Create plot of contrast map and save
+    entities = get_bids_entities_from_config(config)
+    entities.pop("subjects")
+    entities["seed"] = label
+    contrast_plot_path = layout.derivatives['connectomix'].build_path({**entities,
+                                                      "analysis_label": config["analysis_label"],
+                                                      "method": config["method"],
+                                                      "seed": label
+                                                      },
+                                              path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.svg"],
+                                              validate=False)
+    ensure_directory(contrast_plot_path)
+    contrast_plot = plot_stat_map(contrast_path,
+                                  threshold=3.0,
+                                  title=f"roi-to-voxel contrast for seed {label} (coords {coord})",
+                                  cut_coords=coord)
+    contrast_plot.add_markers(marker_coords=[coord],
+                              marker_color="k",
+                              marker_size=2*config["radius"])
+    contrast_plot.savefig(contrast_plot_path)
+
+def compute_non_parametric_max_mass(layout, glm, label, config):
+    entities = get_bids_entities_from_config(config)
+    entities.pop("subjects")
+    entities["seed"] = label
+    np_logp_max_mass_path = layout.derivatives["connectomix"].build_path({**entities,
+                                                       "analysis_label": config["analysis_label"],
+                                                       "method": config["method"],
+                                                       "seed": label
+                                                       },
+                                                  path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.nii.gz"],
+                                                  validate=False)
+     
+    ensure_directory(np_logp_max_mass_path)
+    np_outputs = non_parametric_inference(glm.second_level_input_,
+           design_matrix=glm.design_matrix_,
+           second_level_contrast=config['group_level_contrast'],
+           smoothing_fwhm=config["smoothing"],
+           two_sided_test=True,
+           n_jobs=2,
+           threshold=float(config["cluster_forming_alpha"]),
+           n_perm=config["n_permutations"])
+    np_outputs["logp_max_mass"].to_filename(np_logp_max_mass_path)
+    return np_logp_max_mass_path
+
+def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
+    entities = get_bids_entities_from_config(config)
+    entities.pop("subjects")
+    entities["seed"] = label
+    np_logp_max_mass_plot_path = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "analysis_label": config["analysis_label"],
+                                                      "method": config["method"],
+                                                      "seed": label
+                                                      },
+                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.svg"],
+                                                 validate=False)
+    ensure_directory(np_logp_max_mass_plot_path)
+    plot_glass_brain(
+                    np_logp_max_mass_path,
+                    colorbar=True,
+                    vmax=2.69,  # this is hardcoded but that's not a problem as it is only for plots
+                    display_mode="z",
+                    plot_abs=False,
+                    cut_coords=coords,
+                    threshold=float(config["fwe_alpha"])).savefig(np_logp_max_mass_plot_path)
+
+
+def roi_to_voxel_participant_analysis(layout, func_files, json_files, config):
     """
     Run roi-to-voxel analysis on denoised data. Save the outputs in BIDS derivative format.
 
@@ -1620,10 +1761,10 @@ def run_roi_to_voxel_analysis(layout, func_files, json_files, config):
         else:
             raise ValueError(f"More that one mask for {func_file} found: {mask_img}.")
         
-        if config['method_options']['seeds_file'] is not None:
-            radius = config['method_options']['radius']
+        if config['seeds_file'] is not None:
+            radius = config['radius']
         
-            coords, labels = load_seed_file(config['method_options']['seeds_file'])
+            coords, labels = load_seed_file(config['seeds_file'])
             
             for coord, label in zip(coords, labels):
                 seed_masker = NiftiSpheresMasker(
@@ -1672,7 +1813,7 @@ def run_roi_to_voxel_analysis(layout, func_files, json_files, config):
                 roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
 
 
-def run_roi_to_roi_analysis(layout, func_files, json_files, config):
+def roi_to_roi_participant_analysis(layout, func_files, json_files, config):
     """
     Run roi-to-roi analysis on denoised data. Save the outputs in BIDS derivative format.
 
@@ -1739,6 +1880,306 @@ def run_roi_to_roi_analysis(layout, func_files, json_files, config):
             plt.savefig(conn_matrix_plot_path)
             plt.close()
 
+def roi_to_voxel_group_analysis(layout, config):
+    
+    entities = get_bids_entities_from_config(config)
+    entities.pop("subject")
+    
+    coords, labels = load_seed_file(config["seeds_file"])
+    for coord, label in zip(coords, labels):
+        second_level_input = make_second_level_input(layout, label, config)  # get all first-level maps. In paired case, compute differences. Resamples and save all in folder.
+        design_matrix = make_group_level_design_matrix(layout, second_level_input, label, config)
+
+        glm = SecondLevelModel(smoothing_fwhm=config['smoothing'])
+        glm.fit(second_level_input, design_matrix=design_matrix)
+
+        contrast_path = compute_group_level_contrast(layout, glm, label, config)
+        save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
+
+        np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, config)
+        save_max_mass_plot(layout, np_logp_max_mass_path, label, coord, config)
+     
+    # if analysis_type == 'independent':
+    #     # Load group specifications from config
+    #     # Todo: change terminology from 'group' to 'samples' when performing independent samples tests so that it is consistent with the terminology when doing a paired test.
+    #     group1_subjects = config['analysis_options']['group1_subjects']
+    #     group2_subjects = config['analysis_options']['group2_subjects']
+
+    #     coords, labels = load_seed_file(config["method_options"]["seeds_file"])
+    #     for coord, label in zip(coords, labels):
+    #         entities["seed"] = label
+    #         group1_maps = get_maps_from_participant_level(group1_subjects, layout, entities, method)
+    #         group2_maps = get_maps_from_participant_level(group2_subjects, layout, entities, method)
+    #         group1_name = config["analysis_options"]["group1_name"]
+    #         group2_name = config["analysis_options"]["group2_name"]
+
+    #         # Gather images in one list            
+    #         maps = list(group1_maps.values()) + list(group2_maps.values())
+            
+    #         # Create corresponding design matrix
+    #         group1_n = len(group1_maps)
+    #         group2_n = len(group2_maps)
+            
+    #         design_matrix = pd.DataFrame({
+    #             group1_name: [1] * group1_n + [0] * group2_n,
+    #             group2_name: [0] * group1_n + [1] * group2_n
+    #         })
+            
+    #         maps = convert_4D_to_3D(maps)
+    #         target_img = nib.load(maps[0]) if isinstance(maps[0], (str, Path)) else maps[0]
+            
+    #         resampled_maps = []
+    #         for img in maps:
+    #             if check_affines_match([img, target_img]):
+    #                 resampled_maps.append(img)
+    #             else:
+    #                 print("Doing some resampling, please wait...")
+    #                 resampled_maps.append(resample_img(img, target_affine=target_img.affine, target_shape=target_img.shape[:3], interpolation='nearest'))
+            
+    #         glm = SecondLevelModel(smoothing_fwhm=8,
+    #                                target_shape=target_img.shape,
+    #                                target_affine=target_img.affine)
+    #         glm.fit(resampled_maps,
+    #                 design_matrix=design_matrix)
+    #         # raise ValueError("Group-level for roiToVoxel still work in progress.")
+            
+    #         contrast_label = group1_name + '-' + group2_name
+    #         contrast_map = glm.compute_contrast(contrast_label, output_type="z_score")
+            
+    #         contrast_path = layout.derivatives["connectomix"].build_path({**entities,
+    #                                                           "analysis_label": config["analysis_label"],
+    #                                                           "method": config["method"],
+    #                                                           "seed": label
+    #                                                           },
+    #                                                      path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.nii.gz"],
+    #                                                      validate=False)
+    #         ensure_directory(contrast_path)
+    #         contrast_map.to_filename(contrast_path)
+        
+    #         # Create plot of contrast map and save
+    #         contrast_plot_path = layout.derivatives['connectomix'].build_path({**entities,
+    #                                                           "analysis_label": config["analysis_label"],
+    #                                                           "method": config["method"],
+    #                                                           "seed": label
+    #                                                           },
+    #                                                   path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.svg"],
+    #                                                   validate=False)
+    #         ensure_directory(contrast_plot_path)
+    #         contrast_plot = plot_stat_map(
+    #                                         contrast_map,
+    #                                         threshold=3.0,
+    #                                         title=f"roi-to-voxel contrast for seed {label} (coords {coords})",
+    #                                         cut_coords=coord)
+    #         contrast_plot.add_markers(
+    #                                     marker_coords=[coord],
+    #                                     marker_color="k",
+    #                                     marker_size=2*config["method_options"]["radius"])
+    #         contrast_plot.savefig(contrast_plot_path)
+        
+        
+    #         np_outputs = non_parametric_inference(glm.second_level_input_,
+    #               design_matrix=design_matrix,
+    #               second_level_contrast=contrast_label,
+    #               smoothing_fwhm=config["smoothing"],
+    #               two_sided_test=True,
+    #               n_jobs=4,
+    #               threshold=float(config["cluster_forming_alpha"]),
+    #               n_perm=config["n_permutations"])
+            
+    #         np_logp_max_mass = np_outputs["logp_max_mass"]
+            
+    #         np_logp_max_mass_path = layout.derivatives["connectomix"].build_path({**entities,
+    #                                                           "analysis_label": config["analysis_label"],
+    #                                                           "method": config["method"],
+    #                                                           "seed": label
+    #                                                           },
+    #                                                      path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.nii.gz"],
+    #                                                      validate=False)
+            
+    #         ensure_directory(np_logp_max_mass_path)
+    #         np_logp_max_mass.to_filename(np_logp_max_mass_path)
+    #         np_logp_max_mass_plot_path = layout.derivatives["connectomix"].build_path({**entities,
+    #                                                           "analysis_label": config["analysis_label"],
+    #                                                           "method": config["method"],
+    #                                                           "seed": label
+    #                                                           },
+    #                                                      path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.svg"],
+    #                                                      validate=False)
+    #         ensure_directory(np_logp_max_mass_plot_path)
+    #         plot_glass_brain(
+    #                         np_logp_max_mass,
+    #                         colorbar=True,
+    #                         vmax=2.69,  # this is hardcoded but that's not a problem as it is only for plots
+    #                         display_mode="z",
+    #                         plot_abs=False,
+    #                         cut_coords=coords,
+    #                         threshold=float(config["fwe_alpha"])).savefig(np_logp_max_mass_plot_path)
+    #     raise ValueError("Group-level analyzes of roiToVoxel data do not deal with statistical thresholding yet.")
+    
+def roi_to_roi_group_analysis(layout, config):
+    # Retrieve connectivity type and other configuration parameters
+    connectivity_type = config.get('connectivity_kind')
+    method = config.get('method')
+    task = config.get("tasks")
+    run = config.get("runs")
+    session = config.get("sessions")
+    space = config.get("spaces")
+    analysis_type = config.get("analysis_type")  # Label for the analysis, e.g. "independent"
+    
+    entities = {
+        "task": task,
+        "space": space,
+        "session": session,
+        "run": run,
+        "desc": connectivity_type
+    }
+
+    design_matrix = None  # This will be necessary for regression analyses
+
+    # Perform the appropriate group-level analysis
+    if analysis_type == 'independent':
+        # Load group specifications from config
+        # Todo: change terminology from 'group' to 'samples' when performing independent samples tests so that it is consistent with the terminology when doing a paired test.
+        group1_subjects = config['analysis_options']['group1_subjects']
+        group2_subjects = config['analysis_options']['group2_subjects']
+            
+        # Check each group has at least two subjects, otherwise no permutation testing is possible
+        check_group_has_several_members(group1_subjects)
+        check_group_has_several_members(group2_subjects)
+        
+        # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
+        group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
+        group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities, method)
+        
+        # For independent tests we dontt need to keep track of subjects labels
+        group1_matrices = list(group1_matrices.values())
+        group2_matrices = list(group2_matrices.values())
+    
+        print(f"Group 1 contains {len(group1_matrices)} participants: {group1_subjects}")
+        print(f"Group 2 contains {len(group2_matrices)} participants: {group2_subjects}")
+        
+        # Convert to 3D arrays: (subjects, nodes, nodes)
+        group1_data = np.stack(group1_matrices, axis=0)
+        group2_data = np.stack(group2_matrices, axis=0)
+        group_data = [group1_data, group2_data]
+        
+        # Independent t-test between different subjects
+        t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
+
+    elif analysis_type == "paired":
+        # Paired t-test within the same subjects
+        paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
+        
+        # Get the two samples from paired_samples (with this we are certain that they are in the right order)
+        sample1 = np.array(list(paired_samples.values()))[:,0]
+        sample2 = np.array(list(paired_samples.values()))[:,1]
+        group_data = [sample1, sample2]
+        
+        if len(sample1) != len(sample2):
+            raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
+            
+        t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
+        
+        entities = remove_pair_making_entity(entities)
+            
+    elif analysis_type == "regression":
+        subjects = config['analysis_options']['subjects_to_regress']
+        group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
+        group_data = list(group_data.values())
+        design_matrix = retrieve_info_from_participant_table(layout, subjects, config["analysis_options"]["covariate"], config["analysis_options"]["confounds"])
+        t_stats, p_values = regression_analysis(group_data, design_matrix)
+    else:
+        raise ValueError(f"Unknown analysis type: {analysis_type}")
+        
+    # Threshold 1: Uncorrected p-value
+    uncorr_alpha = config["uncorrected_alpha"]
+    uncorr_mask = p_values < uncorr_alpha
+
+    # Threshold 2: FDR correction
+    fdr_alpha = config["fdr_alpha"]
+    fdr_mask = multipletests(p_values.flatten(), alpha=fdr_alpha, method='fdr_bh')[0].reshape(p_values.shape)
+
+    # Threshold 3: Permutation-based threshold
+    n_permutations = config["n_permutations"]
+    if n_permutations < 5000:
+        warnings.warn(f"Running permutation analysis with less than 5000 permutations (you chose {n_permutations}).")
+        
+    null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout, entities, {'observed_t_max': np.nanmax(t_stats), 'observed_t_min': np.nanmin(t_stats)}, design_matrix=design_matrix)
+    
+    # Compute thresholds at desired significance
+    fwe_alpha = float(config["fwe_alpha"])
+    t_max = np.percentile(null_max_distribution, (1 - fwe_alpha / 2) * 100)
+    t_min = np.percentile(null_min_distribution, fwe_alpha / 2 * 100)
+    print(f"Thresholds for max and min stat from null distribution estimated by permutations: {t_max} and {t_min} (n_perms = {n_permutations})")
+    
+    perm_mask = (t_stats > t_max) | (t_stats < t_min)
+    
+    # Save thresholds to a BIDS-compliant JSON file
+    thresholds = {
+        "uncorrected_alpha": uncorr_alpha,
+        "fdr_alpha": fdr_alpha,
+        "fwe_alpha": fwe_alpha,
+        "fwe_permutations_results": {
+            "max_t": t_max,
+            "min_t": t_min,
+            "n_permutations": n_permutations
+        }
+    }
+    
+    threshold_file = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "analysis_label": config["analysis_label"],
+                                                      "method": config["method"]                                                      
+                                                      },
+                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
+                                                 validate=False)
+    
+    ensure_directory(threshold_file)
+    with open(threshold_file, 'w') as f:
+        json.dump(thresholds, f, indent=4)
+    
+    # Get ROIs coords and labels for plotting purposes
+    if method == 'seeds':
+        coords, labels = load_seed_file(config['seeds_file'])
+        
+    elif method == 'ica':
+        extracted_regions_entities = entities.copy()
+        extracted_regions_entities.pop("desc")
+        extracted_regions_entities["suffix"] = "extractedregions"
+        extracted_regions_entities["extension"] = ".nii.gz"
+        extracted_regions_filename = layout.derivatives["connectomix"].get(**extracted_regions_entities)[0]
+        coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
+        labels = None
+    else:
+        # Handle the case where method is an atlas
+        _, labels, coords = get_atlas_data(method, get_cut_coords=True)
+
+    # Create plots of the thresholded group connectivity matrices and connectomes
+    generate_group_matrix_plots(t_stats,
+                                uncorr_mask,
+                                fdr_mask,
+                                perm_mask,
+                                config,
+                                layout,
+                                entities,
+                                labels)
+    
+    generate_group_connectome_plots(t_stats,
+                                    uncorr_mask,
+                                    fdr_mask,
+                                    perm_mask,
+                                    config,
+                                    layout,
+                                    entities,
+                                    coords)
+    
+    # Refresh BIDS indexing of the derivatives to find data for the report
+    output_dir = layout.derivatives['connectomix'].root
+    layout.derivatives.pop('connectomix')
+    layout.add_derivatives(output_dir)
+    
+    # Generate report
+    generate_group_analysis_report(layout, entities, config)
+
 # Extract time series based on specified method
 def extract_timeseries(func_file, t_r, config):
     """
@@ -1767,17 +2208,16 @@ def extract_timeseries(func_file, t_r, config):
 
     """
     method = config['method']
-    method_options = config['method_options']
 
     # Seeds-based extraction
     if method == 'seeds':
         
-        if method_options['seeds_file'] is None:
+        if config['seeds_file'] is None:
             raise ValueError("For seed-based analysis, you must provide the path to a seed file in the config file.")
         
-        coords, labels = load_seed_file(method_options['seeds_file'])
+        coords, labels = load_seed_file(config['seeds_file'])
         
-        radius = method_options['radius']
+        radius = config['radius']
         masker = NiftiSpheresMasker(
             seeds=coords,
             radius=float(radius),
@@ -1791,7 +2231,7 @@ def extract_timeseries(func_file, t_r, config):
     
     # ICA-based extraction
     elif method == 'ica':
-        extractor = method_options["extractor"]
+        extractor = config["extractor"]
         extractor.high_pass = None
         extractor.low_pass  = None
         extractor.t_r = t_r
@@ -1801,7 +2241,7 @@ def extract_timeseries(func_file, t_r, config):
     # Atlas-based extraction
     else:
         if method == 'roiToVoxel':
-            maps = config["method_options"]["roi_mask_path"]
+            maps = config["roi_mask_path"]
             labels = None
         else:
             maps, labels, _ = get_atlas_data(method, get_cut_coords=False)
@@ -2068,13 +2508,6 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
     config : dict or str or Path
         Configuration dict or path to configuration file (can be a .json or .yaml or .yml).
 
-    Raises
-    ------
-    FileNotFoundError
-        fMRI files not found.
-    ValueError
-        fMRI files are too numerous (must match exactly one file).
-
     Returns
     -------
     None.
@@ -2084,10 +2517,10 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
     print(f"Running connectomix (Participant-level) version {__version__}")
 
     # Create BIDSLayout with pipeline and other derivatives
-    layout = setup_layout_with_output_dir(bids_dir, output_dir, derivatives)
+    layout = setup_layout(bids_dir, output_dir, derivatives)
     
     # Load and backup the configuration file
-    config = setup_config(layout, config)
+    config = setup_config(layout, config, 'participant')
 
     # Select all files needed for analysis
     func_files, json_files, confound_files = get_files_for_analysis(layout, config)
@@ -2100,10 +2533,12 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
 
     denoised_files = denoise_fmri_data(layout, resampled_files, confound_files, json_files, config)
 
+    print(f"Selected method: {config['method']}")    
+
     if config["method"] == 'roiToVoxel':
-        run_roi_to_voxel_analysis(layout, denoised_files, json_files, config)
+        roi_to_voxel_participant_analysis(layout, denoised_files, json_files, config)
     else:
-        run_roi_to_roi_analysis(layout, denoised_files, json_files, config)
+        roi_to_roi_participant_analysis(layout, denoised_files, json_files, config)
         
     print("Participant-level analysis completed.")
 
@@ -2130,310 +2565,16 @@ def group_level_analysis(bids_dir, output_dir, config):
     # Print version information
     print(f"Running connectomix (Group-level) version {__version__}")
 
-    # Load config
-    config = load_config(config)
+    # Create BIDSLayout with pipeline and other derivatives
+    layout = setup_layout(bids_dir, output_dir)
     
-    # Create a BIDSLayout to handle files and outputs
-    layout = BIDSLayout(bids_dir, derivatives=[output_dir])
+    # Load and backup the configuration file
+    config = setup_config(layout, config, 'group')
 
-    # Set unspecified config options to default values
-    config = set_unspecified_group_level_options_to_default(config, layout)
-
-    # Get the current date and time
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    
-    # Save config file for reproducibility
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    config_filename = output_dir / "config" / "backups" / f"group_level_config_{timestamp}.json"
-    save_copy_of_config(config, config_filename)
-    print(f"Configuration file backed up at {config_filename}")
-    
-    # Retrieve connectivity type and other configuration parameters
-    connectivity_type = config.get('connectivity_kind')
-    method = config.get('method')
-    task = config.get("tasks")
-    run = config.get("runs")
-    session = config.get("sessions")
-    space = config.get("spaces")
-    analysis_type = config.get("analysis_type")  # Label for the analysis, e.g. "patientVersusControls"
-    
-    entities = {
-        "task": task,
-        "space": space,
-        "session": session,
-        "run": run,
-        "desc": connectivity_type
-    }
-
-    design_matrix = None  # This will be necessary for regression analyses
-
-    # Perform the appropriate group-level analysis
-    if analysis_type == 'independent':
-        # Load group specifications from config
-        # Todo: change terminology from 'group' to 'samples' when performing independent samples tests so that it is consistent with the terminology when doing a paired test.
-        group1_subjects = config['analysis_options']['group1_subjects']
-        group2_subjects = config['analysis_options']['group2_subjects']
-        
-        if method == 'roiToVoxel':
-            coords, labels = load_seed_file(config["method_options"]["seeds_file"])
-            for coord, label in zip(coords, labels):
-                entities["seed"] = label
-                group1_maps = get_maps_from_participant_level(group1_subjects, layout, entities, method)
-                group2_maps = get_maps_from_participant_level(group2_subjects, layout, entities, method)
-                group1_name = config["analysis_options"]["group1_name"]
-                group2_name = config["analysis_options"]["group2_name"]
-    
-                # Gather images in one list            
-                maps = list(group1_maps.values()) + list(group2_maps.values())
-                
-                # Create corresponding design matrix
-                group1_n = len(group1_maps)
-                group2_n = len(group2_maps)
-                
-                # TODO: include the possibility of adding confounds using columns from participants.tsv file
-                design_matrix = pd.DataFrame({
-                    group1_name: [1] * group1_n + [0] * group2_n,
-                    group2_name: [0] * group1_n + [1] * group2_n
-                })
-                
-                maps = convert_4D_to_3D(maps)
-                target_img = nib.load(maps[0]) if isinstance(maps[0], (str, Path)) else maps[0]
-                
-                resampled_maps = []
-                for img in maps:
-                    if check_affines_match([img, target_img]):
-                        resampled_maps.append(img)
-                    else:
-                        print("Doing some resampling, please wait...")
-                        resampled_maps.append(resample_img(img, target_affine=target_img.affine, target_shape=target_img.shape[:3], interpolation='nearest'))
-                
-                glm = SecondLevelModel(smoothing_fwhm=8,
-                                       target_shape=target_img.shape,
-                                       target_affine=target_img.affine)
-                glm.fit(resampled_maps,
-                        design_matrix=design_matrix)
-                # raise ValueError("Group-level for roiToVoxel still work in progress.")
-                
-                contrast_label = group1_name + '-' + group2_name
-                contrast_map = glm.compute_contrast(contrast_label, output_type="z_score")
-                
-                contrast_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                                  "analysis_label": config["analysis_label"],
-                                                                  "method": config["method"],
-                                                                  "seed": label
-                                                                  },
-                                                             path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.nii.gz"],
-                                                             validate=False)
-                ensure_directory(contrast_path)
-                contrast_map.to_filename(contrast_path)
-            
-                # Create plot of contrast map and save
-                contrast_plot_path = layout.derivatives['connectomix'].build_path({**entities,
-                                                                  "analysis_label": config["analysis_label"],
-                                                                  "method": config["method"],
-                                                                  "seed": label
-                                                                  },
-                                                          path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.svg"],
-                                                          validate=False)
-                ensure_directory(contrast_plot_path)
-                contrast_plot = plot_stat_map(
-                                                contrast_map,
-                                                threshold=3.0,
-                                                title=f"roi-to-voxel contrast for seed {label} (coords {coords})",
-                                                cut_coords=coord)
-                contrast_plot.add_markers(
-                                            marker_coords=[coord],
-                                            marker_color="k",
-                                            marker_size=2*config["method_options"]["radius"])
-                contrast_plot.savefig(contrast_plot_path)
-            
-            
-                np_outputs = non_parametric_inference(glm.second_level_input_,
-                      design_matrix=design_matrix,
-                      second_level_contrast=contrast_label,
-                      smoothing_fwhm=config["smoothing"],
-                      two_sided_test=True,
-                      n_jobs=4,
-                      threshold=float(config["cluster_forming_alpha"]),
-                      n_perm=config["n_permutations"])
-                
-                np_logp_max_mass = np_outputs["logp_max_mass"]
-                
-                np_logp_max_mass_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                                  "analysis_label": config["analysis_label"],
-                                                                  "method": config["method"],
-                                                                  "seed": label
-                                                                  },
-                                                             path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.nii.gz"],
-                                                             validate=False)
-                
-                ensure_directory(np_logp_max_mass_path)
-                np_logp_max_mass.to_filename(np_logp_max_mass_path)
-                np_logp_max_mass_plot_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                                  "analysis_label": config["analysis_label"],
-                                                                  "method": config["method"],
-                                                                  "seed": label
-                                                                  },
-                                                             path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.svg"],
-                                                             validate=False)
-                ensure_directory(np_logp_max_mass_plot_path)
-                plot_glass_brain(
-                                np_logp_max_mass,
-                                colorbar=True,
-                                vmax=2.69,  # this is hardcoded but that's not a problem as it is only for plots
-                                display_mode="z",
-                                plot_abs=False,
-                                cut_coords=coords,
-                                threshold=float(config["fwe_alpha"])).savefig(np_logp_max_mass_plot_path)
-            raise ValueError("Group-level analyzes of roiToVoxel data do not deal with statistical thresholding yet.")
-        else:
-            
-            # Check each group has at least two subjects, otherwise no permutation testing is possible
-            check_group_has_several_members(group1_subjects)
-            check_group_has_several_members(group2_subjects)
-            
-            # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
-            group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
-            group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities, method)
-            
-            # For independent tests we dontt need to keep track of subjects labels
-            group1_matrices = list(group1_matrices.values())
-            group2_matrices = list(group2_matrices.values())
-        
-            print(f"Group 1 contains {len(group1_matrices)} participants: {group1_subjects}")
-            print(f"Group 2 contains {len(group2_matrices)} participants: {group2_subjects}")
-            
-            # Convert to 3D arrays: (subjects, nodes, nodes)
-            group1_data = np.stack(group1_matrices, axis=0)
-            group2_data = np.stack(group2_matrices, axis=0)
-            group_data = [group1_data, group2_data]
-            
-            # Independent t-test between different subjects
-            t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
-
-    elif analysis_type == "paired":
-        if method == 'roiToVoxel':
-            raise ValueError("Group-level for method set to roiToVoxel is still work in progress.")
-        else:
-            # Paired t-test within the same subjects
-            paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
-            
-            # Get the two samples from paired_samples (with this we are certain that they are in the right order)
-            sample1 = np.array(list(paired_samples.values()))[:,0]
-            sample2 = np.array(list(paired_samples.values()))[:,1]
-            group_data = [sample1, sample2]
-            
-            if len(sample1) != len(sample2):
-                raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
-                
-            t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
-            
-            entities = remove_pair_making_entity(entities)
-            
-    elif analysis_type == "regression":
-        subjects = config['analysis_options']['subjects_to_regress']
-        if method == 'roiToVoxel':
-            raise ValueError("Group-level for method set to roiToVoxel is still work in progress.")
-        else:
-            group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
-            group_data = list(group_data.values())
-            design_matrix = retrieve_info_from_participant_table(layout, subjects, config["analysis_options"]["covariate"], config["analysis_options"]["confounds"])
-            t_stats, p_values = regression_analysis(group_data, design_matrix)
-
+    if config["method"] == "roiToVoxel":
+        roi_to_voxel_group_analysis(layout, config)
     else:
-        raise ValueError(f"Unknown analysis type: {analysis_type}")
-        
-    if method == 'roiToVoxel':
-        raise ValueError("Group-level for method set to roiToVoxel is still work in progress.")
-    else:
-        # Threshold 1: Uncorrected p-value
-        uncorr_alpha = config["uncorrected_alpha"]
-        uncorr_mask = p_values < uncorr_alpha
-    
-        # Threshold 2: FDR correction
-        fdr_alpha = config["fdr_alpha"]
-        fdr_mask = multipletests(p_values.flatten(), alpha=fdr_alpha, method='fdr_bh')[0].reshape(p_values.shape)
-    
-        # Threshold 3: Permutation-based threshold
-        n_permutations = config["n_permutations"]
-        if n_permutations < 5000:
-            warnings.warn(f"Running permutation analysis with less than 5000 permutations (you chose {n_permutations}).")
-            
-        null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout, entities, {'observed_t_max': np.nanmax(t_stats), 'observed_t_min': np.nanmin(t_stats)}, design_matrix=design_matrix)
-        
-        # Compute thresholds at desired significance
-        fwe_alpha = float(config["fwe_alpha"])
-        t_max = np.percentile(null_max_distribution, (1 - fwe_alpha / 2) * 100)
-        t_min = np.percentile(null_min_distribution, fwe_alpha / 2 * 100)
-        print(f"Thresholds for max and min stat from null distribution estimated by permutations: {t_max} and {t_min} (n_perms = {n_permutations})")
-        
-        perm_mask = (t_stats > t_max) | (t_stats < t_min)
-        
-        # Save thresholds to a BIDS-compliant JSON file
-        thresholds = {
-            "uncorrected_alpha": uncorr_alpha,
-            "fdr_alpha": fdr_alpha,
-            "fwe_alpha": fwe_alpha,
-            "fwe_permutations_results": {
-                "max_t": t_max,
-                "min_t": t_min,
-                "n_permutations": n_permutations
-            }
-        }
-        
-        threshold_file = layout.derivatives["connectomix"].build_path({**entities,
-                                                          "analysis_label": config["analysis_label"],
-                                                          "method": config["method"]                                                      
-                                                          },
-                                                     path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
-                                                     validate=False)
-        
-        ensure_directory(threshold_file)
-        with open(threshold_file, 'w') as f:
-            json.dump(thresholds, f, indent=4)
-        
-        # Get ROIs coords and labels for plotting purposes
-        if method == 'seeds':
-            coords, labels = load_seed_file(config['method_options']['seeds_file'])
-            
-        elif method == 'ica':
-            extracted_regions_entities = entities.copy()
-            extracted_regions_entities.pop("desc")
-            extracted_regions_entities["suffix"] = "extractedregions"
-            extracted_regions_entities["extension"] = ".nii.gz"
-            extracted_regions_filename = layout.derivatives["connectomix"].get(**extracted_regions_entities)[0]
-            coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
-            labels = None
-        else:
-            # Handle the case where method is an atlas
-            _, labels, coords = get_atlas_data(method, get_cut_coords=True)
-    
-        # Create plots of the thresholded group connectivity matrices and connectomes
-        generate_group_matrix_plots(t_stats,
-                                    uncorr_mask,
-                                    fdr_mask,
-                                    perm_mask,
-                                    config,
-                                    layout,
-                                    entities,
-                                    labels)
-        
-        generate_group_connectome_plots(t_stats,
-                                        uncorr_mask,
-                                        fdr_mask,
-                                        perm_mask,
-                                        config,
-                                        layout,
-                                        entities,
-                                        coords)
-        
-        # Refresh BIDS indexing of the derivatives to find data for the report
-        layout.derivatives.pop('connectomix')
-        layout.add_derivatives(output_dir)
-        
-        # Generate report
-        generate_group_analysis_report(layout, entities, config)
+        roi_to_roi_group_analysis(layout, config)
 
     print("Group-level analysis completed.")
 
