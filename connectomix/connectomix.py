@@ -30,7 +30,7 @@ import shutil
 import warnings
 from nibabel import Nifti1Image
 from nilearn.image import load_img, resample_img, resample_to_img, clean_img, index_img
-from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords, find_probabilistic_atlas_cut_coords, plot_stat_map, plot_glass_brain
+from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords, find_probabilistic_atlas_cut_coords, plot_stat_map, plot_glass_brain, plot_design_matrix
 from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sym_matrix
 from nilearn.decomposition import CanICA
@@ -1626,21 +1626,50 @@ def make_second_level_input(layout, label, config):
     
     for file in map_files:
         file_entities = layout.parse_file_entities(file)
-        second_level_input.loc[len(second_level_input)] = [file_entities['subject'], label, file]
+        second_level_input.loc[len(second_level_input)] = [f"sub-{file_entities['subject']}", label, file]
     
     return second_level_input
 
 def get_group_level_confounds(layout, subjects_label, config):
-    participants_file = layout.get(return_type='filename', extension='tsv', scope='raw')[0]
+    participants_file = layout.get(return_type="filename", extension="tsv", scope="raw")[0]
     participants_df = pd.read_csv(participants_file, sep='\t')
-    confounds = participants_df[['participant_id', *config['group_confounds']]]
+    
+    if not isinstance(config["group_confounds"], list):
+        config["group_confounds"] = [config["group_confounds"]]
+    
+    confounds = participants_df[["participant_id", *config["group_confounds"]]]
+    confounds = confounds.rename(columns={"participant_id": "subject_label"}).copy()
+    
+    if "group" in config["group_confounds"]:
+        group_labels = set(confounds["group"].values)
+        
+        for group in group_labels:
+            confounds[group] = 0
+            confounds.loc[confounds["group"] == group, group] = 1
+        
+        confounds.drop(columns=["group"], inplace=True)
+
     confounds.rename(columns={"participant_id": "subject_label"}, inplace=True)
+    
     return None if len(confounds.columns) == 1 else confounds
 
 def make_group_level_design_matrix(layout, second_level_input, label, config):
-    subjects_label = list(second_level_input['subject_label'])
+    subjects_label = list(second_level_input["subject_label"])
     confounds = get_group_level_confounds(layout, subjects_label, config)
+    
     design_matrix = make_second_level_design_matrix(subjects_label, confounds=confounds)
+    
+    entities = get_bids_entities_from_config(config)
+    entities.pop("subject")
+    design_matrix_plot_path = layout.derivatives["connectomix"].build_path({**entities,
+                                                      "analysis_label": config["analysis_label"],
+                                                      "method": config["method"],
+                                                      "seed": label
+                                                      },
+                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_designMatrix.svg"],
+                                                 validate=False)
+    ensure_directory(design_matrix_plot_path)
+    plot_design_matrix(design_matrix, output_file=design_matrix_plot_path)
     
     return design_matrix
 
@@ -1905,6 +1934,7 @@ def roi_to_voxel_group_analysis(layout, config):
         contrast_path = compute_group_level_contrast(layout, glm, label, config)
         save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
 
+        # TODO: there is caveat in this: it does not show the sign of t-score! Direction of effect unknown...
         np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, label, config)
         save_max_mass_plot(layout, np_logp_max_mass_path, label, coord, config)
      
@@ -2475,7 +2505,7 @@ def autonomous_mode(run=False):
             print("No participant-level result detected, assuming participant-level analysis")
             analysis_level = "participant"
         else:
-            print(f"Detected participant-level results for subjects {layout.derivatives["connectomix"].get_subjects()}, assuming group-level analysis")
+            print(f"Detected participant-level results for subjects {layout.derivatives['connectomix'].get_subjects()}, assuming group-level analysis")
             analysis_level = "group"
         
     else:
