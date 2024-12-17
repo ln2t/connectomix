@@ -29,7 +29,7 @@ import nibabel as nib
 import shutil
 import warnings
 from nibabel import Nifti1Image
-from nilearn.image import resample_img, load_img, clean_img, index_img
+from nilearn.image import load_img, resample_img, resample_to_img, clean_img, index_img
 from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords, find_probabilistic_atlas_cut_coords, plot_stat_map, plot_glass_brain
 from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sym_matrix
@@ -1666,7 +1666,7 @@ def compute_group_level_contrast(layout, glm, label, config):
 def save_group_level_contrast_plots(layout, contrast_path, coord, label, config):
     # Create plot of contrast map and save
     entities = get_bids_entities_from_config(config)
-    entities.pop("subjects")
+    entities.pop("subject")
     entities["seed"] = label
     contrast_plot_path = layout.derivatives["connectomix"].build_path({**entities,
                                                       "analysis_label": config["analysis_label"],
@@ -1687,7 +1687,7 @@ def save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
 
 def compute_non_parametric_max_mass(layout, glm, label, config):
     entities = get_bids_entities_from_config(config)
-    entities.pop("subjects")
+    entities.pop("subject")
     entities["seed"] = label
     np_logp_max_mass_path = layout.derivatives["connectomix"].build_path({**entities,
                                                        "analysis_label": config["analysis_label"],
@@ -1700,7 +1700,8 @@ def compute_non_parametric_max_mass(layout, glm, label, config):
     ensure_directory(np_logp_max_mass_path)
     np_outputs = non_parametric_inference(glm.second_level_input_,
            design_matrix=glm.design_matrix_,
-           second_level_contrast=config["group_level_contrast"],
+           second_level_contrast=config["group_contrast"],
+           first_level_contrast=label,
            smoothing_fwhm=config["smoothing"],
            two_sided_test=True,
            n_jobs=2,
@@ -1711,7 +1712,7 @@ def compute_non_parametric_max_mass(layout, glm, label, config):
 
 def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
     entities = get_bids_entities_from_config(config)
-    entities.pop("subjects")
+    entities.pop("subject")
     entities["seed"] = label
     np_logp_max_mass_plot_path = layout.derivatives["connectomix"].build_path({**entities,
                                                       "analysis_label": config["analysis_label"],
@@ -1780,9 +1781,13 @@ def roi_to_voxel_participant_analysis(layout, func_files, json_files, config):
                     high_pass=None,
                 
                     t_r=get_repetition_time(json_file))
+
+                            
                 timeseries = seed_masker.fit_transform(str(func_file))
                 glm = FirstLevelModel(t_r=get_repetition_time(json_file),
-                                      mask_img=mask_img,
+                                      mask_img=resample_to_img(mask_img,
+                                                            func_file,
+                                                            interpolation="nearest"),
                                       high_pass=None)
                 frame_times = np.arange(len(timeseries)) * get_repetition_time(json_file)
                 design_matrix = make_first_level_design_matrix(frame_times=frame_times,
@@ -1900,7 +1905,7 @@ def roi_to_voxel_group_analysis(layout, config):
         contrast_path = compute_group_level_contrast(layout, glm, label, config)
         save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
 
-        np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, config)
+        np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, label, config)
         save_max_mass_plot(layout, np_logp_max_mass_path, label, coord, config)
      
     # if analysis_type == "independent":
