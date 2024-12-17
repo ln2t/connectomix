@@ -1658,6 +1658,9 @@ def make_group_level_design_matrix(layout, second_level_input, label, config):
     
     design_matrix = make_second_level_design_matrix(subjects_label, confounds=confounds)
     
+    if "group" in config["group_confounds"]:
+        design_matrix.drop(columns=["intercept"], inplace=True)
+    
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
     design_matrix_plot_path = layout.derivatives["connectomix"].build_path({**entities,
