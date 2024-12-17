@@ -1107,10 +1107,9 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     # .. canica options
     config["canica_threshold"] = config.get('canica_threshold', 0.5)
     config["canica_min_region_size"] = config.get('canica_min_region_size', 50)    # Extract also regions from the canica components for connectivity analysis
-
     
     # Roi-to-voxel specific parameters
-    config["roi_mask_path"] = config.get("roi_mask_path", "")  # Path to mask for roi-to-voxel
+    config["roi_masks"] = config.get("roi_masks", None)  # List of path to mask for roi-to-voxel
 
     return config
 
@@ -1801,6 +1800,8 @@ def roi_to_voxel_participant_analysis(layout, func_files, json_files, config):
             coords, labels = load_seed_file(config["seeds_file"])
             
             for coord, label in zip(coords, labels):
+                
+                # TODO: rewrite this section - modular design needed!
                 seed_masker = NiftiSpheresMasker(
                     [coord],
                     radius=radius,
@@ -1811,7 +1812,6 @@ def roi_to_voxel_participant_analysis(layout, func_files, json_files, config):
                 
                     t_r=get_repetition_time(json_file))
 
-                            
                 timeseries = seed_masker.fit_transform(str(func_file))
                 glm = FirstLevelModel(t_r=get_repetition_time(json_file),
                                       mask_img=resample_to_img(mask_img,
@@ -1850,7 +1850,16 @@ def roi_to_voxel_participant_analysis(layout, func_files, json_files, config):
                                             marker_size=2*radius)
                 roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
 
-
+        if config["roi_masks"] is not None:
+            if not isinstance(config["roi_masks"], dict):
+                raise ValueError(f"Provided roi_masks field in config file is not valid: {config['roi_masks']}")
+            for roi_name in config["roi_masks"]:
+                roi_mask_path = Path(config["roi_masks"]["roi_name"])
+                # TODO: check that the file roi_mask_path exists
+                pass
+            
+            raise ValueError("Mask-based roiToVoxel analysis not implemented yet.")
+        
 def roi_to_roi_participant_analysis(layout, func_files, json_files, config):
     """
     Run roi-to-roi analysis on denoised data. Save the outputs in BIDS derivative format.
@@ -1937,123 +1946,6 @@ def roi_to_voxel_group_analysis(layout, config):
         # TODO: there is caveat in this: it does not show the sign of t-score! Direction of effect unknown...
         np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, label, config)
         save_max_mass_plot(layout, np_logp_max_mass_path, label, coord, config)
-     
-    # if analysis_type == "independent":
-    #     # Load group specifications from config
-    #     # Todo: change terminology from "group" to "samples" when performing independent samples tests so that it is consistent with the terminology when doing a paired test.
-    #     group1_subjects = config["analysis_options"]["group1_subjects"]
-    #     group2_subjects = config["analysis_options"]["group2_subjects"]
-
-    #     coords, labels = load_seed_file(config["method_options"]["seeds_file"])
-    #     for coord, label in zip(coords, labels):
-    #         entities["seed"] = label
-    #         group1_maps = get_maps_from_participant_level(group1_subjects, layout, entities, method)
-    #         group2_maps = get_maps_from_participant_level(group2_subjects, layout, entities, method)
-    #         group1_name = config["analysis_options"]["group1_name"]
-    #         group2_name = config["analysis_options"]["group2_name"]
-
-    #         # Gather images in one list            
-    #         maps = list(group1_maps.values()) + list(group2_maps.values())
-            
-    #         # Create corresponding design matrix
-    #         group1_n = len(group1_maps)
-    #         group2_n = len(group2_maps)
-            
-    #         design_matrix = pd.DataFrame({
-    #             group1_name: [1] * group1_n + [0] * group2_n,
-    #             group2_name: [0] * group1_n + [1] * group2_n
-    #         })
-            
-    #         maps = convert_4D_to_3D(maps)
-    #         target_img = nib.load(maps[0]) if isinstance(maps[0], (str, Path)) else maps[0]
-            
-    #         resampled_maps = []
-    #         for img in maps:
-    #             if check_affines_match([img, target_img]):
-    #                 resampled_maps.append(img)
-    #             else:
-    #                 print("Doing some resampling, please wait...")
-    #                 resampled_maps.append(resample_img(img, target_affine=target_img.affine, target_shape=target_img.shape[:3], interpolation="nearest"))
-            
-    #         glm = SecondLevelModel(smoothing_fwhm=8,
-    #                                target_shape=target_img.shape,
-    #                                target_affine=target_img.affine)
-    #         glm.fit(resampled_maps,
-    #                 design_matrix=design_matrix)
-    #         # raise ValueError("Group-level for roiToVoxel still work in progress.")
-            
-    #         contrast_label = group1_name + "-" + group2_name
-    #         contrast_map = glm.compute_contrast(contrast_label, output_type="z_score")
-            
-    #         contrast_path = layout.derivatives["connectomix"].build_path({**entities,
-    #                                                           "analysis_label": config["analysis_label"],
-    #                                                           "method": config["method"],
-    #                                                           "seed": label
-    #                                                           },
-    #                                                      path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.nii.gz"],
-    #                                                      validate=False)
-    #         ensure_directory(contrast_path)
-    #         contrast_map.to_filename(contrast_path)
-        
-    #         # Create plot of contrast map and save
-    #         contrast_plot_path = layout.derivatives["connectomix"].build_path({**entities,
-    #                                                           "analysis_label": config["analysis_label"],
-    #                                                           "method": config["method"],
-    #                                                           "seed": label
-    #                                                           },
-    #                                                   path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.svg"],
-    #                                                   validate=False)
-    #         ensure_directory(contrast_plot_path)
-    #         contrast_plot = plot_stat_map(
-    #                                         contrast_map,
-    #                                         threshold=3.0,
-    #                                         title=f"roi-to-voxel contrast for seed {label} (coords {coords})",
-    #                                         cut_coords=coord)
-    #         contrast_plot.add_markers(
-    #                                     marker_coords=[coord],
-    #                                     marker_color="k",
-    #                                     marker_size=2*config["method_options"]["radius"])
-    #         contrast_plot.savefig(contrast_plot_path)
-        
-        
-    #         np_outputs = non_parametric_inference(glm.second_level_input_,
-    #               design_matrix=design_matrix,
-    #               second_level_contrast=contrast_label,
-    #               smoothing_fwhm=config["smoothing"],
-    #               two_sided_test=True,
-    #               n_jobs=4,
-    #               threshold=float(config["cluster_forming_alpha"]),
-    #               n_perm=config["n_permutations"])
-            
-    #         np_logp_max_mass = np_outputs["logp_max_mass"]
-            
-    #         np_logp_max_mass_path = layout.derivatives["connectomix"].build_path({**entities,
-    #                                                           "analysis_label": config["analysis_label"],
-    #                                                           "method": config["method"],
-    #                                                           "seed": label
-    #                                                           },
-    #                                                      path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.nii.gz"],
-    #                                                      validate=False)
-            
-    #         ensure_directory(np_logp_max_mass_path)
-    #         np_logp_max_mass.to_filename(np_logp_max_mass_path)
-    #         np_logp_max_mass_plot_path = layout.derivatives["connectomix"].build_path({**entities,
-    #                                                           "analysis_label": config["analysis_label"],
-    #                                                           "method": config["method"],
-    #                                                           "seed": label
-    #                                                           },
-    #                                                      path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.svg"],
-    #                                                      validate=False)
-    #         ensure_directory(np_logp_max_mass_plot_path)
-    #         plot_glass_brain(
-    #                         np_logp_max_mass,
-    #                         colorbar=True,
-    #                         vmax=2.69,  # this is hardcoded but that's not a problem as it is only for plots
-    #                         display_mode="z",
-    #                         plot_abs=False,
-    #                         cut_coords=coords,
-    #                         threshold=float(config["fwe_alpha"])).savefig(np_logp_max_mass_plot_path)
-    #     raise ValueError("Group-level analyzes of roiToVoxel data do not deal with statistical thresholding yet.")
     
 def roi_to_roi_group_analysis(layout, config):
     # Retrieve connectivity type and other configuration parameters
