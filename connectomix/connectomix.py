@@ -1640,7 +1640,7 @@ def get_group_level_confounds(layout, subjects_label, config):
 def make_group_level_design_matrix(layout, second_level_input, label, config):
     subjects_label = list(second_level_input['subject_label'])
     confounds = get_group_level_confounds(layout, subjects_label, config)
-    design_matrix = make_second_level_design_matrix(subjects_label, confounds=confounds)
+    design_matrix = make_second_level_design_matrix(second_level_input, confounds=confounds)
     return design_matrix
 
 def compute_group_level_contrast(layout, glm, label, config):
