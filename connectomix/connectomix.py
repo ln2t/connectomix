@@ -84,6 +84,20 @@ def setup_config(layout, config, level):
     print(f"Configuration file saved to {config_filename}")
     return config
 
+def get_mask(layout, entities):
+    entites_for_mask = entities.copy()
+    entites_for_mask["desc"] = "brain"
+    entites_for_mask["suffix"] = "mask"
+    mask_img = layout.derivatives["fMRIPrep"].get(**entites_for_mask)
+    if len(mask_img) == 1:
+        mask_img = mask_img[0]
+    elif len(mask_img) == 0:
+        print(entites_for_mask)
+        raise ValueError(f"Mask img for entities {entities} not found.")
+    else:
+        raise ValueError(f"More that one mask for entitites {entities} found: {mask_img}.")
+    return mask_img
+
 def get_bids_entities_from_config(config):
     """
     Extract BIDS entities from config file.
@@ -394,27 +408,27 @@ def get_atlas_data(atlas_name, get_cut_coords=False):
 
     """
             
-    if atlas_name == 'schaeffer100':
+    if atlas_name == "schaeffer100":
         warnings.warn("Using Schaefer 2018 atlas with 100 rois")
         atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
-        maps = atlas['maps']
+        maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=maps) if get_cut_coords else []
         labels = atlas["labels"]
-    elif atlas_name == 'aal':
+    elif atlas_name == "aal":
         warnings.warn("Using AAL atlas")
         atlas = datasets.fetch_atlas_aal()
-        maps = atlas['maps']
+        maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
         labels = atlas["labels"]
-    elif atlas_name == 'harvardoxford':
+    elif atlas_name == "harvardoxford":
         warnings.warn("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
         atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
-        maps = atlas['maps']
+        maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
         labels = atlas["labels"]
         labels=labels[1:] # Needed as first entry is 'background'
     else:
-        raise ValueError(f"Requested atlas {atlas_name} is not supported. Check spelling of documentation.")
+        raise ValueError(f"Requested atlas {atlas_name} is not supported. Check spelling or documentation.")
     return maps, labels, coords
 
 
@@ -1086,6 +1100,7 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     config["method"] = config.get("method", "roiToVoxel")  # The method to define connectome, e.g. from a valid atlas name or "roiToVoxel"
     config["seeds_file"] = config.get("seeds_file", None)  # Path to file with seed coordinates for seed-based and roi-to-voxel
     config["radius"] = config.get("radius", 5)  # Radius of the sphere, in mm, for the seeds
+    config["supported_atlases"] = ["schaeffer100", "aal", "harvardoxford"]  # This is not a user parameters but is used only internally
     
     # Preprocessing parameters
     config["reference_functional_file"] = config.get("reference_functional_file", "first_functional_file")  # Reference functional file for resampling
@@ -1110,6 +1125,12 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     
     # Roi-to-voxel specific parameters
     config["roi_masks"] = config.get("roi_masks", None)  # List of path to mask for roi-to-voxel
+
+    # Consistency checks
+    # TODO: add more consistency checks!
+    if config["method"] == "roiToVoxel" and (config["seeds_file"] is not None and config["roi_masks"] is not None):
+        raise ValueError("Config fields 'seeds_file' and 'roi_masks' cannot both be defined when performing 'roiToVoxel' analyzes")
+    
 
     return config
 
@@ -1607,12 +1628,54 @@ def denoise_fmri_data(layout, resampled_files, confound_files, json_files, confi
             print(f"Denoised data {denoised_path} already exists, skipping.")
     return denoised_paths
 
+def glm_analysis_participant_level(json_file, mask_img, func_file, timeseries):
+    
+    t_r = get_repetition_time(json_file)
+    glm = FirstLevelModel(t_r=t_r,
+                          mask_img=resample_to_img(mask_img,
+                                                func_file,
+                                                interpolation="nearest"),
+                          high_pass=None)
+    frame_times = np.arange(len(timeseries)) * t_r
+    design_matrix = make_first_level_design_matrix(frame_times=frame_times,
+                                                   events=None,
+                                                   hrf_model=None,
+                                                   drift_model=None,
+                                                   add_regs=timeseries)
+    
+    glm.fit(run_imgs=str(func_file),
+            design_matrices=design_matrix)
+    
+    contrast_vector = np.array([1] + [0] * (design_matrix.shape[1] - 1))
+    return glm.compute_contrast(contrast_vector, output_type="effect_size")
+
+def save_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config):
+    # Create plot of z-score map and save
+    roi_to_voxel_plot_path = layout.derivatives["connectomix"].build_path(entities,
+                                              path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_plot.svg' % (config["method"], label)],
+                                              validate=False)
+    ensure_directory(roi_to_voxel_plot_path)
+    
+    if config["seeds_file"] is not None:
+        coords, labels = load_seed_file(config["seeds_file"])
+        coord = coords[labels.index(label)]
+        
+        roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
+                                          title=f"seed-to-voxel effect size for seed {label} (coords {coords})",
+                                          cut_coords=coord)
+        roi_to_voxel_plot.add_markers(marker_coords=[coord],
+                                      marker_color="k",
+                                      marker_size=2*config["radius"])
+    else:
+        roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
+                                          title=f"roi-to-voxel effect size for roi {label}")
+
+    roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
+
+
 def make_second_level_input(layout, label, config):
     second_level_input = pd.DataFrame(columns=['subject_label', 'map_name', 'effects_map_path'])
-    # TODO: include preprocessing?
-    
     entities = get_bids_entities_from_config(config)
-    
     map_files = layout.derivatives["connectomix"].get(return_type='filename',
                                           extension='.nii.gz',
                                           **entities)
@@ -1763,7 +1826,7 @@ def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
                     threshold=float(config["fwe_alpha"])).savefig(np_logp_max_mass_plot_path)
 
 
-def roi_to_voxel_participant_analysis(layout, func_files, json_files, config):
+def roi_to_voxel_participant_analysis(layout, func_file, json_file, timeseries_list, labels, config):
     """
     Run roi-to-voxel analysis on denoised data. Save the outputs in BIDS derivative format.
 
@@ -1779,91 +1842,20 @@ def roi_to_voxel_participant_analysis(layout, func_files, json_files, config):
     None.
 
     """
-    # Iterate through each functional file
-    for (func_file, json_file) in zip(func_files, json_files):
-        # Print status
-        print(f"Processing file {func_file}")
-        entities = layout.parse_file_entities(func_file)
-            
-        entites_for_mask = entities.copy()
-        entites_for_mask["desc"] = "brain"
-        entites_for_mask["suffix"] = "mask"
-        mask_img = layout.derivatives["fMRIPrep"].get(**entites_for_mask)
-        if len(mask_img) == 1:
-            mask_img = mask_img[0]
-        elif len(mask_img) == 0:
-            print(entites_for_mask)
-            raise ValueError(f"Mask img for {func_file} not found.")
-        else:
-            raise ValueError(f"More that one mask for {func_file} found: {mask_img}.")
+    entities = layout.parse_file_entities(func_file)
+    mask_img = get_mask(layout, entities)
+    
+    for timeseries, label in zip(timeseries_list.T, labels):
+        roi_to_voxel_img = glm_analysis_participant_level(json_file, mask_img, func_file, timeseries.reshape(-1, 1))
         
-        if config["seeds_file"] is not None:
-            radius = config["radius"]
+        roi_to_voxel_path = layout.derivatives["connectomix"].build_path(entities,
+                                                  path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_effectSize.nii.gz" % (config["method"], label)],
+                                                  validate=False)
+        roi_to_voxel_img.to_filename(roi_to_voxel_path)
         
-            coords, labels = load_seed_file(config["seeds_file"])
-            
-            for coord, label in zip(coords, labels):
-                
-                # TODO: rewrite this section - modular design needed!
-                seed_masker = NiftiSpheresMasker(
-                    [coord],
-                    radius=radius,
-                    detrend=False,
-                    standardize="zscore_sample",
-                    low_pass=None,
-                    high_pass=None,
-                
-                    t_r=get_repetition_time(json_file))
-
-                timeseries = seed_masker.fit_transform(str(func_file))
-                glm = FirstLevelModel(t_r=get_repetition_time(json_file),
-                                      mask_img=resample_to_img(mask_img,
-                                                            func_file,
-                                                            interpolation="nearest"),
-                                      high_pass=None)
-                frame_times = np.arange(len(timeseries)) * get_repetition_time(json_file)
-                design_matrix = make_first_level_design_matrix(frame_times=frame_times,
-                                                               events=None,
-                                                               hrf_model=None,
-                                                               drift_model=None,
-                                                               add_regs=timeseries)
-                
-                glm.fit(run_imgs=str(func_file),
-                        design_matrices=design_matrix)
-                contrast_vector = np.array([1] + [0] * (design_matrix.shape[1] - 1))
-                roi_to_voxel_img = glm.compute_contrast(contrast_vector, output_type="effect_size")
-                roi_to_voxel_path = layout.derivatives["connectomix"].build_path(entities,
-                                                          path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_effectSize.nii.gz" % (config["method"], label)],
-                                                          validate=False)
-                roi_to_voxel_img.to_filename(roi_to_voxel_path)
-                
-                # Create plot of z-score map and save
-                roi_to_voxel_plot_path = layout.derivatives["connectomix"].build_path(entities,
-                                                          path_patterns=['sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_plot.svg' % (config["method"], label)],
-                                                          validate=False)
-                ensure_directory(roi_to_voxel_plot_path)
-                roi_to_voxel_plot = plot_stat_map(
-                                                roi_to_voxel_img,
-                                                threshold=3.0,
-                                                title=f"roi-to-voxel effect size for seed {label} (coords {coords})",
-                                                cut_coords=coord)
-                roi_to_voxel_plot.add_markers(
-                                            marker_coords=[coord],
-                                            marker_color="k",
-                                            marker_size=2*radius)
-                roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
-
-        if config["roi_masks"] is not None:
-            if not isinstance(config["roi_masks"], dict):
-                raise ValueError(f"Provided roi_masks field in config file is not valid: {config['roi_masks']}")
-            for roi_name in config["roi_masks"]:
-                roi_mask_path = Path(config["roi_masks"]["roi_name"])
-                # TODO: check that the file roi_mask_path exists
-                pass
-            
-            raise ValueError("Mask-based roiToVoxel analysis not implemented yet.")
+        save_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config)
         
-def roi_to_roi_participant_analysis(layout, func_files, json_files, config):
+def roi_to_roi_participant_analysis(layout, func_file, json_file, timeseries_list, labels, config):
     """
     Run roi-to-roi analysis on denoised data. Save the outputs in BIDS derivative format.
 
@@ -1879,56 +1871,35 @@ def roi_to_roi_participant_analysis(layout, func_files, json_files, config):
     None.
 
     """
-    
     connectivity_types = setup_and_check_connectivity_types(config)
+    entities = layout.parse_file_entities(func_file)
     
-    # Compute CanICA components if necessary and store it in the methods options
-    config = compute_canica_components(layout, func_files, config) if config["method"] == "ica" else config
-    
-    # Iterate through each functional file
-    for (func_file, json_file) in zip(func_files, json_files):
-        # Print status
-        print(f"Processing file {func_file}")
-        entities = layout.parse_file_entities(func_file)
+    # Iterate over each connectivity type
+    for connectivity_type in connectivity_types:
+        print(f"Computing connectivity: {connectivity_type}")
+        # Compute connectivityconnectivity_measure
+        connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
+        conn_matrix = connectivity_measure.fit_transform([timeseries_list])[0]
         
-        # Generate the BIDS-compliant filename for the timeseries and save
-        timeseries_path = layout.derivatives["connectomix"].build_path(entities,
-                                                  path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy" % config["method"]],
+        # Mask out the major diagonal
+        np.fill_diagonal(conn_matrix, 0)
+    
+        # Generate the BIDS-compliant filename for the connectivity matrix and save
+        conn_matrix_path = layout.derivatives["connectomix"].build_path(entities,
+                                                  path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy" % (config["method"], connectivity_type)],
                                                   validate=False)
-        ensure_directory(timeseries_path)
+        ensure_directory(conn_matrix_path)
+        np.save(conn_matrix_path, conn_matrix)
         
-        # Extract timeseries
-        timeseries, labels = extract_timeseries(str(func_file),
-                                                get_repetition_time(json_file),
-                                                config)
-        np.save(timeseries_path, timeseries)       
-        
-        # Iterate over each connectivity type
-        for connectivity_type in connectivity_types:
-            print(f"Computing connectivity: {connectivity_type}")
-            # Compute connectivityconnectivity_measure
-            connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
-            conn_matrix = connectivity_measure.fit_transform([timeseries])[0]
-            
-            # Mask out the major diagonal
-            np.fill_diagonal(conn_matrix, 0)
-        
-            # Generate the BIDS-compliant filename for the connectivity matrix and save
-            conn_matrix_path = layout.derivatives["connectomix"].build_path(entities,
-                                                      path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy" % (config["method"], connectivity_type)],
-                                                      validate=False)
-            ensure_directory(conn_matrix_path)
-            np.save(conn_matrix_path, conn_matrix)
-            
-            # Generate the BIDS-compliant filename for the figure, generate the figure and save
-            conn_matrix_plot_path = layout.derivatives["connectomix"].build_path(entities,
-                                                      path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg" % (config["method"], connectivity_type)],
-                                                      validate=False)
-            ensure_directory(conn_matrix_plot_path)
-            plt.figure(figsize=(10, 10))
-            plot_matrix(conn_matrix, labels=labels, colorbar=True)
-            plt.savefig(conn_matrix_plot_path)
-            plt.close()
+        # Generate the BIDS-compliant filename for the figure, generate the figure and save
+        conn_matrix_plot_path = layout.derivatives["connectomix"].build_path(entities,
+                                                  path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg" % (config["method"], connectivity_type)],
+                                                  validate=False)
+        ensure_directory(conn_matrix_plot_path)
+        plt.figure(figsize=(10, 10))
+        plot_matrix(conn_matrix, labels=labels, colorbar=True)
+        plt.savefig(conn_matrix_plot_path)
+        plt.close()
 
 def roi_to_voxel_group_analysis(layout, config):
     
@@ -2141,14 +2112,10 @@ def extract_timeseries(func_file, t_r, config):
         List of ROIs labels, in the same order as in timeseries.
 
     """
-    method = config["method"]
 
-    # Seeds-based extraction
-    if method == "seeds":
-        
-        if config["seeds_file"] is None:
-            raise ValueError("For seed-based analysis, you must provide the path to a seed file in the config file.")
-        
+    method = config["method"]
+    
+    if method == "seeds" or (method == "roiToVoxel" and config["seeds_file"] is not None):
         coords, labels = load_seed_file(config["seeds_file"])
         
         radius = config["radius"]
@@ -2162,25 +2129,17 @@ def extract_timeseries(func_file, t_r, config):
             t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
         )
         timeseries = masker.fit_transform(func_file)
-    
-    # ICA-based extraction
-    elif method == "ica":
-        extractor = config["extractor"]
-        extractor.high_pass = None
-        extractor.low_pass  = None
-        extractor.t_r = t_r
-        timeseries = extractor.transform(func_file)
-        labels = None
-        
-    # Atlas-based extraction
-    else:
-        if method == "roiToVoxel":
-            maps = config["roi_mask_path"]
-            labels = None
+    if method in config["supported_atlases"] or (method == "roiToVoxel" and config["roi_masks"] is not None):
+        if method in config["supported_atlases"]:
+            maps, labels, _ = get_atlas_data(method)
         else:
-            maps, labels, _ = get_atlas_data(method, get_cut_coords=False)
-        
-        # Define masker object and proceed with timeseries computation
+            labels = list(config["roi_masks"].keys())
+            maps = list(config["roi_masks"].values())
+            
+            for roi_path in maps:
+                if not os.path.isfile(roi_path):
+                    raise FileNotFoundError(f"No file found at provided path {roi_path} for roi_mask. Please review your configuration.")
+                    
         masker = NiftiLabelsMasker(
             labels_img=maps,
             standardize="zscore_sample",
@@ -2190,6 +2149,14 @@ def extract_timeseries(func_file, t_r, config):
             t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
         )
         timeseries = masker.fit_transform(func_file)
+    if method == "ica":
+        # ICA-based extraction
+        extractor = config["extractor"]
+        extractor.high_pass = None
+        extractor.low_pass  = None
+        extractor.t_r = t_r
+        timeseries = extractor.transform(func_file)
+        labels = None
 
     return timeseries, labels
 
@@ -2466,13 +2433,36 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
     print("All functional files resampled to match the reference image.")
 
     denoised_files = denoise_fmri_data(layout, resampled_files, confound_files, json_files, config)
+    print("Denoising finished.")
 
-    print(f"Selected method: {config['method']}")    
+    # TODO: replace "ica" by "canica
+    # Compute CanICA components if necessary and store it in the methods options
+    config = compute_canica_components(layout, denoised_files, config) if config["method"] == "ica" else config
+    
+    print(f"Selected method for connectivity analysis: {config['method']}")    
 
-    if config["method"] == "roiToVoxel":
-        roi_to_voxel_participant_analysis(layout, denoised_files, json_files, config)
-    else:
-        roi_to_roi_participant_analysis(layout, denoised_files, json_files, config)
+    # Iterate through each functional file
+    for (func_file, json_file) in zip(denoised_files, json_files):
+        # Print status
+        entities = layout.parse_file_entities(func_file)
+        print(f"Processing subject {entities['subject']}")
+        
+        # Generate the BIDS-compliant filename for the timeseries and save
+        timeseries_path = layout.derivatives["connectomix"].build_path(entities,
+                                                  path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy" % config["method"]],
+                                                  validate=False)
+        ensure_directory(timeseries_path)
+        
+        # Extract timeseries and save
+        timeseries_list, labels = extract_timeseries(str(func_file),
+                                                get_repetition_time(json_file),
+                                                config)
+        np.save(timeseries_path, timeseries_list)
+        
+        if config["method"] == "roiToVoxel":
+            roi_to_voxel_participant_analysis(layout, func_file, json_file, timeseries_list, labels, config)
+        else:
+            roi_to_roi_participant_analysis(layout, func_file, json_file, timeseries_list, labels, config)
         
     print("Participant-level analysis completed.")
 
