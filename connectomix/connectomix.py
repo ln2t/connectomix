@@ -565,18 +565,18 @@ def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
     """
     returns: A dict with key equal to each subject and whose value is a length-2 list with the loaded connectivity matrices
     """
-    subjects =  config["analysis_options"]["subjects"]
+    subjects =  config["subjects"]
     
     # Extract sample-defining entities - some manual operation is required here as BIDSLayout uses singular words (e.g. 'run' unstead of 'runs')
     sample1_entities = entities.copy()
-    sample1_entities['task'] = config["analysis_options"]["sample1_entities"]['tasks']
-    sample1_entities['session'] = config["analysis_options"]["sample1_entities"]['sessions']
-    sample1_entities['run'] = config["analysis_options"]["sample1_entities"]['runs']
+    sample1_entities['task'] = config["sample1_entities"]['tasks']
+    sample1_entities['session'] = config["sample1_entities"]['sessions']
+    sample1_entities['run'] = config["sample1_entities"]['runs']
     
     sample2_entities = entities.copy()
-    sample2_entities['task'] = config["analysis_options"]["sample2_entities"]['tasks']
-    sample2_entities['session'] = config["analysis_options"]["sample2_entities"]['sessions']
-    sample2_entities['run'] = config["analysis_options"]["sample2_entities"]['runs']
+    sample2_entities['task'] = config["sample2_entities"]['tasks']
+    sample2_entities['session'] = config["sample2_entities"]['sessions']
+    sample2_entities['run'] = config["sample2_entities"]['runs']
     
     method = config["method"]
     
@@ -864,12 +864,12 @@ def generate_group_analysis_report(layout, bids_entities, config):
         report_file.write(f"<h2>Connectivity Kind: {connectivity_kinds}</h2>\n")
         report_file.write(f"<h3>Analysis type: {analysis_type}, analysis label {config.get('analysis_label')}</h3>\n")
         if analysis_type == 'independent':
-            report_file.write(f"<h3>Subjects: {config['analysis_options'].get('group1_subjects')} versus {config['analysis_options'].get('group2_subjects')}</h3>\n")
+            report_file.write(f"<h3>Subjects: {config.get('group1_subjects')} versus {config.get('group2_subjects')}</h3>\n")
         elif analysis_type == 'regression':
-            report_file.write(f"<h3>Subjects: {config['analysis_options'].get('subjects_to_regress')}</h3>\n")
-            report_file.write(f"<h3>Covariate: {config['analysis_options'].get('covariate')}</h3>\n")
+            report_file.write(f"<h3>Subjects: {config.get('subjects_to_regress')}</h3>\n")
+            report_file.write(f"<h3>Covariate: {config.get('covariate')}</h3>\n")
             if config.get('analysis_options')['confounds']:
-                report_file.write(f"<h3>Confounds: {config['analysis_options'].get('confounds')}</h3>\n")
+                report_file.write(f"<h3>Confounds: {config.get('confounds')}</h3>\n")
         for suffix in suffixes:
             figure_files = layout.derivatives["connectomix"].get(**bids_entities,
                                                                  suffix=suffix,
@@ -1165,7 +1165,9 @@ def set_unspecified_group_level_options_to_default(config, layout):
     
     # Participant-level parameters
     config["method"] = config.get("method", "roiToVoxel")
+    config["seeds_file"] = config.get("seeds_file", None)  # Path to file with seed coordinates for seed-based and roi-to-voxel
     config["radius"] = config.get("radius", 5)
+    config["roi_masks"] = config.get("roi_masks", None)  # List of path to mask for roi-to-voxel
     
     # Analysis parameters
     config["analysis_type"] = config.get("analysis_type", "independent")  # Options: 'independent' or 'paired' or 'regression'
@@ -1184,8 +1186,30 @@ def set_unspecified_group_level_options_to_default(config, layout):
     config["cluster_forming_alpha"] = config.get("cluster_forming_alpha", 0.01)  # p-value for cluster forming threshold in roiToVoxel analysiss
     
     # Roi-to-roi specific parameters
-    config["connectivity_kinds"] = config.get("connectivity_kinds", "correlation")
+    config["connectivity_kinds"] = config.get("connectivity_kinds", ["correlation"])
+    config["group1_subjects"] = config.get("group1_subjects", None)
+    config["group2_subjects"] = config.get("group2_subjects", None)
     
+    if config["analysis_type"] == 'independent' and config["group1_subjects"] is None:
+        guessed_groups = guess_groups(layout)
+        if len(guessed_groups) == 2:
+            group1_name = list(guessed_groups.keys())[0]
+            group2_name = list(guessed_groups.keys())[1]
+            warnings.warn(f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
+            config["group1_subjects"] = list(guessed_groups.values())[0]
+            config["group2_subjects"] = list(guessed_groups.values())[1]
+            config["analysis_label"] = f"{group1_name}VersuS{group2_name}"  # This overwrites the above generic name to ensure people don't get confused with the automatic selection of subjects
+            warnings.warn(f"Setting analysis label to {config['analysis_label']}")
+            config["group1_name"] = group1_name
+            config["group2_name"] = group2_name
+        else:
+            config["group1_subjects"] = config.get("subjects", layout.derivatives["connectomix"].get_subjects())  # this is used only through the --helper tool (or the autonomous mode)
+            warnings.warn("Could not detect two groups, putting all subjects into first group.")
+
+    # List-ify connectivity_kinds in case it was not set to a list in config by user
+    if not isinstance(config["connectivity_kinds"], list):
+        config["connectivity_kinds"] = [config["connectivity_kinds"]]
+
     # analysis_options = {}
     
     # # If "analysis_options" is not set by user, then try to create it
@@ -1220,10 +1244,10 @@ def set_unspecified_group_level_options_to_default(config, layout):
     #                                                         runs=config.get("runs"))
     #             analysis_options["sample2_entities"] = analysis_options["sample1_entities"]  # This does not make sense, but is done only to help the user to fine-tune the config file manually.
                 
-    # TODO: add more checks that config['analysis_options'] has all required information to work
+    # TODO: add more checks that config has all required information to work
     # Set the analysis_options field
     # Todo: enable confounds to be optional in the config file. Currently it does not work if analysis_options are set in config file as it does not take the default value in the following line. But we want to be able to leave the confounds field empty in the config file.
-    # config["analysis_options"] = config.get("analysis_options", analysis_options)
+    # config = config.get("analysis_options", analysis_options)
     
     # if config.get("method") == 'seeds' or config.get("method") == 'roiToVoxel':
     #     config["radius"] = config.get("radius", 5)
@@ -1385,27 +1409,25 @@ sessions: {config.get("sessions")}
 # Selected space
 spaces: {config.get("spaces")}
 
-# Analysis options
-analysis_options:
-    # Groups to compare: names and subjects
-    group1_name: {config["analysis_options"].get("group1_name")}
-    group2_name: {config["analysis_options"].get("group2_name")}
-    group1_subjects: {config["analysis_options"].get("group1_subjects")}
-    group2_subjects: {config["analysis_options"].get("group2_subjects")}
-    # Paired analysis specifications
-    # subjects : {paired_config["analysis_options"]["subjects"]}  # Subjects to include in the paired analysis
-    # sample1_entities :  # These entities altogether must match exaclty two scans be subject
-        # tasks: {paired_config["analysis_options"]["sample1_entities"]["tasks"]}
-        # sessions: {paired_config["analysis_options"]["sample1_entities"]["sessions"]}
-        # runs: {paired_config["analysis_options"]["sample1_entities"]["runs"]}
-    # sample2_entities : 
-        # tasks: {paired_config["analysis_options"]["sample2_entities"]["tasks"]}
-        # sessions: {paired_config["analysis_options"]["sample2_entities"]["sessions"]}
-        # runs: {paired_config["analysis_options"]["sample2_entities"]["runs"]}
-    # Regression parameters
-    # subjects_to_regress: {regression_config["analysis_options"].get("subjects_to_regress")}  # Subjects to include in the regression analysis
-    # covariate: {regression_config["analysis_options"].get("covariate")}  # Covariate for analysis type 'regression'
-    # confounds: {regression_config["analysis_options"].get("confounds")}  # Confounds for analysis type 'regression' (optionnal)
+# Groups to compare: names and subjects
+group1_name: {config.get("group1_name")}
+group2_name: {config.get("group2_name")}
+group1_subjects: {config.get("group1_subjects")}
+group2_subjects: {config.get("group2_subjects")}
+# Paired analysis specifications
+# subjects : {paired_config["subjects"]}  # Subjects to include in the paired analysis
+# sample1_entities :  # These entities altogether must match exaclty two scans be subject
+    # tasks: {paired_config["sample1_entities"]["tasks"]}
+    # sessions: {paired_config["sample1_entities"]["sessions"]}
+    # runs: {paired_config["sample1_entities"]["runs"]}
+# sample2_entities : 
+    # tasks: {paired_config["sample2_entities"]["tasks"]}
+    # sessions: {paired_config["sample2_entities"]["sessions"]}
+    # runs: {paired_config["sample2_entities"]["runs"]}
+# Regression parameters
+# subjects_to_regress: {regression_config.get("subjects_to_regress")}  # Subjects to include in the regression analysis
+# covariate: {regression_config.get("covariate")}  # Covariate for analysis type 'regression'
+# confounds: {regression_config.get("confounds")}  # Confounds for analysis type 'regression' (optionnal)
 
 # Kind of connectivity used at participant-level
 connectivity_kind: {config.get("connectivity_kinds")}
@@ -1909,8 +1931,15 @@ def roi_to_voxel_group_analysis(layout, config):
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
     
-    coords, labels = load_seed_file(config["seeds_file"])
-    for coord, label in zip(coords, labels):
+    if config["seeds_file"]:
+        coords, labels = load_seed_file(config["seeds_file"])
+    elif config["roi_masks"]:
+        labels = list(config["roi_masks"].keys())
+        coords = None
+    
+    # TODO: add check at group level that config file should either have seeds_file OR roi_masks
+    
+    for label in labels:
         second_level_input = make_second_level_input(layout, label, config)  # get all first-level maps. In paired case, compute differences. Resamples and save all in folder.
         design_matrix = make_group_level_design_matrix(layout, second_level_input, label, config)
 
@@ -1918,175 +1947,179 @@ def roi_to_voxel_group_analysis(layout, config):
         glm.fit(second_level_input, design_matrix=design_matrix)
         
         contrast_path = compute_group_level_contrast(layout, glm, label, config)
-        save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
 
         # TODO: there is caveat in this: it does not show the sign of t-score! Direction of effect unknown...
         np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, label, config)
-        save_max_mass_plot(layout, np_logp_max_mass_path, label, coord, config)
+    
+    if coords:
+        for coord, label in zip(coords, labels):
+            save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
+            save_max_mass_plot(layout, np_logp_max_mass_path, label, coord, config)
     
 def roi_to_roi_group_analysis(layout, config):
-    # Retrieve connectivity type and other configuration parameters
-    connectivity_kinds = config.get("connectivity_kinds")
-    method = config.get("method")
-    task = config.get("tasks")
-    run = config.get("runs")
-    session = config.get("sessions")
-    space = config.get("spaces")
-    analysis_type = config.get("analysis_type")  # Label for the analysis, e.g. "independent"
     
-    entities = {
-        "task": task,
-        "space": space,
-        "session": session,
-        "run": run,
-        "desc": connectivity_kinds
-    }
-
-    design_matrix = None  # This will be necessary for regression analyses
-
-    # Perform the appropriate group-level analysis
-    if analysis_type == "independent":
-        # Load group specifications from config
-        # Todo: change terminology from "group" to "samples" when performing independent samples tests so that it is consistent with the terminology when doing a paired test.
-        group1_subjects = config["analysis_options"]["group1_subjects"]
-        group2_subjects = config["analysis_options"]["group2_subjects"]
-            
-        # Check each group has at least two subjects, otherwise no permutation testing is possible
-        check_group_has_several_members(group1_subjects)
-        check_group_has_several_members(group2_subjects)
+    for connectivity_kind in config.get("connectivity_kinds"):
+        # Retrieve connectivity type and other configuration parameters
+        method = config.get("method")
+        task = config.get("tasks")
+        run = config.get("runs")
+        session = config.get("sessions")
+        space = config.get("spaces")
+        analysis_type = config.get("analysis_type")  # Label for the analysis, e.g. "independent"
         
-        # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
-        group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
-        group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities, method)
-        
-        # For independent tests we dontt need to keep track of subjects labels
-        group1_matrices = list(group1_matrices.values())
-        group2_matrices = list(group2_matrices.values())
-    
-        print(f"Group 1 contains {len(group1_matrices)} participants: {group1_subjects}")
-        print(f"Group 2 contains {len(group2_matrices)} participants: {group2_subjects}")
-        
-        # Convert to 3D arrays: (subjects, nodes, nodes)
-        group1_data = np.stack(group1_matrices, axis=0)
-        group2_data = np.stack(group2_matrices, axis=0)
-        group_data = [group1_data, group2_data]
-        
-        # Independent t-test between different subjects
-        t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
-
-    elif analysis_type == "paired":
-        # Paired t-test within the same subjects
-        paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
-        
-        # Get the two samples from paired_samples (with this we are certain that they are in the right order)
-        sample1 = np.array(list(paired_samples.values()))[:,0]
-        sample2 = np.array(list(paired_samples.values()))[:,1]
-        group_data = [sample1, sample2]
-        
-        if len(sample1) != len(sample2):
-            raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
-            
-        t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
-        
-        entities = remove_pair_making_entity(entities)
-            
-    elif analysis_type == "regression":
-        subjects = config["analysis_options"]["subjects_to_regress"]
-        group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
-        group_data = list(group_data.values())
-        design_matrix = retrieve_info_from_participant_table(layout, subjects, config["analysis_options"]["covariate"], config["analysis_options"]["confounds"])
-        t_stats, p_values = regression_analysis(group_data, design_matrix)
-    else:
-        raise ValueError(f"Unknown analysis type: {analysis_type}")
-        
-    # Threshold 1: Uncorrected p-value
-    uncorr_alpha = config["uncorrected_alpha"]
-    uncorr_mask = p_values < uncorr_alpha
-
-    # Threshold 2: FDR correction
-    fdr_alpha = config["fdr_alpha"]
-    fdr_mask = multipletests(p_values.flatten(), alpha=fdr_alpha, method="fdr_bh")[0].reshape(p_values.shape)
-
-    # Threshold 3: Permutation-based threshold
-    n_permutations = config["n_permutations"]
-    if n_permutations < 5000:
-        warnings.warn(f"Running permutation analysis with less than 5000 permutations (you chose {n_permutations}).")
-        
-    null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout, entities, {"observed_t_max": np.nanmax(t_stats), "observed_t_min": np.nanmin(t_stats)}, design_matrix=design_matrix)
-    
-    # Compute thresholds at desired significance
-    fwe_alpha = float(config["fwe_alpha"])
-    t_max = np.percentile(null_max_distribution, (1 - fwe_alpha / 2) * 100)
-    t_min = np.percentile(null_min_distribution, fwe_alpha / 2 * 100)
-    print(f"Thresholds for max and min stat from null distribution estimated by permutations: {t_max} and {t_min} (n_perms = {n_permutations})")
-    
-    perm_mask = (t_stats > t_max) | (t_stats < t_min)
-    
-    # Save thresholds to a BIDS-compliant JSON file
-    thresholds = {
-        "uncorrected_alpha": uncorr_alpha,
-        "fdr_alpha": fdr_alpha,
-        "fwe_alpha": fwe_alpha,
-        "fwe_permutations_results": {
-            "max_t": t_max,
-            "min_t": t_min,
-            "n_permutations": n_permutations
+        entities = {
+            "task": task,
+            "space": space,
+            "session": session,
+            "run": run,
+            "desc": connectivity_kind
         }
-    }
     
-    threshold_file = layout.derivatives["connectomix"].build_path({**entities,
-                                                      "analysis_label": config["analysis_label"],
-                                                      "method": config["method"]                                                      
-                                                      },
-                                                 path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
-                                                 validate=False)
+        design_matrix = None  # This will be necessary for regression analyses
     
-    ensure_directory(threshold_file)
-    with open(threshold_file, "w") as f:
-        json.dump(thresholds, f, indent=4)
-    
-    # Get ROIs coords and labels for plotting purposes
-    if method == "seeds":
-        coords, labels = load_seed_file(config["seeds_file"])
+        # Perform the appropriate group-level analysis
+        if analysis_type == "independent":
+            # Load group specifications from config
+            # Todo: change terminology from "group" to "samples" when performing independent samples tests so that it is consistent with the terminology when doing a paired test.
+            group1_subjects = config["group1_subjects"]
+            group2_subjects = config["group2_subjects"]
+                
+            # Check each group has at least two subjects, otherwise no permutation testing is possible
+            check_group_has_several_members(group1_subjects)
+            check_group_has_several_members(group2_subjects)
+            
+            # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
+            group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities, method)
+            group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities, method)
+            
+            # For independent tests we dontt need to keep track of subjects labels
+            group1_matrices = list(group1_matrices.values())
+            group2_matrices = list(group2_matrices.values())
         
-    elif method == "ica":
-        extracted_regions_entities = entities.copy()
-        extracted_regions_entities.pop("desc")
-        extracted_regions_entities["suffix"] = "extractedregions"
-        extracted_regions_entities["extension"] = ".nii.gz"
-        extracted_regions_filename = layout.derivatives["connectomix"].get(**extracted_regions_entities)[0]
-        coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
-        labels = None
-    else:
-        # Handle the case where method is an atlas
-        _, labels, coords = get_atlas_data(method, get_cut_coords=True)
-
-    # Create plots of the thresholded group connectivity matrices and connectomes
-    generate_group_matrix_plots(t_stats,
-                                uncorr_mask,
-                                fdr_mask,
-                                perm_mask,
-                                config,
-                                layout,
-                                entities,
-                                labels)
+            print(f"Group 1 contains {len(group1_matrices)} participants: {group1_subjects}")
+            print(f"Group 2 contains {len(group2_matrices)} participants: {group2_subjects}")
+            
+            # Convert to 3D arrays: (subjects, nodes, nodes)
+            group1_data = np.stack(group1_matrices, axis=0)
+            group2_data = np.stack(group2_matrices, axis=0)
+            group_data = [group1_data, group2_data]
+            
+            # Independent t-test between different subjects
+            t_stats, p_values = ttest_ind(group1_data, group2_data, axis=0, equal_var=False)
     
-    generate_group_connectome_plots(t_stats,
+        elif analysis_type == "paired":
+            # Paired t-test within the same subjects
+            paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
+            
+            # Get the two samples from paired_samples (with this we are certain that they are in the right order)
+            sample1 = np.array(list(paired_samples.values()))[:,0]
+            sample2 = np.array(list(paired_samples.values()))[:,1]
+            group_data = [sample1, sample2]
+            
+            if len(sample1) != len(sample2):
+                raise ValueError("Paired t-test requires an equal number of subjects in both samples.")
+                
+            t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
+            
+            entities = remove_pair_making_entity(entities)
+                
+        elif analysis_type == "regression":
+            subjects = config["subjects_to_regress"]
+            group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
+            group_data = list(group_data.values())
+            design_matrix = retrieve_info_from_participant_table(layout, subjects, config["covariate"], config["confounds"])
+            t_stats, p_values = regression_analysis(group_data, design_matrix)
+        else:
+            raise ValueError(f"Unknown analysis type: {analysis_type}")
+            
+        # Threshold 1: Uncorrected p-value
+        uncorr_alpha = config["uncorrected_alpha"]
+        uncorr_mask = p_values < uncorr_alpha
+    
+        # Threshold 2: FDR correction
+        fdr_alpha = config["fdr_alpha"]
+        fdr_mask = multipletests(p_values.flatten(), alpha=fdr_alpha, method="fdr_bh")[0].reshape(p_values.shape)
+    
+        # Threshold 3: Permutation-based threshold
+        n_permutations = config["n_permutations"]
+        if n_permutations < 5000:
+            warnings.warn(f"Running permutation analysis with less than 5000 permutations (you chose {n_permutations}).")
+            
+        null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout, entities, {"observed_t_max": np.nanmax(t_stats), "observed_t_min": np.nanmin(t_stats)}, design_matrix=design_matrix)
+        
+        # Compute thresholds at desired significance
+        fwe_alpha = float(config["fwe_alpha"])
+        t_max = np.percentile(null_max_distribution, (1 - fwe_alpha / 2) * 100)
+        t_min = np.percentile(null_min_distribution, fwe_alpha / 2 * 100)
+        print(f"Thresholds for max and min stat from null distribution estimated by permutations: {t_max} and {t_min} (n_perms = {n_permutations})")
+        
+        perm_mask = (t_stats > t_max) | (t_stats < t_min)
+        
+        # Save thresholds to a BIDS-compliant JSON file
+        thresholds = {
+            "uncorrected_alpha": uncorr_alpha,
+            "fdr_alpha": fdr_alpha,
+            "fwe_alpha": fwe_alpha,
+            "fwe_permutations_results": {
+                "max_t": t_max,
+                "min_t": t_min,
+                "n_permutations": n_permutations
+            }
+        }
+        
+        threshold_file = layout.derivatives["connectomix"].build_path({**entities,
+                                                          "analysis_label": config["analysis_label"],
+                                                          "method": config["method"]                                                      
+                                                          },
+                                                     path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
+                                                     validate=False)
+        
+        ensure_directory(threshold_file)
+        with open(threshold_file, "w") as f:
+            json.dump(thresholds, f, indent=4)
+        
+        # Get ROIs coords and labels for plotting purposes
+        if method == "seeds":
+            coords, labels = load_seed_file(config["seeds_file"])
+            
+        elif method == "ica":
+            extracted_regions_entities = entities.copy()
+            extracted_regions_entities.pop("desc")
+            extracted_regions_entities["suffix"] = "extractedregions"
+            extracted_regions_entities["extension"] = ".nii.gz"
+            extracted_regions_filename = layout.derivatives["connectomix"].get(**extracted_regions_entities)[0]
+            coords=find_probabilistic_atlas_cut_coords(extracted_regions_filename)
+            labels = None
+        else:
+            # Handle the case where method is an atlas
+            _, labels, coords = get_atlas_data(method, get_cut_coords=True)
+    
+        # Create plots of the thresholded group connectivity matrices and connectomes
+        generate_group_matrix_plots(t_stats,
                                     uncorr_mask,
                                     fdr_mask,
                                     perm_mask,
                                     config,
                                     layout,
                                     entities,
-                                    coords)
-    
-    # Refresh BIDS indexing of the derivatives to find data for the report
-    output_dir = layout.derivatives["connectomix"].root
-    layout.derivatives.pop("connectomix")
-    layout.add_derivatives(output_dir)
-    
-    # Generate report
-    generate_group_analysis_report(layout, entities, config)
+                                    labels)
+        
+        generate_group_connectome_plots(t_stats,
+                                        uncorr_mask,
+                                        fdr_mask,
+                                        perm_mask,
+                                        config,
+                                        layout,
+                                        entities,
+                                        coords)
+        
+        # Refresh BIDS indexing of the derivatives to find data for the report
+        output_dir = layout.derivatives["connectomix"].root
+        layout.derivatives.pop("connectomix")
+        layout.add_derivatives(output_dir)
+        
+        # Generate report
+        generate_group_analysis_report(layout, entities, config)
 
 # Extract time series based on specified method
 def extract_timeseries(func_file, t_r, config):
@@ -2455,6 +2488,7 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
         print(f"Processing subject {entities['subject']}")
         
         # Generate the BIDS-compliant filename for the timeseries and save
+        # TODO: add label to output path. This requires sont change in the structure here...
         timeseries_path = layout.derivatives["connectomix"].build_path(entities,
                                                   path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy" % config["method"]],
                                                   validate=False)
