@@ -175,13 +175,14 @@ def get_files_for_analysis(layout, config):
         
     return func_files, json_files, confound_files
 
-def setup_and_check_connectivity_types(config):
+def setup_and_check_connectivity_kinds(config):
     # Set up connectivity measures
-    connectivity_types = config["connectivity_kind"]
-    if isinstance(connectivity_types, str):
-        connectivity_types = [connectivity_types]
-    elif not isinstance(connectivity_types, list):
-        raise ValueError(f"The connectivity_types value must either be a string or a list. You provided {connectivity_types}.")
+    connectivity_kinds = config["connectivity_kinds"]
+    if isinstance(connectivity_kinds, str):
+        connectivity_kinds = [connectivity_kinds]
+    elif not isinstance(connectivity_kinds, list):
+        raise ValueError(f"The connectivity_kinds value must either be a string or a list. You provided {connectivity_kinds}.")
+    return connectivity_kinds
 
 # Custom non-valid entity filter
 def apply_nonbids_filter(entity, value, files):
@@ -834,7 +835,6 @@ def create_dataset_description(output_dir):
         json.dump(description, f, indent=4)
 
 
-
 def generate_group_analysis_report(layout, bids_entities, config):
     """
     Generates a group analysis report based on the method and connectivity kind.
@@ -843,7 +843,7 @@ def generate_group_analysis_report(layout, bids_entities, config):
 
     method = config.get("method")
     analysis_label = config.get('analysis_label')
-    connectivity_kind = config.get("connectivity_kind")
+    connectivity_kinds = config.get("connectivity_kinds")
     analysis_type = config.get("analysis_type")
     
     entities = dict(**bids_entities ,
@@ -861,7 +861,7 @@ def generate_group_analysis_report(layout, bids_entities, config):
     with open(report_output_path, 'w') as report_file:
         # Write the title of the report
         report_file.write(f"<h1>Group analysis Report for Method: {method}</h1>\n")
-        report_file.write(f"<h2>Connectivity Kind: {connectivity_kind}</h2>\n")
+        report_file.write(f"<h2>Connectivity Kind: {connectivity_kinds}</h2>\n")
         report_file.write(f"<h3>Analysis type: {analysis_type}, analysis label {config.get('analysis_label')}</h3>\n")
         if analysis_type == 'independent':
             report_file.write(f"<h3>Subjects: {config['analysis_options'].get('group1_subjects')} versus {config['analysis_options'].get('group2_subjects')}</h3>\n")
@@ -1118,7 +1118,7 @@ def set_unspecified_participant_level_options_to_default(config, layout):
         config["spaces"] = [space for space in config["spaces"] if space != 'MNI152NLin6Asym']
     
     # Roi-to-roi specific parameters
-    config["connectivity_kind"] = config.get("connectivity_kind", "correlation")  # The kind of connectivity measure, unused for roi-to-voxel
+    config["connectivity_kinds"] = config.get("connectivity_kinds", ["correlation"])  # The kind of connectivity measure, unused for roi-to-voxel
     # .. canica options
     config["canica_threshold"] = config.get('canica_threshold', 0.5)
     config["canica_min_region_size"] = config.get('canica_min_region_size', 50)    # Extract also regions from the canica components for connectivity analysis
@@ -1131,6 +1131,9 @@ def set_unspecified_participant_level_options_to_default(config, layout):
     if config["method"] == "roiToVoxel" and (config["seeds_file"] is not None and config["roi_masks"] is not None):
         raise ValueError("Config fields 'seeds_file' and 'roi_masks' cannot both be defined when performing 'roiToVoxel' analyzes")
     
+    # List-ify connectivity_kinds in case it was not set to a list in config by user
+    if not isinstance(config["connectivity_kinds"], list):
+        config["connectivity_kinds"] = [config["connectivity_kinds"]]
 
     return config
 
@@ -1181,7 +1184,7 @@ def set_unspecified_group_level_options_to_default(config, layout):
     config["cluster_forming_alpha"] = config.get("cluster_forming_alpha", 0.01)  # p-value for cluster forming threshold in roiToVoxel analysiss
     
     # Roi-to-roi specific parameters
-    config["connectivity_kind"] = config.get("connectivity_kind", "correlation")
+    config["connectivity_kinds"] = config.get("connectivity_kinds", "correlation")
     
     # analysis_options = {}
     
@@ -1292,7 +1295,7 @@ confound_columns: {config.get("confound_columns")}
 ica_aroma: {config.get("ica_aroma")}
 
 # Kind of connectivity measure to compute
-connectivity_kind: {config.get("connectivity_kind")}  # Choose from covariance, correlation, partial correlation or precision. This option is passed to nilearn.connectome.ConnectivityMeasure.
+connectivity_kind: {config.get("connectivity_kinds")}  # Choose from covariance, correlation, partial correlation or precision. This option is passed to nilearn.connectome.ConnectivityMeasure.
 
 # Method to define regions of interests to compute connectivity
 method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 with 100 rois by default. More options are described in the documentation.
@@ -1405,7 +1408,7 @@ analysis_options:
     # confounds: {regression_config["analysis_options"].get("confounds")}  # Confounds for analysis type 'regression' (optionnal)
 
 # Kind of connectivity used at participant-level
-connectivity_kind: {config.get("connectivity_kind")}
+connectivity_kind: {config.get("connectivity_kinds")}
 
 # Method used at participant-level
 method: {config.get("method")}
@@ -1871,14 +1874,14 @@ def roi_to_roi_participant_analysis(layout, func_file, json_file, timeseries_lis
     None.
 
     """
-    connectivity_types = setup_and_check_connectivity_types(config)
+    connectivity_kinds = setup_and_check_connectivity_kinds(config)
     entities = layout.parse_file_entities(func_file)
     
     # Iterate over each connectivity type
-    for connectivity_type in connectivity_types:
-        print(f"Computing connectivity: {connectivity_type}")
+    for connectivity_kind in connectivity_kinds:
+        print(f"Computing connectivity: {connectivity_kind}")
         # Compute connectivityconnectivity_measure
-        connectivity_measure = ConnectivityMeasure(kind=connectivity_type)
+        connectivity_measure = ConnectivityMeasure(kind=connectivity_kind)
         conn_matrix = connectivity_measure.fit_transform([timeseries_list])[0]
         
         # Mask out the major diagonal
@@ -1886,14 +1889,14 @@ def roi_to_roi_participant_analysis(layout, func_file, json_file, timeseries_lis
     
         # Generate the BIDS-compliant filename for the connectivity matrix and save
         conn_matrix_path = layout.derivatives["connectomix"].build_path(entities,
-                                                  path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy" % (config["method"], connectivity_type)],
+                                                  path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy" % (config["method"], connectivity_kind)],
                                                   validate=False)
         ensure_directory(conn_matrix_path)
         np.save(conn_matrix_path, conn_matrix)
         
         # Generate the BIDS-compliant filename for the figure, generate the figure and save
         conn_matrix_plot_path = layout.derivatives["connectomix"].build_path(entities,
-                                                  path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg" % (config["method"], connectivity_type)],
+                                                  path_patterns=["sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg" % (config["method"], connectivity_kind)],
                                                   validate=False)
         ensure_directory(conn_matrix_plot_path)
         plt.figure(figsize=(10, 10))
@@ -1923,7 +1926,7 @@ def roi_to_voxel_group_analysis(layout, config):
     
 def roi_to_roi_group_analysis(layout, config):
     # Retrieve connectivity type and other configuration parameters
-    connectivity_type = config.get("connectivity_kind")
+    connectivity_kinds = config.get("connectivity_kinds")
     method = config.get("method")
     task = config.get("tasks")
     run = config.get("runs")
@@ -1936,7 +1939,7 @@ def roi_to_roi_group_analysis(layout, config):
         "space": space,
         "session": session,
         "run": run,
-        "desc": connectivity_type
+        "desc": connectivity_kinds
     }
 
     design_matrix = None  # This will be necessary for regression analyses
@@ -2176,7 +2179,7 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
     analysis_type = config.get("analysis_type")
     
     # Load pre-existing permuted data, if any
-    perm_files = layout.derivatives["connectomix"].get(desc=config["connectivity_kind"],
+    perm_files = layout.derivatives["connectomix"].get(desc=config["connectivity_kinds"],
                                                        extension=".npy",
                                                        suffix="permutations",
                                                        return_type="filename")
