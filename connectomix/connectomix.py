@@ -2131,24 +2131,27 @@ def extract_timeseries(func_file, t_r, config):
         timeseries = masker.fit_transform(func_file)
     if method in config["supported_atlases"] or (method == "roiToVoxel" and config["roi_masks"] is not None):
         if method in config["supported_atlases"]:
-            maps, labels, _ = get_atlas_data(method)
+            imgs, labels, _ = get_atlas_data(method)
         else:
             labels = list(config["roi_masks"].keys())
-            maps = list(config["roi_masks"].values())
+            imgs = list(config["roi_masks"].values())
             
-            for roi_path in maps:
+            for roi_path in imgs:
                 if not os.path.isfile(roi_path):
                     raise FileNotFoundError(f"No file found at provided path {roi_path} for roi_mask. Please review your configuration.")
-                    
-        masker = NiftiLabelsMasker(
-            labels_img=maps,
-            standardize="zscore_sample",
-            detrend=False,
-            high_pass=None,
-            low_pass=None,
-            t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
-        )
-        timeseries = masker.fit_transform(func_file)
+            
+        timeseries = []
+        for img in imgs:
+            masker = NiftiLabelsMasker(
+                labels_img=img,
+                standardize="zscore_sample",
+                detrend=False,
+                high_pass=None,
+                low_pass=None,
+                t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
+            )
+            timeseries.append(masker.fit_transform(func_file))
+        timeseries = np.hstack(timeseries)
     if method == "ica":
         # ICA-based extraction
         extractor = config["extractor"]
