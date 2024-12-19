@@ -2135,6 +2135,7 @@ def extract_timeseries(func_file, t_r, config):
     if method in config["supported_atlases"] or (method == "roiToVoxel" and config["roi_masks"] is not None):
         if method in config["supported_atlases"]:
             imgs, labels, _ = get_atlas_data(method)
+            imgs = [imgs]
         else:
             labels = list(config["roi_masks"].keys())
             imgs = list(config["roi_masks"].values())
