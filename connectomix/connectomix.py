@@ -29,12 +29,14 @@ import nibabel as nib
 import shutil
 import warnings
 from nibabel import Nifti1Image
-from nilearn.image import load_img, resample_img, resample_to_img, clean_img, index_img
+from nilearn.image import load_img, resample_img, resample_to_img, clean_img, index_img, math_img, binarize_img
 from nilearn.plotting import plot_matrix, plot_connectome, find_parcellation_cut_coords, find_probabilistic_atlas_cut_coords, plot_stat_map, plot_glass_brain, plot_design_matrix
 from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure, sym_matrix_to_vec, vec_to_sym_matrix
 from nilearn.decomposition import CanICA
+from nilearn.masking import apply_mask, unmask
 from nilearn.regions import RegionExtractor
+from nilearn.glm import threshold_stats_img
 from nilearn.glm.first_level import FirstLevelModel, make_first_level_design_matrix
 from nilearn.glm.second_level import SecondLevelModel, non_parametric_inference, make_second_level_design_matrix
 from nilearn import datasets
@@ -1453,6 +1455,17 @@ method: {config.get("method")}
 
 
 # PROCESSING
+def img_is_not_empty(img):
+    """
+    Check if a NIfTI image has at least one non-zero voxel.
+    """
+    # Get the data array
+    data = img.get_fdata()
+
+    # Check if there is at least one non-zero voxel
+    return np.any(data != 0)
+
+
 # Function to resample all functional images to a reference image
 def resample_to_reference(layout, func_files, config):
     """
@@ -1829,20 +1842,38 @@ def compute_non_parametric_max_mass(layout, glm, label, config):
     np_outputs["logp_max_mass"].to_filename(np_logp_max_mass_path)
     return np_logp_max_mass_path
 
-def save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, config):
+def save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, label, config):
     for significance_level in ["uncorrected", "fdr", "fwe"]:
         alpha = float(config[f"{significance_level}_alpha"])
+        entities = get_bids_entities_from_config(config)
+        entities.pop("subject")
+        entities["seed"] = label
+        thresholded_contrast_path = layout.derivatives["connectomix"].build_path({**entities,
+                                                          "analysis_label": config["analysis_label"],
+                                                          "method": config["method"],
+                                                          "seed": label,
+                                                          "significance_level":significance_level
+                                                          },
+                                                     path_patterns=["group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_{significance_level}.nii.gz"],
+                                                     validate=False)
+        ensure_directory(thresholded_contrast_path)
         
-        # work in progress
-        print('WORK IN PROGRESS')
-        
-        from nilearn.image import math_img
-        from nilearn.image import binarize_img
-        from nilearn.masking import apply_mask, unmask
-        mask = math_img(f"img >= -np.log10({alpha})", img = np_logp_max_mass_path)
-        mask = binarize_img(mask)
-        masked_data = apply_mask(contrast_path, mask)
-        unmask(masked_data, mask)
+        match significance_level:
+            case "uncorrected":
+                thresholded_img, _ = threshold_stats_img(contrast_path, alpha=alpha, height_control=None, two_sided=True)
+                thresholded_img.to_filename(thresholded_contrast_path)
+            case "fdr":
+                thresholded_img, _ = threshold_stats_img(contrast_path, alpha=alpha, height_control="fdr", two_sided=True)
+                thresholded_img.to_filename(thresholded_contrast_path)
+            case "fwe":
+                mask = math_img(f"img >= -np.log10({alpha})", img = np_logp_max_mass_path)
+                mask = binarize_img(mask)
+                
+                if img_is_not_empty(mask):
+                    masked_data = apply_mask(contrast_path, mask)
+                    unmask(masked_data, mask).to_filename(thresholded_contrast_path)
+                else:
+                    warnings.warn(f"For map {contrast_path}, no voxel survives FWE thresholding at alpha level {alpha}.")
 
 
 def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
@@ -1968,7 +1999,7 @@ def roi_to_voxel_group_analysis(layout, config):
         # TODO: there is caveat in this: it does not show the sign of t-score! Direction of effect unknown...
         np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, label, config)
     
-        save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, config)    
+        save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, label, config)
     
     if coords:
         for coord, label in zip(coords, labels):
