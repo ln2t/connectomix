@@ -1822,12 +1822,28 @@ def compute_non_parametric_max_mass(layout, glm, label, config):
            second_level_contrast=config["group_contrast"],
            first_level_contrast=label,
            smoothing_fwhm=config["smoothing"],
-           two_sided_test=True,
-           n_jobs=2,
+           two_sided_test=True,  # TODO: put this in config file
+           n_jobs=2,  # TODO: put this in config file
            threshold=float(config["cluster_forming_alpha"]),
            n_perm=config["n_permutations"])
     np_outputs["logp_max_mass"].to_filename(np_logp_max_mass_path)
     return np_logp_max_mass_path
+
+def save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, config):
+    for significance_level in ["uncorrected", "fdr", "fwe"]:
+        alpha = float(config[f"{significance_level}_alpha"])
+        
+        # work in progress
+        print('WORK IN PROGRESS')
+        
+        from nilearn.image import math_img
+        from nilearn.image import binarize_img
+        from nilearn.masking import apply_mask, unmask
+        mask = math_img(f"img >= -np.log10({alpha})", img = np_logp_max_mass_path)
+        mask = binarize_img(mask)
+        masked_data = apply_mask(contrast_path, mask)
+        unmask(masked_data, mask)
+
 
 def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
     entities = get_bids_entities_from_config(config)
@@ -1844,11 +1860,12 @@ def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
     plot_glass_brain(
                     np_logp_max_mass_path,
                     colorbar=True,
+                    cmap="autumn",
                     vmax=2.69,  # this is hardcoded but that's not a problem as it is only for plots
                     display_mode="z",
                     plot_abs=False,
                     cut_coords=coords,
-                    threshold=float(config["fwe_alpha"])).savefig(np_logp_max_mass_plot_path)
+                    threshold=-np.log10(float(config["fwe_alpha"]))).savefig(np_logp_max_mass_plot_path)
 
 
 def roi_to_voxel_participant_analysis(layout, func_file, json_file, timeseries_list, labels, config):
@@ -1950,6 +1967,8 @@ def roi_to_voxel_group_analysis(layout, config):
 
         # TODO: there is caveat in this: it does not show the sign of t-score! Direction of effect unknown...
         np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, label, config)
+    
+        save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, config)    
     
     if coords:
         for coord, label in zip(coords, labels):
