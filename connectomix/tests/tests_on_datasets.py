@@ -10,6 +10,7 @@ example_seeds_for_roiToVoxel = str(importlib.resources.files("connectomix.tests.
 precuneus_L_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precuneus_L.nii.gz"))
 precentral_R_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precentral_R.nii.gz"))
 
+
 ## roiToVoxel, seed-based (default)
 participant_level_analysis(bids_dir,
                            output_dir,
@@ -87,18 +88,18 @@ group_level_analysis(bids_dir,
 ## roiToRoi, seed-based
 
 # Participant analysis
-
 participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
-                           config={"seeds_file": example_seeds_for_roiToRoi})
+                           config={"method": "seeds",
+                                   "seeds_file": example_seeds_for_roiToRoi})
+plt.close('all')
 
 # Group analysis - controls versus patients
-config = {}
-config["method"] = "seeds"
-config['seeds_file'] = '/code/ds005699/connectomix/seeds/brain_and_cerebellum_seeds.tsv'
-config["analysis_type"] = "independent"
-group_level_analysis(bids_dir, output_dir, config)
+group_level_analysis(bids_dir,
+                     output_dir,
+                     config={"method": "seeds",
+                             "seeds_file": example_seeds_for_roiToRoi})
 
 # ------ Real-world example - Hilarious Mosquito dataset
 

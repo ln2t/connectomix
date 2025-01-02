@@ -824,7 +824,10 @@ def roi_to_roi_group_analysis(layout, config):
 
         # Refresh BIDS indexing of the derivatives to find data for the report
         output_dir = layout.derivatives["connectomix"].root
-        layout.derivatives.pop("connectomix")
+        try:
+            layout.derivatives.pop("connectomix")
+        except KeyError:
+            layout.derivatives.pop(os.path.basename(output_dir))
         layout.add_derivatives(output_dir)
 
         # Generate report
