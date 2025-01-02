@@ -9,17 +9,13 @@ from pathlib import Path
 from datetime import datetime
 import warnings
 
-from connectomix.utils.loaders import load_config
-from connectomix.utils.makers import save_copy_of_config
-from connectomix.utils.setup import set_unspecified_participant_level_options_to_default, \
-    set_unspecified_group_level_options_to_default
-
 def setup_layout(bids_dir, output_dir, derivatives=dict()):
     # Create derivative directory
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create the dataset_description.json file
+    from connectomix.utils.makers import create_dataset_description
     create_dataset_description(output_dir)
 
     # Create a BIDSLayout to parse the BIDS dataset and index also the derivatives
@@ -27,12 +23,15 @@ def setup_layout(bids_dir, output_dir, derivatives=dict()):
 
 
 def setup_config(layout, config, level):
+    from connectomix.utils.loaders import load_config
     config = load_config(config)
 
     # Set unspecified config options to default values
     if level == "participant":
+        from connectomix.utils.setup import set_unspecified_participant_level_options_to_default
         config = set_unspecified_participant_level_options_to_default(config, layout)
     elif level == "group":
+        from connectomix.utils.setup import set_unspecified_group_level_options_to_default
         config = set_unspecified_group_level_options_to_default(config, layout)
 
     # Get the current date and time
@@ -41,6 +40,7 @@ def setup_config(layout, config, level):
     # Save a copy of the config file to the config directory
     config_filename = Path(
         layout.derivatives["connectomix"].root) / "config" / "backups" / f"participant_level_config_{timestamp}.json"
+    from connectomix.utils.makers import save_copy_of_config
     save_copy_of_config(config, config_filename)
     print(f"Configuration file saved to {config_filename}")
     return config
@@ -354,11 +354,3 @@ def convert_4D_to_3D(imgs):
             else:
                 raise ValueError("More that one image in fourth dimension, cannot convert 4D image to 3D")
     return imgs_3D
-
-
-def create_dataset_description():
-    return None
-
-
-def ensure_directory():
-    return None

@@ -10,9 +10,6 @@ import yaml
 from nilearn import datasets
 from nilearn.plotting import find_parcellation_cut_coords
 
-from connectomix.utils.tools import apply_nonbids_filter
-
-
 # LOADERS
 # Helper function to fetch atlas maps, labels and coords
 def get_atlas_data(atlas_name, get_cut_coords=False):
@@ -111,6 +108,7 @@ def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entit
         A dictionary with keys = subjects and values = path to the unique connectivity matrix to the subject.
 
     """
+    from connectomix.utils.tools import apply_nonbids_filter
     group_dict = {}
     for subject in subjects:
         conn_files = layout.derivatives["connectomix"].get(subject=subject,
@@ -181,6 +179,7 @@ def get_maps_from_participant_level(subjects, layout, entities, method):
                                                           invalid_filters='allow',
                                                           extension='.nii.gz')
         # Refine selection with non-BIDS entity filtering
+        from connectomix.utils.tools import apply_nonbids_filter
         map_files = apply_nonbids_filter("method", method, map_files)
         map_files = map_files if seed is None else apply_nonbids_filter("seed", seed, map_files)
         if len(map_files) == 0:

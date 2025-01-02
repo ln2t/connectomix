@@ -5,15 +5,6 @@ from pathlib import Path
 import numpy as np
 from bids import BIDSLayout
 
-from connectomix.utils.loaders import get_repetition_time
-from connectomix.utils.makers import ensure_directory
-from connectomix.utils.processing import resample_to_reference, denoise_fmri_data, compute_canica_components, \
-    extract_timeseries, roi_to_voxel_participant_analysis, roi_to_roi_participant_analysis, roi_to_voxel_group_analysis, \
-    roi_to_roi_group_analysis
-from connectomix.utils.setup import create_participant_level_default_config_file, create_group_level_default_config_file
-from connectomix.utils.tools import setup_layout, setup_config, get_files_for_analysis, parse_derivatives
-from connectomix.version import __version__
-
 # Define the autonomous mode, to guess paths and parameters
 def autonomous_mode(run=False):
     """ Function to automatically guess the analysis paths and settings. """
@@ -80,8 +71,10 @@ def autonomous_mode(run=False):
             group_level_analysis(bids_dir, connectomix_folder, {})
     else:
         if analysis_level == "participant":
+            from connectomix.utils.setup import create_participant_level_default_config_file
             create_participant_level_default_config_file(bids_dir, connectomix_folder, fmriprep_dir)
         elif analysis_level == "group":
+            from connectomix.utils.setup import create_group_level_default_config_file
             create_group_level_default_config_file(bids_dir, connectomix_folder)
 
         cmd = f"python connectomix.py {bids_dir} {connectomix_folder} {analysis_level} --derivatives fmriprep={fmriprep_dir}"
@@ -112,28 +105,35 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
 
     """
     # Print version information
+    from connectomix.version import __version__
     print(f"Running connectomix (Participant-level) version {__version__}")
 
     # Create BIDSLayout with pipeline and other derivatives
+    from connectomix.utils.tools import setup_layout
     layout = setup_layout(bids_dir, output_dir, derivatives)
 
     # Load and backup the configuration file
+    from connectomix.utils.tools import setup_config
     config = setup_config(layout, config, "participant")
 
     # Select all files needed for analysis
+    from connectomix.utils.tools import get_files_for_analysis
     func_files, json_files, confound_files = get_files_for_analysis(layout, config)
     print(f"Found {len(func_files)} functional files:")
     [print(os.path.basename(fn)) for fn in func_files]
 
     # Resample all functional files to the reference image
+    from connectomix.utils.processing import resample_to_reference
     resampled_files = resample_to_reference(layout, func_files, config)
     print("All functional files resampled to match the reference image.")
 
+    from connectomix.utils.processing import denoise_fmri_data
     denoised_files = denoise_fmri_data(layout, resampled_files, confound_files, json_files, config)
     print("Denoising finished.")
 
     # TODO: replace "ica" by "canica
     # Compute CanICA components if necessary and store it in the methods options
+    from connectomix.utils.processing import compute_canica_components
     config = compute_canica_components(layout, denoised_files, config) if config["method"] == "ica" else config
 
     print(f"Selected method for connectivity analysis: {config['method']}")
@@ -151,17 +151,22 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
                                                                            "sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_timeseries.npy" %
                                                                            config["method"]],
                                                                        validate=False)
+        from connectomix.utils.makers import ensure_directory
         ensure_directory(timeseries_path)
 
         # Extract timeseries and save
+        from connectomix.utils.processing import extract_timeseries
+        from connectomix.utils.loaders import get_repetition_time
         timeseries_list, labels = extract_timeseries(str(func_file),
                                                      get_repetition_time(json_file),
                                                      config)
         np.save(timeseries_path, timeseries_list)
 
         if config["method"] == "roiToVoxel":
+            from connectomix.utils.processing import roi_to_voxel_participant_analysis
             roi_to_voxel_participant_analysis(layout, func_file, json_file, timeseries_list, labels, config)
         else:
+            from connectomix.utils.processing import roi_to_roi_participant_analysis
             roi_to_roi_participant_analysis(layout, func_file, json_file, timeseries_list, labels, config)
 
     print("Participant-level analysis completed.")
@@ -187,17 +192,22 @@ def group_level_analysis(bids_dir, output_dir, config):
 
     """
     # Print version information
+    from connectomix.version import __version__
     print(f"Running connectomix (Group-level) version {__version__}")
 
     # Create BIDSLayout with pipeline and other derivatives
+    from connectomix.utils.tools import setup_layout
     layout = setup_layout(bids_dir, output_dir)
 
     # Load and backup the configuration file
+    from connectomix.utils.tools import setup_config
     config = setup_config(layout, config, "group")
 
     if config["method"] == "roiToVoxel":
+        from connectomix.utils.processing import roi_to_voxel_group_analysis
         roi_to_voxel_group_analysis(layout, config)
     else:
+        from connectomix.utils.processing import roi_to_roi_group_analysis
         roi_to_roi_group_analysis(layout, config)
 
     print("Group-level analysis completed.")
@@ -244,6 +254,7 @@ def main():
     args = parser.parse_args()
 
     # Convert the list of "key=value" pairs to a dictionary
+    from connectomix.utils.tools import parse_derivatives
     derivatives = parse_derivatives(args.derivatives)
 
     # Run autonomous mode if flag is used
@@ -265,12 +276,14 @@ def main():
 
             # First check if only helper function must be called
             if args.helper:
+                from connectomix.utils.setup import create_participant_level_default_config_file
                 create_participant_level_default_config_file(args.bids_dir, args.output_dir, derivatives["fmriprep"])
             else:
                 participant_level_analysis(args.bids_dir, args.output_dir, derivatives, args.config)
         elif args.analysis_level == "group":
             # First check if only helper function must be called
             if args.helper:
+                from connectomix.utils.setup import create_group_level_default_config_file
                 create_group_level_default_config_file(args.bids_dir, args.output_dir)
             else:
                 group_level_analysis(args.bids_dir, args.output_dir, args.config)

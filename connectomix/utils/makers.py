@@ -5,9 +5,6 @@ from pathlib import Path
 from matplotlib import pyplot as plt
 from nilearn.plotting import plot_connectome, plot_matrix
 
-from connectomix.utils.tools import apply_nonbids_filter
-from connectomix.version import __version__
-
 # MAKERS
 # Function to create directory in which path is located
 def ensure_directory(file_path):
@@ -39,6 +36,7 @@ def create_dataset_description(output_dir):
     None.
 
     """
+    from connectomix.version import __version__
     description = {
         "Name": "connectomix",
         "BIDSVersion": "1.6.0",
@@ -57,6 +55,7 @@ def generate_group_analysis_report(layout, bids_entities, config):
     Generates a group analysis report based on the method and connectivity kind.
 
     """
+    from connectomix.utils.tools import apply_nonbids_filter
 
     method = config.get("method")
     analysis_label = config.get('analysis_label')

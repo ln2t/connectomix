@@ -1,30 +1,37 @@
-from connectomix.utils.modes import participant_level_analysis, group_level_analysis
-from connectomix.tests.paths import (bids_dir, fmriprep_dir, output_dir,
-                                     example_seeds_for_roiToRoi, example_seeds_for_roiToVoxel,
-                                     precentral_R_mask, precuneus_L_mask)
+import matplotlib.pyplot as plt
+import importlib.resources
 
-# ds = "ds005699"
+from connectomix.utils.modes import participant_level_analysis, group_level_analysis
+from connectomix.tests.paths import bids_dir, fmriprep_dir, output_dir
+
+example_seeds_for_roiToRoi = str(importlib.resources.files("connectomix.tests.seeds").joinpath("example_seeds_for_roiToRoi.tsv"))
+example_seeds_for_roiToVoxel = str(importlib.resources.files("connectomix.tests.seeds").joinpath("example_seeds_for_roiToVoxel.tsv"))
+
+precuneus_L_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precuneus_L.nii.gz"))
+precentral_R_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precentral_R.nii.gz"))
 
 ## roiToVoxel, seed-based (default)
-
 participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
                            config={"seeds_file": example_seeds_for_roiToVoxel})
 
 ## roiToVoxel, roi-based (from mask)
+
 participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
-                           config={"roi_masks": {"precentral_R": precentral_R_mask,
-                                                 "precuneus_L": precuneus_L_mask}})
+                           config={"roi_masks": {"precentralR": precentral_R_mask,
+                                                 "precuneusL": precuneus_L_mask}})
 
 ## roiToRoi, seed-based
 
 participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
-                           config={"seeds_file": example_seeds_for_roiToRoi})
+                           config={"method": "seeds",
+                                   "seeds_file": example_seeds_for_roiToRoi})
+plt.close('all')
 
 ## roiToRoi, atlas-based - aal
 
@@ -32,6 +39,7 @@ participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
                            config={"method": "aal"})
+plt.close('all')
 
 ## roiToRoi, atlas-based - schaeffer100
 
@@ -39,6 +47,7 @@ participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
                            config={"method": "schaeffer100"})
+plt.close('all')
 
 ## roiToRoi, atlas-based - harvardoxford
 
@@ -46,33 +55,34 @@ participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
                            config={"method": "harvardoxford"})
+plt.close('all')
 
 # Group analysis - mean effect
 group_level_analysis(bids_dir,
                      output_dir,
                      config={"analysis_label": "meanEffect",
-                             "roi_masks": {"precentral_R": precentral_R_mask,
-                                           "precuneus_L": precuneus_L_mask}})
+                             "group1_subjects": ["001", "004", "037", "042"],
+                             "roi_masks": {"precentralR": precentral_R_mask,
+                                           "precuneusL": precuneus_L_mask}})
 
 # Group analysis - covariate (effect of age)
-
 group_level_analysis(bids_dir,
                      output_dir,
                      config={"analysis_label": "effetOfAge",
+                             "group1_subjects": ["001", "004", "037", "042"],
                              "group_confounds": "age",
                              "group_contrast": "age",
-                             "roi_masks": {"precentral_R": precentral_R_mask,
-                                           "precuneus_L": precuneus_L_mask}})
+                             "roi_masks": {"precentralR": precentral_R_mask,
+                                           "precuneusL": precuneus_L_mask}})
 
 # Group analysis, independent samples comparison (controls versus patients)
-
 group_level_analysis(bids_dir,
                      output_dir,
                      config={"analysis_label": "controlVsPatient",
                              "group_confounds": "group",
                              "group_contrast": "control-patient",
-                             "roi_masks": {"precentral_R": precentral_R_mask,
-                                           "precuneus_L": precuneus_L_mask}})
+                             "roi_masks": {"precentralR": precentral_R_mask,
+                                           "precuneusL": precuneus_L_mask}})
 
 ## roiToRoi, seed-based
 

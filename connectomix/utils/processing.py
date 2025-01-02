@@ -21,15 +21,6 @@ import warnings
 
 from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 
-from connectomix.utils.loaders import select_confounds, get_repetition_time, load_seed_file, \
-    retrieve_connectivity_matrices_from_particpant_level, retrieve_connectivity_matrices_for_paired_samples, \
-    retrieve_info_from_participant_table, get_atlas_data
-from connectomix.utils.makers import generate_group_matrix_plots, generate_group_connectome_plots, \
-    generate_group_analysis_report
-from connectomix.utils.stats import regression_analysis, generate_permuted_null_distributions
-from connectomix.utils.tools import guess_groups, create_dataset_description, ensure_directory, check_affines_match, \
-    get_bids_entities_from_config, apply_nonbids_filter, get_mask, setup_and_check_connectivity_kinds, \
-    check_group_has_several_members, remove_pair_making_entity
 import numpy as np
 
 # PROCESSING
@@ -80,6 +71,7 @@ def resample_to_reference(layout, func_files, config):
                                                                           'sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_desc-resampled.nii.gz'],
                                                                       validate=False)
 
+        from connectomix.utils.makers import ensure_directory
         ensure_directory(resampled_path)
         resampled_files.append(str(resampled_path))
 
@@ -88,6 +80,7 @@ def resample_to_reference(layout, func_files, config):
             img = load_img(func_file)
             # We round the affine as sometimes there are mismatch (small numerical errors?) in fMRIPrep's output
             img = Nifti1Image(img.get_fdata(), affine=np.round(img.affine, 2), header=img.header)
+            from connectomix.utils.tools import check_affines_match
             if check_affines_match([img, reference_img]):
                 resampled_img = img
             else:
@@ -122,6 +115,7 @@ def compute_canica_components(layout, func_filenames, config):
 
     """
 
+    from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop('subject')
 
@@ -143,6 +137,7 @@ def compute_canica_components(layout, func_filenames, config):
                                                                                  "canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_extractedregions.json"],
                                                                              validate=False)
 
+    from connectomix.utils.makers import ensure_directory
     ensure_directory(canica_filename)
     ensure_directory(canica_sidecar)
     ensure_directory(extracted_regions_filename)
@@ -230,15 +225,17 @@ def denoise_fmri_data(layout, resampled_files, confound_files, json_files, confi
         denoised_paths.append(denoised_path)
 
         if not Path(denoised_path).exists():
-            print("Data denoising in progress")
+            from connectomix.utils.makers import ensure_directory
             ensure_directory(denoised_path)
 
+            from connectomix.utils.loaders import select_confounds
             confounds = select_confounds(str(confound_file), config)
 
             # Set filter options based on the config file
             high_pass = config['high_pass']
             low_pass = config['low_pass']
 
+            from connectomix.utils.loaders import get_repetition_time
             clean_img(func_file,
                       low_pass=low_pass,
                       high_pass=high_pass,
@@ -250,12 +247,15 @@ def denoise_fmri_data(layout, resampled_files, confound_files, json_files, confi
 
 
 def glm_analysis_participant_level(json_file, mask_img, func_file, timeseries):
+    from connectomix.utils.loaders import get_repetition_time
     t_r = get_repetition_time(json_file)
     glm = FirstLevelModel(t_r=t_r,
                           mask_img=resample_to_img(mask_img,
                                                    func_file,
+                                                   force_resample=True,
                                                    interpolation="nearest"),
-                          high_pass=None)
+                          high_pass=None,
+                          standardize=True)
     frame_times = np.arange(len(timeseries)) * t_r
     design_matrix = make_first_level_design_matrix(frame_times=frame_times,
                                                    events=None,
@@ -277,9 +277,11 @@ def save_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config):
                                                                               'sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_plot.svg' % (
                                                                               config["method"], label)],
                                                                           validate=False)
+    from connectomix.utils.makers import ensure_directory
     ensure_directory(roi_to_voxel_plot_path)
 
     if config["seeds_file"] is not None:
+        from connectomix.utils.loaders import load_seed_file
         coords, labels = load_seed_file(config["seeds_file"])
         coord = coords[labels.index(label)]
 
@@ -297,13 +299,17 @@ def save_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config):
 
 
 def make_second_level_input(layout, label, config):
+
     second_level_input = pd.DataFrame(columns=['subject_label', 'map_name', 'effects_map_path'])
+
+    from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     map_files = layout.derivatives["connectomix"].get(return_type='filename',
                                                       extension='.nii.gz',
                                                       **entities)
-    map_files = apply_nonbids_filter('seed', label, map_files)
-    map_files = apply_nonbids_filter('method', config['method'], map_files)
+    from connectomix.utils.tools import apply_nonbids_filter
+    map_files = apply_nonbids_filter("seed", label, map_files)
+    map_files = apply_nonbids_filter("method", config["method"], map_files)
 
     # TODO: for paired analysis, compute difference of maps and save result to folder.
     if config['analysis_type'] == 'paired':
@@ -349,6 +355,7 @@ def make_group_level_design_matrix(layout, second_level_input, label, config):
     if "group" in config["group_confounds"]:
         design_matrix.drop(columns=["intercept"], inplace=True)
 
+    from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
     design_matrix_plot_path = layout.derivatives["connectomix"].build_path({**entities,
@@ -359,6 +366,7 @@ def make_group_level_design_matrix(layout, second_level_input, label, config):
                                                                            path_patterns=[
                                                                                "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_designMatrix.svg"],
                                                                            validate=False)
+    from connectomix.utils.makers import ensure_directory
     ensure_directory(design_matrix_plot_path)
     plot_design_matrix(design_matrix, output_file=design_matrix_plot_path)
 
@@ -366,6 +374,7 @@ def make_group_level_design_matrix(layout, second_level_input, label, config):
 
 
 def compute_group_level_contrast(layout, glm, label, config):
+    from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
     entities["seed"] = label
@@ -379,7 +388,9 @@ def compute_group_level_contrast(layout, glm, label, config):
                                                                      "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.nii.gz"],
                                                                  validate=False)
 
+    from connectomix.utils.makers import ensure_directory
     ensure_directory(contrast_path)
+    print(f"Computing contrast label named \'{contrast_label}\'")
     glm.compute_contrast(contrast_label,
                          first_level_contrast=label,
                          output_type="z_score").to_filename(contrast_path)
@@ -388,6 +399,7 @@ def compute_group_level_contrast(layout, glm, label, config):
 
 def save_group_level_contrast_plots(layout, contrast_path, coord, label, config):
     # Create plot of contrast map and save
+    from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
     entities["seed"] = label
@@ -399,6 +411,7 @@ def save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
                                                                       path_patterns=[
                                                                           "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.svg"],
                                                                       validate=False)
+    from connectomix.utils.makers import ensure_directory
     ensure_directory(contrast_plot_path)
     contrast_plot = plot_stat_map(contrast_path,
                                   threshold=3.0,
@@ -411,6 +424,7 @@ def save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
 
 
 def compute_non_parametric_max_mass(layout, glm, label, config):
+    from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
     entities["seed"] = label
@@ -423,6 +437,7 @@ def compute_non_parametric_max_mass(layout, glm, label, config):
                                                                              "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.nii.gz"],
                                                                          validate=False)
 
+    from connectomix.utils.makers import ensure_directory
     ensure_directory(np_logp_max_mass_path)
     np_outputs = non_parametric_inference(glm.second_level_input_,
                                           design_matrix=glm.design_matrix_,
@@ -440,6 +455,7 @@ def compute_non_parametric_max_mass(layout, glm, label, config):
 def save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, label, config):
     for significance_level in ["uncorrected", "fdr", "fwe"]:
         alpha = float(config[f"{significance_level}_alpha"])
+        from connectomix.utils.tools import get_bids_entities_from_config
         entities = get_bids_entities_from_config(config)
         entities.pop("subject")
         entities["seed"] = label
@@ -453,6 +469,7 @@ def save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path,
                                                                                  path_patterns=[
                                                                                      "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_{significance_level}.nii.gz"],
                                                                                  validate=False)
+        from connectomix.utils.makers import ensure_directory
         ensure_directory(thresholded_contrast_path)
 
         match significance_level:
@@ -477,6 +494,7 @@ def save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path,
 
 
 def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
+    from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
     entities["seed"] = label
@@ -489,6 +507,7 @@ def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
                                                                               path_patterns=[
                                                                                   "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.svg"],
                                                                               validate=False)
+    from connectomix.utils.makers import ensure_directory
     ensure_directory(np_logp_max_mass_plot_path)
     plot_glass_brain(
         np_logp_max_mass_path,
@@ -518,6 +537,7 @@ def roi_to_voxel_participant_analysis(layout, func_file, json_file, timeseries_l
 
     """
     entities = layout.parse_file_entities(func_file)
+    from connectomix.utils.tools import get_mask
     mask_img = get_mask(layout, entities)
 
     for timeseries, label in zip(timeseries_list.T, labels):
@@ -549,6 +569,7 @@ def roi_to_roi_participant_analysis(layout, func_file, json_file, timeseries_lis
     None.
 
     """
+    from connectomix.utils.tools import setup_and_check_connectivity_kinds
     connectivity_kinds = setup_and_check_connectivity_kinds(config)
     entities = layout.parse_file_entities(func_file)
 
@@ -568,6 +589,7 @@ def roi_to_roi_participant_analysis(layout, func_file, json_file, timeseries_lis
                                                                             "sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.npy" % (
                                                                             config["method"], connectivity_kind)],
                                                                         validate=False)
+        from connectomix.utils.makers import ensure_directory
         ensure_directory(conn_matrix_path)
         np.save(conn_matrix_path, conn_matrix)
 
@@ -585,10 +607,12 @@ def roi_to_roi_participant_analysis(layout, func_file, json_file, timeseries_lis
 
 
 def roi_to_voxel_group_analysis(layout, config):
+    from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
 
     if config["seeds_file"]:
+        from connectomix.utils.loaders import load_seed_file
         coords, labels = load_seed_file(config["seeds_file"])
     elif config["roi_masks"]:
         labels = list(config["roi_masks"].keys())
@@ -597,7 +621,8 @@ def roi_to_voxel_group_analysis(layout, config):
     # TODO: add check at group level that config file should either have seeds_file OR roi_masks
 
     for label in labels:
-        second_level_input = make_second_level_input(layout, label,
+        second_level_input = make_second_level_input(layout,
+                                                     label,
                                                      config)  # get all first-level maps. In paired case, compute differences. Resamples and save all in folder.
         design_matrix = make_group_level_design_matrix(layout, second_level_input, label, config)
 
@@ -645,10 +670,12 @@ def roi_to_roi_group_analysis(layout, config):
             group2_subjects = config["group2_subjects"]
 
             # Check each group has at least two subjects, otherwise no permutation testing is possible
+            from connectomix.utils.tools import check_group_has_several_members
             check_group_has_several_members(group1_subjects)
             check_group_has_several_members(group2_subjects)
 
             # Retrieve the connectivity matrices for group 1 and group 2 using BIDSLayout
+            from connectomix.utils.loaders import retrieve_connectivity_matrices_from_particpant_level
             group1_matrices = retrieve_connectivity_matrices_from_particpant_level(group1_subjects, layout, entities,
                                                                                    method)
             group2_matrices = retrieve_connectivity_matrices_from_particpant_level(group2_subjects, layout, entities,
@@ -671,6 +698,7 @@ def roi_to_roi_group_analysis(layout, config):
 
         elif analysis_type == "paired":
             # Paired t-test within the same subjects
+            from connectomix.utils.loaders import retrieve_connectivity_matrices_for_paired_samples
             paired_samples = retrieve_connectivity_matrices_for_paired_samples(layout, entities, config)
 
             # Get the two samples from paired_samples (with this we are certain that they are in the right order)
@@ -683,14 +711,17 @@ def roi_to_roi_group_analysis(layout, config):
 
             t_stats, p_values = ttest_rel(sample1, sample2, axis=0)
 
+            from connectomix.utils.tools import remove_pair_making_entity
             entities = remove_pair_making_entity(entities)
 
         elif analysis_type == "regression":
             subjects = config["subjects_to_regress"]
             group_data = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method)
             group_data = list(group_data.values())
+            from connectomix.utils.loaders import retrieve_info_from_participant_table
             design_matrix = retrieve_info_from_participant_table(layout, subjects, config["covariate"],
                                                                  config["confounds"])
+            from connectomix.utils.stats import regression_analysis
             t_stats, p_values = regression_analysis(group_data, design_matrix)
         else:
             raise ValueError(f"Unknown analysis type: {analysis_type}")
@@ -709,6 +740,7 @@ def roi_to_roi_group_analysis(layout, config):
             warnings.warn(
                 f"Running permutation analysis with less than 5000 permutations (you chose {n_permutations}).")
 
+        from connectomix.utils.stats import generate_permuted_null_distributions
         null_max_distribution, null_min_distribution = generate_permuted_null_distributions(group_data, config, layout,
                                                                                             entities, {
                                                                                                 "observed_t_max": np.nanmax(
@@ -746,12 +778,14 @@ def roi_to_roi_group_analysis(layout, config):
                                                                           "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_thresholds.json"],
                                                                       validate=False)
 
+        from connectomix.utils.makers import ensure_directory
         ensure_directory(threshold_file)
         with open(threshold_file, "w") as f:
             json.dump(thresholds, f, indent=4)
 
         # Get ROIs coords and labels for plotting purposes
         if method == "seeds":
+            from connectomix.utils.loaders import load_seed_file
             coords, labels = load_seed_file(config["seeds_file"])
 
         elif method == "ica":
@@ -764,9 +798,11 @@ def roi_to_roi_group_analysis(layout, config):
             labels = None
         else:
             # Handle the case where method is an atlas
+            from connectomix.utils.loaders import get_atlas_data
             _, labels, coords = get_atlas_data(method, get_cut_coords=True)
 
         # Create plots of the thresholded group connectivity matrices and connectomes
+        from connectomix.utils.makers import generate_group_matrix_plots
         generate_group_matrix_plots(t_stats,
                                     uncorr_mask,
                                     fdr_mask,
@@ -776,6 +812,7 @@ def roi_to_roi_group_analysis(layout, config):
                                     entities,
                                     labels)
 
+        from connectomix.utils.makers import generate_group_connectome_plots
         generate_group_connectome_plots(t_stats,
                                         uncorr_mask,
                                         fdr_mask,
@@ -791,6 +828,7 @@ def roi_to_roi_group_analysis(layout, config):
         layout.add_derivatives(output_dir)
 
         # Generate report
+        from connectomix.utils.makers import generate_group_analysis_report
         generate_group_analysis_report(layout, entities, config)
 
 
@@ -825,6 +863,7 @@ def extract_timeseries(func_file, t_r, config):
     method = config["method"]
 
     if method == "seeds" or (method == "roiToVoxel" and config["seeds_file"] is not None):
+        from connectomix.utils.loaders import load_seed_file
         coords, labels = load_seed_file(config["seeds_file"])
 
         radius = config["radius"]
@@ -840,6 +879,7 @@ def extract_timeseries(func_file, t_r, config):
         timeseries = masker.fit_transform(func_file)
     if method in config["supported_atlases"] or (method == "roiToVoxel" and config["roi_masks"] is not None):
         if method in config["supported_atlases"]:
+            from connectomix.utils.loaders import get_atlas_data
             imgs, labels, _ = get_atlas_data(method)
             imgs = [imgs]
         else:

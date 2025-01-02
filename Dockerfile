@@ -18,4 +18,4 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Run the script by default when the container starts
-ENTRYPOINT ["python", "/usr/src/app/connectomix/connectomix.py"]
+ENTRYPOINT ["python", "/usr/src/app/connectomix/connectomix/connectomix.py"]

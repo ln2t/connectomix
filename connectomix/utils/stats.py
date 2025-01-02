@@ -4,10 +4,6 @@ from scipy.stats import permutation_test
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
 
-from connectomix.utils.makers import ensure_directory
-from connectomix.utils.tools import apply_nonbids_filter
-
-
 # STATS
 # Permutation testing with stat max thresholding
 def generate_permuted_null_distributions(group_data, config, layout, entities, observed_stats, design_matrix=None):
@@ -25,6 +21,7 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
                                                        extension=".npy",
                                                        suffix="permutations",
                                                        return_type="filename")
+    from connectomix.utils.tools import apply_nonbids_filter
     perm_files = apply_nonbids_filter("analysis",
                                       config["analysis_label"],
                                       perm_files)
@@ -48,6 +45,7 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
                                                                  path_patterns=[
                                                                      "group/{analysis_label}/permutations/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_desc-{desc}_analysis-{analysis_label}_permutations.npy"],
                                                                  validate=False)
+        from connectomix.utils.makers import ensure_directory
         ensure_directory(perm_file)
         # If nothing has to be loaded, then initiate the null distribution with the observed values
         perm_data = np.array([list(observed_stats.values())])  # Size is (1,2) and order is max followed by min

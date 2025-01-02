@@ -2,8 +2,6 @@ import warnings
 from pathlib import Path
 from bids import BIDSLayout
 
-from connectomix.utils.tools import guess_groups, create_dataset_description, ensure_directory
-
 # CONFIG
 # Function to manage default group-level options
 def set_unspecified_participant_level_options_to_default(config, layout):
@@ -155,6 +153,7 @@ def set_unspecified_group_level_options_to_default(config, layout):
     config["group2_subjects"] = config.get("group2_subjects", None)
 
     if config["analysis_type"] == 'independent' and config["group1_subjects"] is None:
+        from connectomix.utils.tools import guess_groups
         guessed_groups = guess_groups(layout)
         if len(guessed_groups) == 2:
             group1_name = list(guessed_groups.keys())[0]
@@ -249,6 +248,7 @@ def create_participant_level_default_config_file(bids_dir, output_dir, fmriprep_
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create the dataset_description.json file
+    from connectomix.utils.makers import create_dataset_description
     create_dataset_description(output_dir)
 
     # Create a BIDSLayout to parse the BIDS dataset
@@ -301,6 +301,7 @@ radius: {config["radius"]} # Radius, in mm, to create the spheres at the coordin
     # Build filenames for each output
     yaml_file = Path(output_dir) / 'config' / 'default_participant_level_config.yaml'
 
+    from connectomix.utils.makers import ensure_directory
     ensure_directory(yaml_file)
 
     # Save the YAML content with comments
@@ -407,6 +408,7 @@ method: {config.get("method")}
     # Build filenames for each output
     yaml_file = Path(output_dir) / 'config' / 'default_group_level_config.yaml'
 
+    from connectomix.utils.makers import ensure_directory
     ensure_directory(yaml_file)
 
     # Save the YAML content with comments
