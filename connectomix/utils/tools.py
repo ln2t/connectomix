@@ -21,6 +21,17 @@ def setup_layout(bids_dir, output_dir, derivatives=dict()):
     # Create a BIDSLayout to parse the BIDS dataset and index also the derivatives
     return BIDSLayout(bids_dir, derivatives=[*list(derivatives.values()), output_dir])
 
+def config_helper(config, key, default, choose_from=None):
+    if key in config.keys():
+        value = config[key]
+    else:
+        print(f"Setting config field \"{key}\" to default value \"{default}\"")
+        value = default
+
+    if choose_from:
+        if not value in choose_from:
+            raise ValueError(f"Unsupported value {value} for config field {key}. Supported values are {choose_from}.")
+    return value
 
 def setup_config(layout, config, level):
     from connectomix.utils.loaders import load_config
@@ -45,6 +56,9 @@ def setup_config(layout, config, level):
     print(f"Configuration file saved to {config_filename}")
     return config
 
+def print_subject(layout, func_file):
+    entities = layout.parse_file_entities(func_file)
+    print(f"Processing subject {entities['subject']}")
 
 def get_mask(layout, entities):
     entites_for_mask = entities.copy()
