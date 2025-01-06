@@ -268,7 +268,7 @@ def generate_group_matrix_plots(t_stats, uncorr_mask, fdr_mask, perm_mask, confi
 
 
 # Function to copy config to path
-def save_copy_of_config(config, path):
+def save_copy_of_config(layout, config):
     """
     Save a copy of config to path, for reproducibility.
 
@@ -284,6 +284,13 @@ def save_copy_of_config(config, path):
     None.
 
     """
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Save a copy of the config file to the config directory
+    path = Path(
+        layout.derivatives["connectomix"].root) / "config" / "backups" / f"config_{timestamp}.json"
+
     # First make sure destination is valid
     ensure_directory(path)
     # If config is a str, assume it is a path and copy
@@ -293,4 +300,6 @@ def save_copy_of_config(config, path):
     elif isinstance(config, dict):
         with open(path, "w") as fp:
             json.dump(config, fp, indent=4)
+
+    print(f"Configuration file saved to {path}")
     return None

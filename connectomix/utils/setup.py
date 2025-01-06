@@ -5,7 +5,7 @@ from pathlib import Path
 from bids import BIDSLayout
 import yaml
 
-def setup_config(config, layout, level):
+def setup_config(layout, config, level):
     """
     Set the configuration fields to their default values if not explicitly specified in the input config.
 
@@ -24,6 +24,8 @@ def setup_config(config, layout, level):
         A complete configuration.
 
     """
+    from connectomix.utils.loaders import load_config
+    config = load_config(config)
     config = setup_config_bids(config, layout, level)
     config = setup_config_analysis(config, level)
 
@@ -39,7 +41,7 @@ def setup_config_bids(config, layout, level):
 
     derivatives_to_parse = ""
     if level == "participant":
-        derivatives_to_parse = "fMIPrep"
+        derivatives_to_parse = "fMRIPrep"
     elif level == "group":
         derivatives_to_parse = "connectomix"
 
@@ -129,8 +131,7 @@ def setup_config_analysis(config, level):
                                                  None)
             config["radius"] = config_helper(config,
                                              "radius",
-                                             5,
-                                             np.arange(100) + 1)
+                                             5)
         case "roiToVoxel":
             config["roi_masks"] = config_helper(config,
                                                 "roi_mask",
@@ -277,7 +278,7 @@ def create_default_config_file(bids_dir, derivatives, level):
     # Print some stuff for the primate using this function
     print("Generating default configuration file for default parameters, please wait while the dataset is explored...")
 
-    config = setup_config({}, layout, level)
+    config = setup_config(layout, {}, level)
 
     # Build filenames for each output
     yaml_file = Path(output_dir) / "config" / f"default_{level}_level_config.yaml"

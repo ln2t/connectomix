@@ -6,7 +6,6 @@ import nibabel as nib
 from nilearn.image import index_img
 from bids import BIDSLayout
 from pathlib import Path
-from datetime import datetime
 import warnings
 
 def setup_layout(bids_dir, output_dir, derivatives=dict()):
@@ -33,29 +32,6 @@ def config_helper(config, key, default, choose_from=None):
             raise ValueError(f"Unsupported value {value} for config field {key}. Supported values are {choose_from}.")
     return value
 
-def setup_config(layout, config, level):
-    from connectomix.utils.loaders import load_config
-    config = load_config(config)
-
-    # Set unspecified config options to default values
-    if level == "participant":
-        from connectomix.utils.setup import set_unspecified_participant_level_options_to_default
-        config = set_unspecified_participant_level_options_to_default(config, layout)
-    elif level == "group":
-        from connectomix.utils.setup import set_unspecified_group_level_options_to_default
-        config = set_unspecified_group_level_options_to_default(config, layout)
-
-    # Get the current date and time
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Save a copy of the config file to the config directory
-    config_filename = Path(
-        layout.derivatives["connectomix"].root) / "config" / "backups" / f"participant_level_config_{timestamp}.json"
-    from connectomix.utils.makers import save_copy_of_config
-    save_copy_of_config(config, config_filename)
-    print(f"Configuration file saved to {config_filename}")
-    return config
-
 def print_subject(layout, func_file):
     entities = layout.parse_file_entities(func_file)
     print(f"Processing subject {entities['subject']}")
@@ -73,7 +49,6 @@ def get_mask(layout, entities):
     else:
         raise ValueError(f"More that one mask for entitites {entities} found: {mask_img}.")
     return mask_img
-
 
 def get_bids_entities_from_config(config):
     """
@@ -95,7 +70,6 @@ def get_bids_entities_from_config(config):
     session = config.get("sessions")
     space = config.get("spaces")
     return dict(subject=subject, task=task, run=run, session=session, space=space)
-
 
 def get_files_for_analysis(layout, config):
     """
@@ -154,7 +128,6 @@ def get_files_for_analysis(layout, config):
 
     return func_files, json_files, confound_files
 
-
 def setup_and_check_connectivity_kinds(config):
     # Set up connectivity measures
     connectivity_kinds = config["connectivity_kinds"]
@@ -165,8 +138,6 @@ def setup_and_check_connectivity_kinds(config):
             f"The connectivity_kinds value must either be a string or a list. You provided {connectivity_kinds}.")
     return connectivity_kinds
 
-
-# Custom non-valid entity filter
 def apply_nonbids_filter(entity, value, files):
     """
     Filter paths according to any type of entity, even if not allowed by BIDS.
@@ -194,8 +165,6 @@ def apply_nonbids_filter(entity, value, files):
             filtered_files.append(file)
     return filtered_files
 
-
-# Function to compare affines of images, with some tolerance
 def check_affines_match(imgs):
     """
     Check if the affines of a list of Niimg objects (or file paths to .nii or .nii.gz) match.
@@ -215,8 +184,6 @@ def check_affines_match(imgs):
             return False
     return True
 
-
-# Group size verification tool
 def check_group_has_several_members(group_subjects):
     """
     A basic tool to check if provided group of subjects actually contain more than one element.
@@ -242,8 +209,6 @@ def check_group_has_several_members(group_subjects):
         raise ValueError(
             "Detecting a group with only one member, this is not yet supported. If this is not what you intended to do, review your configuration file.")
 
-
-# Try to guess groups in the dataset
 def guess_groups(layout):
     """
     Reads the participants.tsv file, checks for a "group" column, and returns lists of participants for each group.
@@ -293,8 +258,6 @@ def guess_groups(layout):
 
     return groups_dict
 
-
-# Tool to parse the various derivatives passed to CLI
 def parse_derivatives(derivatives_list):
     """Convert list of 'key=value' items into a dictionary."""
     derivatives_dict = {}
@@ -308,8 +271,6 @@ def parse_derivatives(derivatives_list):
                     f"Invalid format for -d/--derivatives: '{item}' must be in 'key=value' format.")
     return derivatives_dict
 
-
-# Tool to remove the entity defining the pairs to compare
 def remove_pair_making_entity(entities):
     """
     When performing paired tests, only one type of entity can be a list with 2 values (those are used to form pairs).
@@ -344,7 +305,6 @@ def remove_pair_making_entity(entities):
             unique_entities['session'] = None
 
     return unique_entities
-
 
 def convert_4D_to_3D(imgs):
     """

@@ -83,7 +83,9 @@ def resample_to_reference(layout, func_files, config):
             else:
                 print("Doing some resampling, please wait...")
                 resampled_img = resample_img(img, target_affine=reference_img.affine,
-                                             target_shape=reference_img.shape[:3], interpolation='nearest')
+                                             target_shape=reference_img.shape[:3],
+                                             interpolation='nearest',
+                                             force_resample=True)
 
             resampled_img.to_filename(resampled_path)
         else:
@@ -285,7 +287,7 @@ def extract_timeseries(func_file, config):
     method = config["method"]
     t_r = config["t_r"]
 
-    if method == "seeds" or (method == "roiToVoxel" and config["seeds_file"] is not None):
+    if method == "seedToVoxel" or method == "seedToSeed":
         from connectomix.utils.loaders import load_seed_file
         coords, labels = load_seed_file(config["seeds_file"])
 
@@ -300,40 +302,76 @@ def extract_timeseries(func_file, config):
             t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
         )
         timeseries = masker.fit_transform(func_file)
-    if method in config["supported_atlases"] or (method == "roiToVoxel" and config["roi_masks"] is not None):
-        if method in config["supported_atlases"]:
-            from connectomix.utils.loaders import get_atlas_data
-            imgs, labels, _ = get_atlas_data(method)
-            imgs = [imgs]
-        else:
+    elif method == "roiToVoxel" or method == "roiToRoi":
+        if method == "roiToVoxel":
             labels = list(config["roi_masks"].keys())
             imgs = list(config["roi_masks"].values())
-
             for roi_path in imgs:
                 if not os.path.isfile(roi_path):
                     raise FileNotFoundError(
                         f"No file found at provided path {roi_path} for roi_mask. Please review your configuration.")
+        elif method == "roiToRoi" and not config["canica"]:
+            from connectomix.utils.loaders import get_atlas_data
+            imgs, labels, _ = get_atlas_data(method)
+            imgs = [imgs]
 
-        timeseries = []
-        for img in imgs:
-            masker = NiftiLabelsMasker(
-                labels_img=img,
-                standardize="zscore_sample",
-                detrend=False,
-                high_pass=None,
-                low_pass=None,
-                t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
-            )
-            timeseries.append(masker.fit_transform(func_file))
-        timeseries = np.hstack(timeseries)
-    if method == "ica":
-        # ICA-based extraction
-        extractor = config["extractor"]
-        extractor.high_pass = None
-        extractor.low_pass = None
-        extractor.t_r = t_r
-        timeseries = extractor.transform(func_file)
-        labels = None
+        if config["canica"]:
+            # ICA-based extraction
+            extractor = config["extractor"]
+            extractor.high_pass = None
+            extractor.low_pass = None
+            extractor.t_r = t_r
+            timeseries = extractor.transform(func_file)
+            labels = None
+        else:
+            timeseries = []
+            for img in imgs:
+                masker = NiftiLabelsMasker(
+                    labels_img=img,
+                    standardize="zscore_sample",
+                    detrend=False,
+                    high_pass=None,
+                    low_pass=None,
+                    t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
+                )
+                timeseries.append(masker.fit_transform(func_file))
+
+            timeseries = np.hstack(timeseries)
+
+    # if method in config["supported_atlases"] or (method == "roiToVoxel" and config["roi_masks"] is not None):
+    #     if method in config["supported_atlases"]:
+    #         from connectomix.utils.loaders import get_atlas_data
+    #         imgs, labels, _ = get_atlas_data(method)
+    #         imgs = [imgs]
+    #     else:
+    #         labels = list(config["roi_masks"].keys())
+    #         imgs = list(config["roi_masks"].values())
+    #
+    #         for roi_path in imgs:
+    #             if not os.path.isfile(roi_path):
+    #                 raise FileNotFoundError(
+    #                     f"No file found at provided path {roi_path} for roi_mask. Please review your configuration.")
+    #
+    #     timeseries = []
+    #     for img in imgs:
+    #         masker = NiftiLabelsMasker(
+    #             labels_img=img,
+    #             standardize="zscore_sample",
+    #             detrend=False,
+    #             high_pass=None,
+    #             low_pass=None,
+    #             t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
+    #         )
+    #         timeseries.append(masker.fit_transform(func_file))
+    #     timeseries = np.hstack(timeseries)
+    # if method == "ica":
+    #     # ICA-based extraction
+    #     extractor = config["extractor"]
+    #     extractor.high_pass = None
+    #     extractor.low_pass = None
+    #     extractor.t_r = t_r
+    #     timeseries = extractor.transform(func_file)
+    #     labels = None
 
     return timeseries, labels
 

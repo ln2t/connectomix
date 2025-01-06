@@ -4,34 +4,34 @@ import importlib.resources
 from connectomix.utils.modes import participant_level_analysis, group_level_analysis
 from connectomix.tests.paths import bids_dir, fmriprep_dir, output_dir
 
-example_seeds_for_roiToRoi = str(importlib.resources.files("connectomix.tests.seeds").joinpath("example_seeds_for_roiToRoi.tsv"))
-example_seeds_for_roiToVoxel = str(importlib.resources.files("connectomix.tests.seeds").joinpath("example_seeds_for_roiToVoxel.tsv"))
+example_seeds_for_seedToSeed = str(importlib.resources.files("connectomix.tests.seeds").joinpath("example_seeds_for_seedToSeed.tsv"))
+example_seeds_for_seedToVoxel = str(importlib.resources.files("connectomix.tests.seeds").joinpath("example_seeds_for_seedToVoxel.tsv"))
 
 precuneus_L_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precuneus_L.nii.gz"))
 precentral_R_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precentral_R.nii.gz"))
 
-
-## roiToVoxel, seed-based (default)
+## seedToVoxel
 participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
-                           config={"seeds_file": example_seeds_for_roiToVoxel})
+                           config={"method": "seedToVoxel",
+                               "seeds_file": example_seeds_for_seedToVoxel})
 
-## roiToVoxel, roi-based (from mask)
+## roiToVoxel
 
 participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
-                           config={"roi_masks": {"precentralR": precentral_R_mask,
+                           config={"method": "roiToVoxel",
+                               "roi_masks": {"precentralR": precentral_R_mask,
                                                  "precuneusL": precuneus_L_mask}})
 
-## roiToRoi, seed-based
-
+## seedToSeed
 participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
-                           config={"method": "seeds",
-                                   "seeds_file": example_seeds_for_roiToRoi})
+                           config={"method": "seedToSeed",
+                                   "seeds_file": example_seeds_for_seedToSeed})
 plt.close('all')
 
 ## roiToRoi, atlas-based - aal

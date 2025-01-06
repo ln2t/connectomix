@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 from bids import BIDSLayout
 
+from connectomix.utils.makers import save_copy_of_config
 from connectomix.utils.processing import preprocessing
 
 
@@ -108,20 +109,22 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
 
     """
     from connectomix.version import __version__
-    from connectomix.utils.tools import setup_layout, setup_config, print_subject
+    from connectomix.utils.tools import setup_layout, print_subject
     from connectomix.utils.processing import compute_canica_components, single_subject_analysis
     from connectomix.utils.loaders import get_repetition_time
+    from connectomix.utils.setup import setup_config
 
     print(f"Running connectomix (Participant-level) version {__version__}")
 
     layout = setup_layout(bids_dir, output_dir, derivatives)
+    save_copy_of_config(layout, config)
     config = setup_config(layout, config, "participant")
     print(f"Selected method for connectivity analysis: {config['method']}")
 
     denoised_files, json_files = preprocessing(layout, config)
 
     # Compute CanICA components if necessary and store it in the methods options
-    config = compute_canica_components(layout, denoised_files, config) if config["atlas"] == "canica" else config
+    config = compute_canica_components(layout, denoised_files, config) if config.get("atlas", None) == "canica" else config
 
     for (func_file, json_file) in zip(denoised_files, json_files):
         print_subject(layout, func_file)
@@ -159,7 +162,8 @@ def group_level_analysis(bids_dir, output_dir, config):
     layout = setup_layout(bids_dir, output_dir)
 
     # Load and backup the configuration file
-    from connectomix.utils.tools import setup_config
+    from connectomix.utils.setup import setup_config
+    save_copy_of_config(layout, config)
     config = setup_config(layout, config, "group")
 
     if config["method"] == "roiToVoxel":

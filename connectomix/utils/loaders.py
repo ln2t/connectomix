@@ -328,7 +328,7 @@ def select_confounds(confounds_file, config):
     confounds = pd.read_csv(confounds_file, delimiter='\t')
 
     # First check selected confound columns are valid names
-    for confound_column in config.get("confound_columns"):
+    for confound_column in config.get("confounds"):
         if not confound_column in confounds.columns:
             raise ValueError(f"Confounds column {confound_column} is not a valid confound name.")
 
@@ -346,13 +346,8 @@ def select_confounds(confounds_file, config):
                 warnings.warn(
                     f"Motion parameter {motion_parameter} is detected in the confounds list, but you have selected aroma-denoising, which already deals with motion paramters. Removing {motion_parameter} from the confounds list.")
 
-    # Select the confounds
-    selected_confounds = confounds[config.get("confound_columns")]
+    selected_confounds = confounds[config.get("confounds")]
 
-    # Deal with NaN in confound values
-    # Todo: implement better method to deal with NaN's. Those are always present when taking derivatives of confounds and nilearn trows an error. Maybe a bug in nilearn? Open an issue?
-    # warnings.warn("If NaNs are present in the confounds, they are replaced by zero to ensure compatibility with nilearn. This is potentially very wrong.")
-    # selected_confounds = selected_confounds.fillna(0)
     return selected_confounds
 
 
