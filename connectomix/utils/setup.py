@@ -134,7 +134,7 @@ def setup_config_analysis(config, level):
                                              5)
         case "roiToVoxel":
             config["roi_masks"] = config_helper(config,
-                                                "roi_mask",
+                                                "roi_masks",
                                                 None)
         case "seedToSeed":
             config["seeds_file"] = config_helper(config,

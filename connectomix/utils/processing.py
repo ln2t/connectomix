@@ -315,7 +315,7 @@ def extract_timeseries(func_file, config):
             imgs, labels, _ = get_atlas_data(method)
             imgs = [imgs]
 
-        if config["canica"]:
+        if config.get("canica", False):
             # ICA-based extraction
             extractor = config["extractor"]
             extractor.high_pass = None
@@ -410,10 +410,13 @@ def add_new_entities(entities, label, config):
 
     return entities
 
-def build_output_path(layout, entities, label, config):
+def build_output_path(layout, entities, label, config, **kwargs):
     from connectomix.utils.makers import ensure_directory
 
     entities = add_new_entities(entities, label, config)
+    if kwargs:
+        for key in kwargs.keys():
+            entities[key] = kwargs[key]
     pattern = "sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_{new_entity_key}-{new_entity_val}_{suffix}.{extension}"
     output_path = layout.derivatives["connectomix"].build_path(entities, path_patterns=[pattern], validate=False)
     ensure_directory(output_path)
@@ -442,16 +445,9 @@ def glm_analysis_participant_level(t_r, mask_img, func_file, timeseries):
     return glm.compute_contrast(contrast_vector, output_type="effect_size")
 
 def save_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config):
-    # Create plot of z-score map and save
-    roi_to_voxel_plot_path = layout.derivatives["connectomix"].build_path(entities,
-                                                                          path_patterns=[
-                                                                              'sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_seed-%s_plot.svg' % (
-                                                                              config["method"], label)],
-                                                                          validate=False)
-    from connectomix.utils.makers import ensure_directory
-    ensure_directory(roi_to_voxel_plot_path)
+    roi_to_voxel_plot_path = build_output_path(layout, entities, label, config, extension=".svg")
 
-    if config["seeds_file"] is not None:
+    if config.get("seeds_file", False):
         from connectomix.utils.loaders import load_seed_file
         coords, labels = load_seed_file(config["seeds_file"])
         coord = coords[labels.index(label)]

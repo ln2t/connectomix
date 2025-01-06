@@ -10,6 +10,14 @@ example_seeds_for_seedToVoxel = str(importlib.resources.files("connectomix.tests
 precuneus_L_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precuneus_L.nii.gz"))
 precentral_R_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precentral_R.nii.gz"))
 
+## roiToVoxel
+participant_level_analysis(bids_dir,
+                           output_dir,
+                           derivatives={"fmriprep": fmriprep_dir},
+                           config={"method": "roiToVoxel",
+                                   "roi_masks": {"precentralR": precentral_R_mask,
+                                                     "precuneusL": precuneus_L_mask}})
+
 ## seedToVoxel
 participant_level_analysis(bids_dir,
                            output_dir,
@@ -17,14 +25,7 @@ participant_level_analysis(bids_dir,
                            config={"method": "seedToVoxel",
                                "seeds_file": example_seeds_for_seedToVoxel})
 
-## roiToVoxel
 
-participant_level_analysis(bids_dir,
-                           output_dir,
-                           derivatives={"fmriprep": fmriprep_dir},
-                           config={"method": "roiToVoxel",
-                               "roi_masks": {"precentralR": precentral_R_mask,
-                                                 "precuneusL": precuneus_L_mask}})
 
 ## seedToSeed
 participant_level_analysis(bids_dir,
