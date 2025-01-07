@@ -35,19 +35,19 @@ def get_atlas_data(atlas_name, get_cut_coords=False):
     """
 
     if atlas_name == "schaeffer100":
-        warnings.warn("Using Schaefer 2018 atlas with 100 rois")
+        print("Using Schaefer 2018 atlas with 100 rois")
         atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
         maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=maps) if get_cut_coords else []
         labels = atlas["labels"]
     elif atlas_name == "aal":
-        warnings.warn("Using AAL atlas")
+        print("Using AAL atlas")
         atlas = datasets.fetch_atlas_aal()
         maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
         labels = atlas["labels"]
     elif atlas_name == "harvardoxford":
-        warnings.warn("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
+        print("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
         atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
         maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []

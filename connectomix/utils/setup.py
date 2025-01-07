@@ -142,8 +142,7 @@ def setup_config_analysis(config, level):
                                                  None)
             config["radius"] = config_helper(config,
                                              "radius",
-                                             5,
-                                             np.arange(100) + 1)
+                                             5)
             config["connectivity_kind"] = config_helper(config,
                                                          "connectivity_kind",
                                                          "correlation",
@@ -160,7 +159,7 @@ def setup_config_analysis(config, level):
                                                          "connectivity_kind",
                                                          "correlation",
                                                          allowed_connectivity_kinds)
-            if config["atlas"] == "canica":
+            if config["atlas"] == "canica" or config.get("canica", False):
                 # see nilearn for the meaning of these options
                 config["canica_threshold"] = config_helper(config,
                                                            'canica_threshold',
@@ -168,6 +167,8 @@ def setup_config_analysis(config, level):
                 config["canica_min_region_size"] = config_helper(config,
                                                                  'canica_min_region_size',
                                                                  50)
+                config["canica"] = True
+                config["atlas"] = "canica"
     if level == "group":
         config["smoothing"] = config_helper(config,
                                             "smoothing",

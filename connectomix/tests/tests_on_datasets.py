@@ -10,6 +10,45 @@ example_seeds_for_seedToVoxel = str(importlib.resources.files("connectomix.tests
 precuneus_L_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precuneus_L.nii.gz"))
 precentral_R_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precentral_R.nii.gz"))
 
+## roiToRoi, canica
+participant_level_analysis(bids_dir,
+                           output_dir,
+                           derivatives={"fmriprep": fmriprep_dir},
+                           config={"method": "roiToRoi",
+                                   "canica": True})
+
+## roiToRoi, harvardoxford
+participant_level_analysis(bids_dir,
+                           output_dir,
+                           derivatives={"fmriprep": fmriprep_dir},
+                           config={"method": "roiToRoi",
+                                   "atlas": "harvardoxford"})
+
+## roiToRoi, schaeffer100
+participant_level_analysis(bids_dir,
+                           output_dir,
+                           derivatives={"fmriprep": fmriprep_dir},
+                           config={"method": "roiToRoi",
+                                   "atlas": "schaeffer100"})
+
+
+plt.close('all')
+
+## roiToRoi, atlas-based - aal
+participant_level_analysis(bids_dir,
+                           output_dir,
+                           derivatives={"fmriprep": fmriprep_dir},
+                           config={"method": "roiToRoi",
+                                   "atlas": "aal"})
+
+## seedToSeed
+participant_level_analysis(bids_dir,
+                           output_dir,
+                           derivatives={"fmriprep": fmriprep_dir},
+                           config={"method": "seedToSeed",
+                                   "custom_seeds_name" : "test",
+                                   "seeds_file": example_seeds_for_seedToSeed})
+
 ## roiToVoxel
 participant_level_analysis(bids_dir,
                            output_dir,
@@ -27,37 +66,7 @@ participant_level_analysis(bids_dir,
 
 
 
-## seedToSeed
-participant_level_analysis(bids_dir,
-                           output_dir,
-                           derivatives={"fmriprep": fmriprep_dir},
-                           config={"method": "seedToSeed",
-                                   "seeds_file": example_seeds_for_seedToSeed})
-plt.close('all')
-
-## roiToRoi, atlas-based - aal
-
-participant_level_analysis(bids_dir,
-                           output_dir,
-                           derivatives={"fmriprep": fmriprep_dir},
-                           config={"method": "aal"})
-plt.close('all')
-
-## roiToRoi, atlas-based - schaeffer100
-
-participant_level_analysis(bids_dir,
-                           output_dir,
-                           derivatives={"fmriprep": fmriprep_dir},
-                           config={"method": "schaeffer100"})
-plt.close('all')
-
-## roiToRoi, atlas-based - harvardoxford
-
-participant_level_analysis(bids_dir,
-                           output_dir,
-                           derivatives={"fmriprep": fmriprep_dir},
-                           config={"method": "harvardoxford"})
-plt.close('all')
+##
 
 # Group analysis - mean effect
 group_level_analysis(bids_dir,

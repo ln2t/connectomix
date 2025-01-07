@@ -310,9 +310,9 @@ def extract_timeseries(func_file, config):
                 if not os.path.isfile(roi_path):
                     raise FileNotFoundError(
                         f"No file found at provided path {roi_path} for roi_mask. Please review your configuration.")
-        elif method == "roiToRoi" and not config["canica"]:
+        elif method == "roiToRoi" and not config.get("canica", False):
             from connectomix.utils.loaders import get_atlas_data
-            imgs, labels, _ = get_atlas_data(method)
+            imgs, labels, _ = get_atlas_data(config["atlas"])
             imgs = [imgs]
 
         if config.get("canica", False):
@@ -490,23 +490,14 @@ def roi_to_voxel_single_subject_analysis(layout, func_file, timeseries_list, lab
         roi_to_voxel_img.to_filename(roi_to_voxel_path)
         save_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config)
 
-def save_matrix_plot():
-    # Placeholder function
-    # TODO: implement this function
-    # # Generate the BIDS-compliant filename for the figure, generate the figure and save
-    # conn_matrix_plot_path = layout.derivatives["connectomix"].build_path(entities,
-    #                                                                      path_patterns=[
-    #                                                                          "sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-%s_desc-%s_matrix.svg" % (
-    #                                                                          config["method"], connectivity_kind)],
-    #                                                                      validate=False)
-    # ensure_directory(conn_matrix_plot_path)
-    # plt.figure(figsize=(10, 10))
-    # plot_matrix(conn_matrix, labels=labels, colorbar=True)
-    # plt.savefig(conn_matrix_plot_path)
-    # plt.close()
-    return None
+def save_matrix_plot(layout, conn_matrix, entities, labels, config):
+    conn_matrix_plot_path = build_output_path(layout, entities, None, config, extension=".svg")
+    plt.figure(figsize=(10, 10))
+    plot_matrix(conn_matrix, labels=labels, colorbar=True)
+    plt.savefig(conn_matrix_plot_path)
+    plt.close()
 
-def roi_to_roi_single_subject_analysis(layout, func_file, timeseries_list, config):
+def roi_to_roi_single_subject_analysis(layout, func_file, timeseries_list, labels, config):
     """
     Run roi-to-roi analysis on denoised data. Save the outputs in BIDS derivative format.
 
@@ -528,7 +519,7 @@ def roi_to_roi_single_subject_analysis(layout, func_file, timeseries_list, confi
     np.fill_diagonal(conn_matrix, 0)
     conn_matrix_path = build_output_path(layout, entities, None, config)
     np.save(conn_matrix_path, conn_matrix)
-    save_matrix_plot()
+    save_matrix_plot(layout, conn_matrix, entities, labels, config)
 
 def single_subject_analysis(layout, func_file, config):
 
@@ -537,7 +528,7 @@ def single_subject_analysis(layout, func_file, config):
     if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
         roi_to_voxel_single_subject_analysis(layout, func_file, timeseries_list, labels, config)
     elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
-        roi_to_roi_single_subject_analysis(layout, func_file, timeseries_list, config)
+        roi_to_roi_single_subject_analysis(layout, func_file, timeseries_list,labels, config)
 
 def make_second_level_input(layout, label, config):
 
