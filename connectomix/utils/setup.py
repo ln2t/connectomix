@@ -176,15 +176,26 @@ def setup_config_analysis(config, level):
 
         config["analysis_name"] = config_helper(config,
                                                 "analysis_name",
-                                                "analysisCustomName")
+                                                "customName")
+
+        config["paired_tests"] = config_helper(config,
+                                               "paired_tests",
+                                               False,
+                                               [True, False])
 
         config["covariates"] = config_helper(config,
                                              "covariates",
                                              [])  # TODO: write a function that fetches the col names of participants.tsv
 
+        config["add_intercept"] = config_helper(config,
+                                            "add_intercept",
+                                            True,
+                                            [True, False])
+
         config["contrast"] = config_helper(config,
                                           "contrast",
                                           "intercept")
+
         # Roi-to-roi specific parameters
         #
         # config["group1_subjects"] = config_helper(config,
@@ -235,6 +246,15 @@ def setup_config_stats(config):
     config["n_permutations"] = config_helper(config,
                                              "n_permutations",
                                              20)
+
+    config["two_sided_test"] = config_helper(config,
+                                             "two_sided_test",
+                                             True,
+                                             [True, False])
+
+    config["n_jobs"] = config_helper(config,
+                                     "n_jobs",
+                                     2)
 
     if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
         # p-value for cluster forming threshold

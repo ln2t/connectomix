@@ -10,6 +10,59 @@ example_seeds_for_seedToVoxel = str(importlib.resources.files("connectomix.tests
 precuneus_L_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precuneus_L.nii.gz"))
 precentral_R_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precentral_R.nii.gz"))
 
+## roiToVoxel - group
+group_level_analysis(bids_dir,
+                     output_dir,
+                     config={"method": "roiToVoxel",
+                             "roi_masks": {"precentralR": precentral_R_mask,
+                                           "precuneusL": precuneus_L_mask},
+                             "analysis_name": "testMeanEffect",
+                             "contrast": "intercept"})
+
+group_level_analysis(bids_dir,
+                     output_dir,
+                     config={"method": "roiToVoxel",
+                             "roi_masks": {"precentralR": precentral_R_mask,
+                                           "precuneusL": precuneus_L_mask},
+                             "analysis_name": "testControlVersusPatients",
+                             "covariates" : "group",
+                             "contrast": "control-patient",
+                             "add_intercept": False})
+
+group_level_analysis(bids_dir,
+                     output_dir,
+                     config={"method": "roiToVoxel",
+                             "roi_masks": {"precentralR": precentral_R_mask,
+                                           "precuneusL": precuneus_L_mask},
+                             "analysis_name": "testEffectOfAge",
+                             "covariates" : "age",
+                             "contrast": "age"})
+
+## seedToVoxel - group
+group_level_analysis(bids_dir,
+                     output_dir,
+                     config={"method": "seedToVoxel",
+                             "seeds_file": example_seeds_for_seedToVoxel,
+                             "analysis_name": "testMeanEffect",
+                             "contrast": "intercept"})
+
+group_level_analysis(bids_dir,
+                     output_dir,
+                     config={"method": "seedToVoxel",
+                             "seeds_file": example_seeds_for_seedToVoxel,
+                             "analysis_name": "testControlVersusPatients",
+                             "covariates" : "group",
+                             "contrast": "control-patient",
+                             "add_intercept": False})
+
+group_level_analysis(bids_dir,
+                     output_dir,
+                     config={"method": "seedToVoxel",
+                             "seeds_file": example_seeds_for_seedToVoxel,
+                             "analysis_name": "testEffectOfAge",
+                             "covariates" : "age",
+                             "contrast": "age"})
+
 ## roiToRoi, canica
 participant_level_analysis(bids_dir,
                            output_dir,
@@ -62,7 +115,7 @@ participant_level_analysis(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
                            config={"method": "seedToVoxel",
-                               "seeds_file": example_seeds_for_seedToVoxel})
+                                   "seeds_file": example_seeds_for_seedToVoxel})
 
 
 

@@ -119,6 +119,7 @@ def participant_level_analysis(bids_dir, output_dir, derivatives, config):
     layout = setup_layout(bids_dir, output_dir, derivatives)
     save_copy_of_config(layout, config)
     config = setup_config(layout, config, "participant")
+
     print(f"Selected method for connectivity analysis: {config['method']}")
 
     denoised_files, json_files = preprocessing(layout, config)
@@ -166,10 +167,10 @@ def group_level_analysis(bids_dir, output_dir, config):
     save_copy_of_config(layout, config)
     config = setup_config(layout, config, "group")
 
-    if config["method"] == "roiToVoxel":
+    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
         from connectomix.utils.processing import roi_to_voxel_group_analysis
         roi_to_voxel_group_analysis(layout, config)
-    else:
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
         from connectomix.utils.processing import roi_to_roi_group_analysis
         roi_to_roi_group_analysis(layout, config)
 

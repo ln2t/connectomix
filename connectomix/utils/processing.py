@@ -117,6 +117,7 @@ def compute_canica_components(layout, func_filenames, config):
     entities.pop('subject')
 
     # Build path to save canICA components
+    # TODO: update these path-building steps using build_output_path
     canica_filename = layout.derivatives["connectomix"].build_path(entities,
                                                                    path_patterns=[
                                                                        "canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.nii.gz"],
@@ -375,6 +376,19 @@ def extract_timeseries(func_file, config):
 
     return timeseries, labels
 
+def camel_case_list_of_strings(strings):
+    strings = [element.lower().capitalize() for element in strings]
+    strings[0] = strings[0].lower()
+    return strings
+
+def constrast_string_to_bids_entity_value(contrast):
+    # TODO: improve this as it does not behave very nicely in cases where + and - are both present
+    if "+" in contrast:
+        contrast = "Plus".join(camel_case_list_of_strings(contrast.split("+")))
+    if "-" in contrast:
+        contrast = "Minus".join(camel_case_list_of_strings(contrast.split("-")))
+    return contrast
+
 def add_new_entities(entities, label, config):
 
     match config["method"]:
@@ -408,16 +422,22 @@ def add_new_entities(entities, label, config):
     entities["new_entity_val"] = new_entity_val
     entities["suffix"] = suffix
 
+    entities["analysis_name"] = config["analysis_name"]
+    entities["contrast"] = constrast_string_to_bids_entity_value(config["contrast"])
+
     return entities
 
-def build_output_path(layout, entities, label, config, **kwargs):
+def build_output_path(layout, entities, label, level, config, **kwargs):
     from connectomix.utils.makers import ensure_directory
 
     entities = add_new_entities(entities, label, config)
     if kwargs:
         for key in kwargs.keys():
             entities[key] = kwargs[key]
-    pattern = "sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_{new_entity_key}-{new_entity_val}_{suffix}.{extension}"
+    if level == "participant":
+        pattern = "sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_{new_entity_key}-{new_entity_val}_{suffix}.{extension}"
+    elif level == "group":
+        pattern = "group/[ses-{session}/][ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_{new_entity_key}-{new_entity_val}[_analysis-{analysis_name}][_contrast-{contrast}]_{suffix}.{extension}"
     output_path = layout.derivatives["connectomix"].build_path(entities, path_patterns=[pattern], validate=False)
     ensure_directory(output_path)
 
@@ -445,7 +465,7 @@ def glm_analysis_participant_level(t_r, mask_img, func_file, timeseries):
     return glm.compute_contrast(contrast_vector, output_type="effect_size")
 
 def save_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config):
-    roi_to_voxel_plot_path = build_output_path(layout, entities, label, config, extension=".svg")
+    roi_to_voxel_plot_path = build_output_path(layout, entities, label, "participant", config, extension=".svg")
 
     if config.get("seeds_file", False):
         from connectomix.utils.loaders import load_seed_file
@@ -486,12 +506,12 @@ def roi_to_voxel_single_subject_analysis(layout, func_file, timeseries_list, lab
 
     for timeseries, label in zip(timeseries_list.T, labels):
         roi_to_voxel_img = glm_analysis_participant_level(config["t_r"], mask_img, func_file, timeseries.reshape(-1, 1))
-        roi_to_voxel_path = build_output_path(layout, entities, label, config)
+        roi_to_voxel_path = build_output_path(layout, entities, label, "participant", config)
         roi_to_voxel_img.to_filename(roi_to_voxel_path)
         save_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config)
 
 def save_matrix_plot(layout, conn_matrix, entities, labels, config):
-    conn_matrix_plot_path = build_output_path(layout, entities, None, config, extension=".svg")
+    conn_matrix_plot_path = build_output_path(layout, entities, None, "participant", config, extension=".svg")
     plt.figure(figsize=(10, 10))
     plot_matrix(conn_matrix, labels=labels, colorbar=True)
     plt.savefig(conn_matrix_plot_path)
@@ -517,7 +537,7 @@ def roi_to_roi_single_subject_analysis(layout, func_file, timeseries_list, label
     connectivity_measure = ConnectivityMeasure(kind=config["connectivity_kind"])
     conn_matrix = connectivity_measure.fit_transform([timeseries_list])[0]
     np.fill_diagonal(conn_matrix, 0)
-    conn_matrix_path = build_output_path(layout, entities, None, config)
+    conn_matrix_path = build_output_path(layout, entities, None, "participant", config)
     np.save(conn_matrix_path, conn_matrix)
     save_matrix_plot(layout, conn_matrix, entities, labels, config)
 
@@ -532,19 +552,27 @@ def single_subject_analysis(layout, func_file, config):
 
 def make_second_level_input(layout, label, config):
 
-    second_level_input = pd.DataFrame(columns=['subject_label', 'map_name', 'effects_map_path'])
+    second_level_input = pd.DataFrame(columns=["subject_label",
+                                               "map_name",
+                                               "effects_map_path"])
 
     from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     map_files = layout.derivatives["connectomix"].get(return_type='filename',
                                                       extension='.nii.gz',
                                                       **entities)
+
+    entities_with_non_bids_fields = add_new_entities(entities, label, config)
     from connectomix.utils.tools import apply_nonbids_filter
-    map_files = apply_nonbids_filter("seed", label, map_files)
-    map_files = apply_nonbids_filter("method", config["method"], map_files)
+    map_files = apply_nonbids_filter(entities_with_non_bids_fields["new_entity_key"],
+                                     entities_with_non_bids_fields["new_entity_val"],
+                                     map_files)
+    map_files = apply_nonbids_filter("method",
+                                     config["method"],
+                                     map_files)
 
     # TODO: for paired analysis, compute difference of maps and save result to folder.
-    if config['analysis_type'] == 'paired':
+    if config['paired_tests']:
         raise ValueError('Paired analysis not yet supported')
 
     for file in map_files:
@@ -553,51 +581,66 @@ def make_second_level_input(layout, label, config):
 
     return second_level_input
 
-def get_group_level_confounds(layout, subjects_label, config):
+def get_group_level_covariates(layout, subjects_label, config):
     participants_file = layout.get(return_type="filename", extension="tsv", scope="raw")[0]
     participants_df = pd.read_csv(participants_file, sep='\t')
 
-    if not isinstance(config["group_confounds"], list):
-        config["group_confounds"] = [config["group_confounds"]]
+    if not isinstance(config["covariates"], list):
+        config["covariates"] = [config["covariates"]]
 
-    confounds = participants_df[["participant_id", *config["group_confounds"]]]
-    confounds = confounds.rename(columns={"participant_id": "subject_label"}).copy()
+    covariates = participants_df[["participant_id", *config["covariates"]]]
+    covariates = covariates.rename(columns={"participant_id": "subject_label"}).copy()
 
-    if "group" in config["group_confounds"]:
-        group_labels = set(confounds["group"].values)
+    if "group" in config["covariates"]:
+        group_labels = set(covariates["group"].values)
 
         for group in group_labels:
-            confounds[group] = 0
-            confounds.loc[confounds["group"] == group, group] = 1
+            covariates[group] = 0
+            covariates.loc[covariates["group"] == group, group] = 1
 
-        confounds.drop(columns=["group"], inplace=True)
+        covariates.drop(columns=["group"], inplace=True)
 
-    confounds.rename(columns={"participant_id": "subject_label"}, inplace=True)
+    covariates.rename(columns={"participant_id": "subject_label"}, inplace=True)
 
-    return None if len(confounds.columns) == 1 else confounds
+    # TODO: add a filter on df covariates to include only lines with "subject_label" included in subjects_label
+
+    return None if len(covariates.columns) == 1 else covariates
 
 def make_group_level_design_matrix(layout, second_level_input, label, config):
     subjects_label = list(second_level_input["subject_label"])
-    confounds = get_group_level_confounds(layout, subjects_label, config)
+    confounds = get_group_level_covariates(layout, subjects_label, config)
 
     design_matrix = make_second_level_design_matrix(subjects_label, confounds=confounds)
 
-    if "group" in config["group_confounds"]:
+    if "group" in config["covariates"] and config["add_intercept"]:
+        warnings.warn("Adding an intercept when including group factor in the design matrix is always"
+                      "producing a singular matrix. Are you sure this is what you want to do?")
+
+    if not config["add_intercept"]:
         design_matrix.drop(columns=["intercept"], inplace=True)
 
     from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
-    design_matrix_plot_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                                            "analysis_label": config["analysis_label"],
-                                                                            "method": config["method"],
-                                                                            "seed": label
-                                                                            },
-                                                                           path_patterns=[
-                                                                               "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_designMatrix.svg"],
-                                                                           validate=False)
-    from connectomix.utils.makers import ensure_directory
-    ensure_directory(design_matrix_plot_path)
+    design_matrix_plot_path = build_output_path(layout,
+                                                entities,
+                                                label,
+                                                "group",
+                                                config,
+                                                contrast=None,
+                                                suffix="designMatrix",
+                                                extension=".svg")
+
+    # design_matrix_plot_path = layout.derivatives["connectomix"].build_path({**entities,
+    #                                                                         "analysis_label": config["analysis_label"],
+    #                                                                         "method": config["method"],
+    #                                                                         "seed": label
+    #                                                                         },
+    #                                                                        path_patterns=[
+    #                                                                            "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_designMatrix.svg"],
+    #                                                                        validate=False)
+    # from connectomix.utils.makers import ensure_directory
+    # ensure_directory(design_matrix_plot_path)
     plot_design_matrix(design_matrix, output_file=design_matrix_plot_path)
 
     return design_matrix
@@ -606,21 +649,31 @@ def compute_group_level_contrast(layout, glm, label, config):
     from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
-    entities["seed"] = label
-    contrast_label = config["group_contrast"]
-    contrast_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                                  "analysis_label": config["analysis_label"],
-                                                                  "method": config["method"],
-                                                                  "seed": label
-                                                                  },
-                                                                 path_patterns=[
-                                                                     "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.nii.gz"],
-                                                                 validate=False)
 
-    from connectomix.utils.makers import ensure_directory
-    ensure_directory(contrast_path)
-    print(f"Computing contrast label named \'{contrast_label}\'")
-    glm.compute_contrast(contrast_label,
+    contrast_path = build_output_path(layout,
+                                      entities,
+                                      label,
+                                      "group",
+                                      config,
+                                      suffix="zScore",
+                                      extension=".nii.gz")
+
+    # entities["seed"] = label
+    # contrast_label = config["group_contrast"]
+    # contrast_path = layout.derivatives["connectomix"].build_path({**entities,
+    #                                                               "analysis_label": config["analysis_label"],
+    #                                                               "method": config["method"],
+    #                                                               "seed": label
+    #                                                               },
+    #                                                              path_patterns=[
+    #                                                                  "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.nii.gz"],
+    #                                                              validate=False)
+    #
+    # from connectomix.utils.makers import ensure_directory
+    # ensure_directory(contrast_path)
+
+    print(f"Computing contrast label named \'{config['contrast']}\'")
+    glm.compute_contrast(config["contrast"],
                          first_level_contrast=label,
                          output_type="z_score").to_filename(contrast_path)
     return contrast_path
@@ -630,17 +683,27 @@ def save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
     from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
-    entities["seed"] = label
-    contrast_plot_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                                       "analysis_label": config["analysis_label"],
-                                                                       "method": config["method"],
-                                                                       "seed": label
-                                                                       },
-                                                                      path_patterns=[
-                                                                          "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.svg"],
-                                                                      validate=False)
-    from connectomix.utils.makers import ensure_directory
-    ensure_directory(contrast_plot_path)
+
+    contrast_plot_path = build_output_path(layout,
+                                           entities,
+                                           label,
+                                           "group",
+                                           config,
+                                           suffix="zScore",
+                                           extension=".svg")
+
+    # entities["seed"] = label
+    # contrast_plot_path = layout.derivatives["connectomix"].build_path({**entities,
+    #                                                                    "analysis_label": config["analysis_label"],
+    #                                                                    "method": config["method"],
+    #                                                                    "seed": label
+    #                                                                    },
+    #                                                                   path_patterns=[
+    #                                                                       "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_zScore.svg"],
+    #                                                                   validate=False)
+    # from connectomix.utils.makers import ensure_directory
+    # ensure_directory(contrast_plot_path)
+
     contrast_plot = plot_stat_map(contrast_path,
                                   threshold=3.0,
                                   title=f"roi-to-voxel contrast for seed {label} (coords {coord})",
@@ -648,35 +711,53 @@ def save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
     contrast_plot.add_markers(marker_coords=[coord],
                               marker_color="k",
                               marker_size=2 * config["radius"])
+
     contrast_plot.savefig(contrast_plot_path)
 
 def compute_non_parametric_max_mass(layout, glm, label, config):
     from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
-    entities["seed"] = label
-    np_logp_max_mass_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                                          "analysis_label": config["analysis_label"],
-                                                                          "method": config["method"],
-                                                                          "seed": label
-                                                                          },
-                                                                         path_patterns=[
-                                                                             "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.nii.gz"],
-                                                                         validate=False)
 
-    from connectomix.utils.makers import ensure_directory
-    ensure_directory(np_logp_max_mass_path)
+    np_logp_max_mass_path = build_output_path(layout,
+                                              entities,
+                                              label,
+                                              "group",
+                                              config,
+                                              suffix="logpMaxMass",
+                                              extension=".nii.gz")
+
+    # entities["seed"] = label
+    #
+    # np_logp_max_mass_path = layout.derivatives["connectomix"].build_path({**entities,
+    #                                                                       "analysis_label": config["analysis_label"],
+    #                                                                       "method": config["method"],
+    #                                                                       "seed": label
+    #                                                                       },
+    #                                                                      path_patterns=[
+    #                                                                          "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.nii.gz"],
+    #                                                                      validate=False)
+    #
+    # from connectomix.utils.makers import ensure_directory
+    # ensure_directory(np_logp_max_mass_path)
+
     np_outputs = non_parametric_inference(glm.second_level_input_,
                                           design_matrix=glm.design_matrix_,
-                                          second_level_contrast=config["group_contrast"],
+                                          second_level_contrast=config["contrast"],
                                           first_level_contrast=label,
                                           smoothing_fwhm=config["smoothing"],
-                                          two_sided_test=True,  # TODO: put this in config file
-                                          n_jobs=2,  # TODO: put this in config file
+                                          two_sided_test=config["two_sided_test"],
+                                          n_jobs=config["n_jobs"],
                                           threshold=float(config["cluster_forming_alpha"]),
                                           n_perm=config["n_permutations"])
+
     np_outputs["logp_max_mass"].to_filename(np_logp_max_mass_path)
+
     return np_logp_max_mass_path
+
+def alpha_value_to_bids_valid_string(alpha):
+    alpha = str(alpha)
+    return alpha.replace(".", "Dot")
 
 def save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, label, config):
     for significance_level in ["uncorrected", "fdr", "fwe"]:
@@ -684,27 +765,40 @@ def save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path,
         from connectomix.utils.tools import get_bids_entities_from_config
         entities = get_bids_entities_from_config(config)
         entities.pop("subject")
-        entities["seed"] = label
-        thresholded_contrast_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                                                  "analysis_label": config[
-                                                                                      "analysis_label"],
-                                                                                  "method": config["method"],
-                                                                                  "seed": label,
-                                                                                  "significance_level": significance_level
-                                                                                  },
-                                                                                 path_patterns=[
-                                                                                     "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_{significance_level}.nii.gz"],
-                                                                                 validate=False)
-        from connectomix.utils.makers import ensure_directory
-        ensure_directory(thresholded_contrast_path)
+
+        thresholded_contrast_path = build_output_path(layout,
+                                                      entities,
+                                                      label,
+                                                      "group",
+                                                      config,
+                                                      suffix=significance_level + alpha_value_to_bids_valid_string(alpha),
+                                                      extension=".nii.gz")
+
+        # entities["seed"] = label
+        # thresholded_contrast_path = layout.derivatives["connectomix"].build_path({**entities,
+        #                                                                           "analysis_label": config[
+        #                                                                               "analysis_label"],
+        #                                                                           "method": config["method"],
+        #                                                                           "seed": label,
+        #                                                                           "significance_level": significance_level
+        #                                                                           },
+        #                                                                          path_patterns=[
+        #                                                                              "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_{significance_level}.nii.gz"],
+        #                                                                          validate=False)
+        # from connectomix.utils.makers import ensure_directory
+        # ensure_directory(thresholded_contrast_path)
 
         match significance_level:
             case "uncorrected":
-                thresholded_img, _ = threshold_stats_img(contrast_path, alpha=alpha, height_control=None,
+                thresholded_img, _ = threshold_stats_img(contrast_path,
+                                                         alpha=alpha,
+                                                         height_control=None,
                                                          two_sided=True)
                 thresholded_img.to_filename(thresholded_contrast_path)
             case "fdr":
-                thresholded_img, _ = threshold_stats_img(contrast_path, alpha=alpha, height_control="fdr",
+                thresholded_img, _ = threshold_stats_img(contrast_path,
+                                                         alpha=alpha,
+                                                         height_control="fdr",
                                                          two_sided=True)
                 thresholded_img.to_filename(thresholded_contrast_path)
             case "fwe":
@@ -722,18 +816,29 @@ def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
     from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
-    entities["seed"] = label
-    np_logp_max_mass_plot_path = layout.derivatives["connectomix"].build_path({**entities,
-                                                                               "analysis_label": config[
-                                                                                   "analysis_label"],
-                                                                               "method": config["method"],
-                                                                               "seed": label
-                                                                               },
-                                                                              path_patterns=[
-                                                                                  "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.svg"],
-                                                                              validate=False)
-    from connectomix.utils.makers import ensure_directory
-    ensure_directory(np_logp_max_mass_plot_path)
+
+    np_logp_max_mass_plot_path = build_output_path(layout,
+                                                   entities,
+                                                   label,
+                                                   "group",
+                                                   config,
+                                                   suffix="logpMaxMass",
+                                                   extension=".svg")
+
+    # entities["seed"] = label
+    # np_logp_max_mass_plot_path = layout.derivatives["connectomix"].build_path({**entities,
+    #                                                                            "analysis_label": config[
+    #                                                                                "analysis_label"],
+    #                                                                            "method": config["method"],
+    #                                                                            "seed": label
+    #                                                                            },
+    #                                                                           path_patterns=[
+    #                                                                               "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.svg"],
+    #                                                                           validate=False)
+
+    # from connectomix.utils.makers import ensure_directory
+    # ensure_directory(np_logp_max_mass_plot_path)
+
     plot_glass_brain(
         np_logp_max_mass_path,
         colorbar=True,
@@ -749,32 +854,27 @@ def roi_to_voxel_group_analysis(layout, config):
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
 
-    if config["seeds_file"]:
+    if config["method"] == "seedToVoxel":
         from connectomix.utils.loaders import load_seed_file
         coords, labels = load_seed_file(config["seeds_file"])
-    elif config["roi_masks"]:
+    elif config["method"] == "roiToVoxel":
         labels = list(config["roi_masks"].keys())
         coords = None
-
-    # TODO: add check at group level that config file should either have seeds_file OR roi_masks
 
     for label in labels:
         second_level_input = make_second_level_input(layout,
                                                      label,
                                                      config)  # get all first-level maps. In paired case, compute differences. Resamples and save all in folder.
         design_matrix = make_group_level_design_matrix(layout, second_level_input, label, config)
-
         glm = SecondLevelModel(smoothing_fwhm=config["smoothing"])
         glm.fit(second_level_input, design_matrix=design_matrix)
-
         contrast_path = compute_group_level_contrast(layout, glm, label, config)
 
-        # TODO: there is caveat in this: it does not show the sign of t-score! Direction of effect unknown...
         np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, label, config)
-
         save_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, label, config)
 
-    if coords:
+    if config["method"] == "seedToVoxel":
+        # TODO: make this compatible with roiToVoxel
         for coord, label in zip(coords, labels):
             save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
             save_max_mass_plot(layout, np_logp_max_mass_path, label, coord, config)
