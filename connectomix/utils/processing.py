@@ -851,6 +851,16 @@ def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
         cut_coords=coords,
         threshold=-np.log10(float(config["fwe_alpha"]))).savefig(np_logp_max_mass_plot_path)
 
+def create_glm_and_fit(second_level_input, design_matrix, config):
+
+    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+        glm = SecondLevelModel(smoothing_fwhm=config["smoothing"])
+        glm.fit(second_level_input, design_matrix=design_matrix)
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+        glm = None
+
+    return glm
+
 def roi_to_voxel_group_analysis(layout, config):
     from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
@@ -868,8 +878,7 @@ def roi_to_voxel_group_analysis(layout, config):
                                                      label,
                                                      config)  # get all first-level maps. In paired case, compute differences. Resamples and save all in folder.
         design_matrix = make_group_level_design_matrix(layout, second_level_input, label, config)
-        glm = SecondLevelModel(smoothing_fwhm=config["smoothing"])
-        glm.fit(second_level_input, design_matrix=design_matrix)
+        glm = create_glm_and_fit(second_level_input, design_matrix, config)
         contrast_path = compute_group_level_contrast(layout, glm, label, config)
 
         np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, label, config)
@@ -882,6 +891,16 @@ def roi_to_voxel_group_analysis(layout, config):
             save_max_mass_plot(layout, np_logp_max_mass_path, label, coord, config)
 
 def roi_to_roi_group_analysis(layout, config):
+
+    second_level_input = make_second_level_input(layout, None, config)
+    design_matrix = make_group_level_design_matrix(layout, second_level_input, label, config)
+    glm = create_glm_and_fit(second_level_input, design_matrix, config)
+    contrast_path = compute_group_level_contrast(layout, glm, None, config)
+    compute_non_parametric_stats()
+    save_results()
+
+    raise ValueError("This is under construction.")
+
     for connectivity_kind in config.get("connectivity_kinds"):
         # Retrieve connectivity type and other configuration parameters
         method = config.get("method")
