@@ -9,9 +9,6 @@ bids_dir = os.path.join("/rawdata", ds)
 fmriprep_dir = os.path.join("/derivatives", ds, "fmriprep")
 output_dir = os.path.join("/derivatives", ds, f"connectomix-{__version__}-tests")
 
-# ----- Test: single subject -----
-# ds = "ds005625"
-# bids_dir = os.path.join('/rawdata', ds)
-# derivatives_dir = os.path.join('/derivatives', ds)
-# output_dir = os.path.join(derivatives_dir, 'connectomix-roiToVoxel-dev')
-
+bids_dir = os.path.join("/data/openneuro", ds)
+fmriprep_dir = os.path.join("/data/openneuro", ds, "derivatives", "fmriprep")
+output_dir = os.path.join("/data/openneuro", ds, "derivatives", f"connectomix-{__version__}-tests")

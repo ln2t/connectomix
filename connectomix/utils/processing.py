@@ -422,8 +422,10 @@ def add_new_entities(entities, label, config):
     entities["new_entity_val"] = new_entity_val
     entities["suffix"] = suffix
 
-    entities["analysis_name"] = config["analysis_name"]
-    entities["contrast"] = constrast_string_to_bids_entity_value(config["contrast"])
+    entities["analysis_name"] = config.get("analysis_name", None)
+    entities["contrast"] = config.get("contrast", None)
+    if entities["contrast"]:
+        entities["contrast"] = constrast_string_to_bids_entity_value(entities["contrast"])
 
     return entities
 
