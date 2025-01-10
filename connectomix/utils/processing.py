@@ -4,7 +4,11 @@ from nilearn.regions import RegionExtractor
 from nilearn.glm import threshold_stats_img
 from nilearn.glm.first_level import FirstLevelModel, make_first_level_design_matrix
 from nilearn.glm.second_level import SecondLevelModel, non_parametric_inference, make_second_level_design_matrix
+from nilearn.connectome import sym_matrix_to_vec, vec_to_sym_matrix
+from nilearn.glm.contrasts import expression_to_contrast_vector
 from statsmodels.stats.multitest import multipletests
+import statsmodels.api as sm
+
 import os
 import json
 import pandas as pd
@@ -553,34 +557,38 @@ def single_subject_analysis(layout, func_file, config):
         roi_to_roi_single_subject_analysis(layout, func_file, timeseries_list,labels, config)
 
 def make_second_level_input(layout, label, config):
+    from connectomix.utils.tools import get_bids_entities_from_config
+    from connectomix.utils.tools import apply_nonbids_filter
 
+    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+        extension = ".nii.gz"
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+        extension = ".npy"
+    else:
+        extension = None
+
+    entities = get_bids_entities_from_config(config)
     second_level_input = pd.DataFrame(columns=["subject_label",
                                                "map_name",
                                                "effects_map_path"])
-
-    from connectomix.utils.tools import get_bids_entities_from_config
-    entities = get_bids_entities_from_config(config)
-    map_files = layout.derivatives["connectomix"].get(return_type='filename',
-                                                      extension='.nii.gz',
-                                                      **entities)
-
+    files = layout.derivatives["connectomix"].get(return_type='filename',
+                                                  extension=extension,
+                                                  **entities)
     entities_with_non_bids_fields = add_new_entities(entities, label, config)
-    from connectomix.utils.tools import apply_nonbids_filter
-    map_files = apply_nonbids_filter(entities_with_non_bids_fields["new_entity_key"],
-                                     entities_with_non_bids_fields["new_entity_val"],
-                                     map_files)
-    map_files = apply_nonbids_filter("method",
-                                     config["method"],
-                                     map_files)
+    files = apply_nonbids_filter(entities_with_non_bids_fields["new_entity_key"],
+                                 entities_with_non_bids_fields["new_entity_val"],
+                                 files)
+    files = apply_nonbids_filter("method",
+                                 config["method"],
+                                 files)
 
     # TODO: for paired analysis, compute difference of maps and save result to folder.
     if config['paired_tests']:
         raise ValueError('Paired analysis not yet supported')
 
-    for file in map_files:
+    for file in files:
         file_entities = layout.parse_file_entities(file)
         second_level_input.loc[len(second_level_input)] = [f"sub-{file_entities['subject']}", label, file]
-
     return second_level_input
 
 def get_group_level_covariates(layout, subjects_label, config):
@@ -649,6 +657,17 @@ def make_group_level_design_matrix(layout, second_level_input, label, config):
 
 def compute_group_level_contrast(layout, glm, label, config):
     from connectomix.utils.tools import get_bids_entities_from_config
+
+    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+        suffix = "zScore"
+        extension = ".nii.gz"
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+        suffix = "pValues"
+        extension = ".npy"
+    else:
+        suffix = None
+        extension = None
+
     entities = get_bids_entities_from_config(config)
     entities.pop("subject")
 
@@ -657,8 +676,8 @@ def compute_group_level_contrast(layout, glm, label, config):
                                       label,
                                       "group",
                                       config,
-                                      suffix="zScore",
-                                      extension=".nii.gz")
+                                      suffix=suffix,
+                                      extension=extension)
 
     # entities["seed"] = label
     # contrast_label = config["group_contrast"]
@@ -675,9 +694,24 @@ def compute_group_level_contrast(layout, glm, label, config):
     # ensure_directory(contrast_path)
 
     print(f"Computing contrast label named \'{config['contrast']}\'")
-    glm.compute_contrast(config["contrast"],
-                         first_level_contrast=label,
-                         output_type="z_score").to_filename(contrast_path)
+
+    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+        glm.compute_contrast(config["contrast"],
+                             first_level_contrast=label,
+                             output_type="z_score").to_filename(contrast_path)
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+        contrast_vector = expression_to_contrast_vector(config["contrast"], glm["design_matrix"][0].columns)
+
+        vect_pval = []
+        for result in glm["result"]:
+            if result:
+                vect_pval.append(result.t_test(contrast_vector).pvalue)
+            else:
+                vect_pval.append(1)
+
+        matrix_pval = vec_to_sym_matrix(np.array(vect_pval))
+        np.save(contrast_path, matrix_pval)
+
     return contrast_path
 
 def save_group_level_contrast_plots(layout, contrast_path, coord, label, config):
@@ -715,6 +749,33 @@ def save_group_level_contrast_plots(layout, contrast_path, coord, label, config)
                               marker_size=2 * config["radius"])
 
     contrast_plot.savefig(contrast_plot_path)
+
+def create_glm_and_fit(second_level_input, design_matrix, config):
+
+    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+        glm = SecondLevelModel(smoothing_fwhm=config["smoothing"])
+        glm.fit(second_level_input, design_matrix=design_matrix)
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+        data = [sym_matrix_to_vec(np.load(file)) for file in second_level_input["effects_map_path"]]
+        data = np.vstack(data)
+
+        glm = {"model": [], "result": [], "design_matrix": []}
+
+        for i in range(data.shape[1]):
+            y_i = data[:, i]
+            model = sm.GLM(y_i, design_matrix, family=sm.families.Gaussian())
+            glm["model"].append(model)
+
+            if np.all(y_i == 0):
+                result = None
+            else:
+                result = model.fit()
+
+            glm["result"].append(result)
+            glm["design_matrix"].append(design_matrix)
+    else:
+        glm = None
+    return glm
 
 def compute_non_parametric_max_mass(layout, glm, label, config):
     from connectomix.utils.tools import get_bids_entities_from_config
@@ -851,16 +912,6 @@ def save_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
         cut_coords=coords,
         threshold=-np.log10(float(config["fwe_alpha"]))).savefig(np_logp_max_mass_plot_path)
 
-def create_glm_and_fit(second_level_input, design_matrix, config):
-
-    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
-        glm = SecondLevelModel(smoothing_fwhm=config["smoothing"])
-        glm.fit(second_level_input, design_matrix=design_matrix)
-    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
-        glm = None
-
-    return glm
-
 def roi_to_voxel_group_analysis(layout, config):
     from connectomix.utils.tools import get_bids_entities_from_config
     entities = get_bids_entities_from_config(config)
@@ -893,11 +944,11 @@ def roi_to_voxel_group_analysis(layout, config):
 def roi_to_roi_group_analysis(layout, config):
 
     second_level_input = make_second_level_input(layout, None, config)
-    design_matrix = make_group_level_design_matrix(layout, second_level_input, label, config)
+    design_matrix = make_group_level_design_matrix(layout, second_level_input, None, config)
     glm = create_glm_and_fit(second_level_input, design_matrix, config)
     contrast_path = compute_group_level_contrast(layout, glm, None, config)
-    compute_non_parametric_stats()
-    save_results()
+    # compute_non_parametric_stats()
+    # save_results()
 
     raise ValueError("This is under construction.")
 

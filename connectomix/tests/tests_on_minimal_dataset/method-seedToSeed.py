@@ -8,23 +8,25 @@ example_seeds_for_seedToSeed = str(importlib.resources.files("connectomix.tests.
 
 method = "seedToSeed"
 
-# Participant
-participant_level_analysis(bids_dir,
-                           output_dir,
-                           derivatives={"fmriprep": fmriprep_dir},
-                           config={"method": method,
-                                   "custom_seeds_name" : "test",
-                                   "seeds_file": example_seeds_for_seedToSeed})
-
 # Group
 ## One-sample t-test
 group_level_analysis(bids_dir,
                      output_dir,
                      config={"method": method,
-                             "custom_seeds_name" : "test",
+                             "custom_seeds_name": "test",
                              "seeds_file": example_seeds_for_seedToSeed,
                              "analysis_name": "testMeanEffect",
                              "contrast": "intercept"})
+
+# Participant
+participant_level_analysis(bids_dir,
+                           output_dir,
+                           derivatives={"fmriprep": fmriprep_dir},
+                           config={"method": method,
+                                   "custom_seeds_name": "test",
+                                   "seeds_file": example_seeds_for_seedToSeed})
+
+
 #
 # ## Two-sample t-test, unpaired
 # group_level_analysis(bids_dir,
