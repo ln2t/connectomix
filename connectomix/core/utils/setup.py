@@ -1,9 +1,7 @@
 import warnings
 
-import numpy as np
-from pathlib import Path
 from bids import BIDSLayout
-import yaml
+
 
 def setup_config(layout, config, level):
     """
@@ -24,7 +22,7 @@ def setup_config(layout, config, level):
         A complete configuration.
 
     """
-    from connectomix.utils.loaders import load_config
+    from connectomix.core.utils.loaders import load_config
     config = load_config(config)
     config = setup_config_bids(config, layout, level)
     config = setup_config_analysis(config, level)
@@ -36,8 +34,9 @@ def setup_config(layout, config, level):
 
     return config
 
+
 def setup_config_bids(config, layout, level):
-    from connectomix.utils.tools import config_helper
+    from connectomix.core.utils.tools import config_helper
 
     derivatives_to_parse = ""
     if level == "participant":
@@ -72,8 +71,9 @@ def setup_config_bids(config, layout, level):
 
     return config
 
+
 def setup_config_preprocessing(config):
-    from connectomix.utils.tools import config_helper
+    from connectomix.core.utils.tools import config_helper
 
     # Reference functional file for resampling
     config["reference_functional_file"] = config_helper(config,
@@ -114,8 +114,9 @@ def setup_config_preprocessing(config):
         config["spaces"] = [space for space in config["spaces"] if space != 'MNI152NLin6Asym']
     return config
 
+
 def setup_config_analysis(config, level):
-    from connectomix.utils.tools import config_helper
+    from connectomix.core.utils.tools import config_helper
 
     config["method"] = config_helper(config,
                                      "method",
@@ -206,7 +207,7 @@ def setup_config_analysis(config, level):
         #                                           None)
         #
         # if config["analysis_type"] == 'independent' and config["group1_subjects"] is None:
-        #     from connectomix.utils.tools import guess_groups
+        #     from connectomix.core.tools import guess_groups
         #     guessed_groups = guess_groups(layout)
         #     if len(guessed_groups) == 2:
         #         group1_name = list(guessed_groups.keys())[0]
@@ -227,8 +228,9 @@ def setup_config_analysis(config, level):
 
     return config
 
+
 def setup_config_stats(config):
-    from connectomix.utils.tools import config_helper
+    from connectomix.core.utils.tools import config_helper
 
     # Stats and permutations
     config["uncorrected_alpha"] = config_helper(config,
@@ -264,53 +266,6 @@ def setup_config_stats(config):
 
     return config
 
-def create_default_config_file(bids_dir, derivatives, level):
-    """
-    Create default configuration file in YAML format for default parameters, at group level.
-    Configuration file is saved at 'derivatives/config/default_group_level_config.yaml'.
-
-    Parameters
-    ----------
-    bids_dir : str or Path
-        Path to BIDS directory.
-    derivatives : dict
-    level : str
-
-    Returns
-    -------
-    None.
-
-    """
-    from connectomix.utils.makers import ensure_directory
-
-    output_dir = Path(derivatives["connectomix"])
-
-    if level == "participant":
-        # Create derivative directory
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create the dataset_description.json file
-        from connectomix.utils.makers import create_dataset_description
-        create_dataset_description(output_dir)
-
-    # Create a BIDSLayout to parse the BIDS dataset
-    layout = BIDSLayout(bids_dir, derivatives=list(derivatives.values()))
-
-    # Print some stuff for the primate using this function
-    print("Generating default configuration file for default parameters, please wait while the dataset is explored...")
-
-    config = setup_config(layout, {}, level)
-
-    # Build filenames for each output
-    yaml_file = Path(output_dir) / "config" / f"default_{level}_level_config.yaml"
-    ensure_directory(yaml_file)
-
-    # Save config to yaml
-    with open(yaml_file, 'w') as yaml_out:
-        yaml.dump(config, yaml_out, default_flow_style=False)
-
-    print(f"Default YAML configuration file saved at {yaml_file}. Go to github.com/ln2t/connectomix for more details.")
-
 # def create_participant_level_default_config_file(bids_dir, output_dir, fmriprep_dir):
 #     """
 #     Create default configuration file in YAML format for default parameters, at participant level.
@@ -339,7 +294,7 @@ def create_default_config_file(bids_dir, derivatives, level):
 #     output_dir.mkdir(parents=True, exist_ok=True)
 #
 #     # Create the dataset_description.json file
-#     from connectomix.utils.makers import create_dataset_description
+#     from connectomix.core.makers import create_dataset_description
 #     create_dataset_description(output_dir)
 #
 #     # Create a BIDSLayout to parse the BIDS dataset
@@ -392,7 +347,7 @@ def create_default_config_file(bids_dir, derivatives, level):
 #     # Build filenames for each output
 #     yaml_file = Path(output_dir) / 'config' / 'default_participant_level_config.yaml'
 #
-#     from connectomix.utils.makers import ensure_directory
+#     from connectomix.core.makers import ensure_directory
 #     ensure_directory(yaml_file)
 #
 #     # Save the YAML content with comments

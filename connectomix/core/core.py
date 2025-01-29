@@ -1,15 +1,102 @@
 import argparse
-import os
 import warnings
 from pathlib import Path
-import numpy as np
 from bids import BIDSLayout
 
-from connectomix.utils.makers import save_copy_of_config
-from connectomix.utils.processing import preprocessing
+from connectomix.core.utils.writers import write_default_config_file, write_copy_of_config
+from connectomix.core.processing.participant_processing import post_fmriprep_preprocessing
 
 
-# Define the autonomous mode, to guess paths and parameters
+def participant_level_pipeline(bids_dir, output_dir, derivatives, config):
+    """
+    Main function to run the participant analysis
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to bids_dir.
+    output_dir : str or Path
+        Path to connectomix derivatives.
+    derivatives : dict
+        Paths to data preprocessed with fMRIPrep and, optionally, fmripost-aroma: derivatives["fmriprep"]="/path/to/fmriprep", etc.
+    config : dict or str or Path
+        Configuration dict or path to configuration file (can be a .json or .yaml or .yml).
+
+    Returns
+    -------
+    None.
+
+    """
+    from connectomix.version import __version__
+    from connectomix.core.utils.tools import print_subject
+    from connectomix.core.utils.bids import setup_bidslayout
+    from connectomix.core.processing.canica import compute_canica_components
+    from connectomix.core.processing.participant_processing import participant_analysis
+    from connectomix.core.utils.loaders import load_repetition_time
+    from connectomix.core.utils.setup import setup_config
+
+    print(f"Running connectomix (Participant-level) version {__version__}")
+
+    layout = setup_bidslayout(bids_dir, output_dir, derivatives)
+    write_copy_of_config(layout, config)
+    config = setup_config(layout, config, "participant")
+
+    print(f"Selected method for connectivity analysis: {config['method']}")
+
+    denoised_files, json_files = post_fmriprep_preprocessing(layout, config)
+
+    # Compute CanICA components if necessary and store it in the methods options
+    config = compute_canica_components(layout, denoised_files, config) if config.get("atlas", None) == "canica" else config
+
+    for (func_file, json_file) in zip(denoised_files, json_files):
+        print_subject(layout, func_file)
+        config["t_r"] = load_repetition_time(json_file)
+        participant_analysis(layout, func_file, config)
+
+    print("Participant-level analysis completed.")
+
+
+def group_level_pipeline(bids_dir, output_dir, config):
+    """
+    Main function to launch group-level analysis.
+
+    Parameters
+    ----------
+    bids_dir : str or Path
+        Path to bids_dir.
+    output_dir : str or Path
+        Path to connectomix derivatives.
+    config : dict or str or Path
+        Configuration or path to configuration (can be a .json or .yaml or .yml).
+
+    Returns
+    -------
+    None.
+
+    """
+    # Print version information
+    from connectomix.version import __version__
+    print(f"Running connectomix (Group-level) version {__version__}")
+
+    # Create BIDSLayout with pipeline and other derivatives
+    from connectomix.core.utils.bids import setup_bidslayout
+    layout = setup_bidslayout(bids_dir, output_dir)
+
+    # Load and backup the configuration file
+    from connectomix.core.utils.setup import setup_config
+    write_copy_of_config(layout, config)
+    config = setup_config(layout, config, "group")
+
+    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+        from connectomix.core.processing import roi_to_voxel_group_analysis
+        roi_to_voxel_group_analysis(layout, config)
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+        from connectomix.core.processing import roi_to_roi_group_analysis
+        roi_to_roi_group_analysis(layout, config)
+
+    print("Group-level analysis completed.")
+
+
 def autonomous_mode(run=False):
     """ Function to automatically guess the analysis paths and settings. """
 
@@ -70,15 +157,15 @@ def autonomous_mode(run=False):
     if run:
         print("... and now launching the analysis!")
         if analysis_level == "participant":
-            participant_level_analysis(bids_dir, connectomix_folder, {"fmriprep": fmriprep_dir}, {})
+            participant_level_pipeline(bids_dir, connectomix_folder, {"fmriprep": fmriprep_dir}, {})
         elif analysis_level == "group":
-            group_level_analysis(bids_dir, connectomix_folder, {})
+            group_level_pipeline(bids_dir, connectomix_folder, {})
     else:
         if analysis_level == "participant":
-            from connectomix.utils.setup import create_participant_level_default_config_file
+            from connectomix.core.utils.setup import create_participant_level_default_config_file
             create_participant_level_default_config_file(bids_dir, connectomix_folder, fmriprep_dir)
         elif analysis_level == "group":
-            from connectomix.utils.setup import create_group_level_default_config_file
+            from connectomix.core.utils.setup import create_group_level_default_config_file
             create_group_level_default_config_file(bids_dir, connectomix_folder)
 
         cmd = f"python connectomix.py {bids_dir} {connectomix_folder} {analysis_level} --derivatives fmriprep={fmriprep_dir}"
@@ -87,97 +174,6 @@ def autonomous_mode(run=False):
             "If you are happy with this configuration, run this command or simply relaunch the autonomous mode add the --run flag.")
 
 
-# Participant-level analysis
-def participant_level_analysis(bids_dir, output_dir, derivatives, config):
-    """
-    Main function to run the participant analysis
-
-    Parameters
-    ----------
-    bids_dir : str or Path
-        Path to bids_dir.
-    output_dir : str or Path
-        Path to connectomix derivatives.
-    derivatives : dict
-        Paths to data preprocessed with fMRIPrep and, optionally, fmripost-aroma: derivatives["fmriprep"]="/path/to/fmriprep", etc.
-    config : dict or str or Path
-        Configuration dict or path to configuration file (can be a .json or .yaml or .yml).
-
-    Returns
-    -------
-    None.
-
-    """
-    from connectomix.version import __version__
-    from connectomix.utils.tools import setup_layout, print_subject
-    from connectomix.utils.processing import compute_canica_components, single_subject_analysis
-    from connectomix.utils.loaders import get_repetition_time
-    from connectomix.utils.setup import setup_config
-
-    print(f"Running connectomix (Participant-level) version {__version__}")
-
-    layout = setup_layout(bids_dir, output_dir, derivatives)
-    save_copy_of_config(layout, config)
-    config = setup_config(layout, config, "participant")
-
-    print(f"Selected method for connectivity analysis: {config['method']}")
-
-    denoised_files, json_files = preprocessing(layout, config)
-
-    # Compute CanICA components if necessary and store it in the methods options
-    config = compute_canica_components(layout, denoised_files, config) if config.get("atlas", None) == "canica" else config
-
-    for (func_file, json_file) in zip(denoised_files, json_files):
-        print_subject(layout, func_file)
-        config["t_r"] = get_repetition_time(json_file)
-        single_subject_analysis(layout, func_file, config)
-
-    print("Participant-level analysis completed.")
-
-
-# Group-level analysis
-def group_level_analysis(bids_dir, output_dir, config):
-    """
-    Main function to launch group-level analysis.
-
-    Parameters
-    ----------
-    bids_dir : str or Path
-        Path to bids_dir.
-    output_dir : str or Path
-        Path to connectomix derivatives.
-    config : dict or str or Path
-        Configuration or path to configuration (can be a .json or .yaml or .yml).
-
-    Returns
-    -------
-    None.
-
-    """
-    # Print version information
-    from connectomix.version import __version__
-    print(f"Running connectomix (Group-level) version {__version__}")
-
-    # Create BIDSLayout with pipeline and other derivatives
-    from connectomix.utils.tools import setup_layout
-    layout = setup_layout(bids_dir, output_dir)
-
-    # Load and backup the configuration file
-    from connectomix.utils.setup import setup_config
-    save_copy_of_config(layout, config)
-    config = setup_config(layout, config, "group")
-
-    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
-        from connectomix.utils.processing import roi_to_voxel_group_analysis
-        roi_to_voxel_group_analysis(layout, config)
-    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
-        from connectomix.utils.processing import roi_to_roi_group_analysis
-        roi_to_roi_group_analysis(layout, config)
-
-    print("Group-level analysis completed.")
-
-
-# Main function with subcommands for participant and group analysis
 def main():
     """
     Main function to launch the software. Ir reads arguments from sys.argv, which is filled automatically when calling the script from command line.
@@ -218,8 +214,8 @@ def main():
     args = parser.parse_args()
 
     # Convert the list of "key=value" pairs to a dictionary
-    from connectomix.utils.tools import parse_derivatives
-    derivatives = parse_derivatives(args.derivatives)
+    from connectomix.core.utils.loaders import load_derivatives
+    derivatives = load_derivatives(args.derivatives)
 
     # Run autonomous mode if flag is used
     if args.autonomous:
@@ -232,10 +228,9 @@ def main():
 
         # First check if only helper function must be called
         if args.helper:
-            from connectomix.utils.setup import create_default_config_file
-            create_default_config_file(args.bids_dir,
-                                       {"connectomix": args.output_dir, "fmriprep": derivatives["fmriprep"]},
-                                       args.analysis_level)
+            write_default_config_file(args.bids_dir,
+                                      {"connectomix": args.output_dir, "fmriprep": derivatives["fmriprep"]},
+                                      args.analysis_level)
         else:
 
             # Run the appropriate analysis level
@@ -246,7 +241,7 @@ def main():
                     raise FileNotFoundError(
                         f"fMRIPrep directory {derivatives['fmriprep']} not found. Use '--derivatives fmriprep=/path/to/fmriprep' to specify path manually.")
                 else:
-                    participant_level_analysis(args.bids_dir, args.output_dir, derivatives, args.config)
+                    participant_level_pipeline(args.bids_dir, args.output_dir, derivatives, args.config)
 
             elif args.analysis_level == "group":
-                group_level_analysis(args.bids_dir, args.output_dir, args.config)
+                group_level_pipeline(args.bids_dir, args.output_dir, args.config)

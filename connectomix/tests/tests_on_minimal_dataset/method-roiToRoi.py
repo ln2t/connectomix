@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import importlib.resources
 
-from connectomix.utils.modes import participant_level_analysis, group_level_analysis
+from connectomix.core.core import participant_level_pipeline, group_level_pipeline
 from connectomix.tests.paths import bids_dir, fmriprep_dir, output_dir
 
 method = "roiToRoi"
@@ -9,14 +9,14 @@ method = "roiToRoi"
 # Participant
 ## atlas-based
 for atlas in ["aal", "schaeffer100", "harvardoxford"]:
-    participant_level_analysis(bids_dir,
+    participant_level_pipeline(bids_dir,
                                output_dir,
                                derivatives={"fmriprep": fmriprep_dir},
                                config={"method": method,
                                        "atlas": atlas})
 
 ## canica
-participant_level_analysis(bids_dir,
+participant_level_pipeline(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
                            config={"method": method,

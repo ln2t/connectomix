@@ -19,6 +19,6 @@ Created: August 2022
 # Restructure the config file as follows:
 # method: seed-based or roi-to-roi or ICA or ReHo or ...
 
-from connectomix.utils.modes import main
+from connectomix.core.core import main
 if __name__ == "__main__":
     main()

@@ -1,3 +1,4 @@
+import argparse
 import csv
 import json
 import os
@@ -10,11 +11,12 @@ import yaml
 from nilearn import datasets
 from nilearn.plotting import find_parcellation_cut_coords
 
-# LOADERS
-# Helper function to fetch atlas maps, labels and coords
-def get_atlas_data(atlas_name, get_cut_coords=False):
+from connectomix.core.utils.bids import apply_nonbids_filter
+
+
+def load_atlas_data(atlas_name, get_cut_coords=False):
     """
-    A wrapper function for nilearn.datasets atlas-fetching utils.
+    A wrapper function for nilearn.datasets atlas-fetching core.
 
     Parameters
     ----------
@@ -58,8 +60,7 @@ def get_atlas_data(atlas_name, get_cut_coords=False):
     return maps, labels, coords
 
 
-# Helper function to read the repetition time (TR) from a JSON file
-def get_repetition_time(json_file):
+def load_repetition_time(json_file):
     """
     Extract repetition time from BOLD sidecar json file.
 
@@ -79,8 +80,7 @@ def get_repetition_time(json_file):
     return metadata.get('RepetitionTime', None)
 
 
-# Helper function to collect participant-level matrices
-def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entities, method):
+def load_connectivity_matrices_from_particpant_level(subjects, layout, entities, method):
     """
     Tool to retrieve the paths to the connectivity matices computed at participant-level.
 
@@ -108,7 +108,6 @@ def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entit
         A dictionary with keys = subjects and values = path to the unique connectivity matrix to the subject.
 
     """
-    from connectomix.utils.tools import apply_nonbids_filter
     group_dict = {}
     for subject in subjects:
         conn_files = layout.derivatives["connectomix"].get(subject=subject,
@@ -130,7 +129,7 @@ def retrieve_connectivity_matrices_from_particpant_level(subjects, layout, entit
     return group_dict
 
 
-def get_maps_from_participant_level(subjects, layout, entities, method):
+def load_maps_from_participant_level(subjects, layout, entities, method):
     """
     Tool to retrieve the paths to the effect maps computed at participant-level (this is for the roiToVoxel method)
 
@@ -179,7 +178,7 @@ def get_maps_from_participant_level(subjects, layout, entities, method):
                                                           invalid_filters='allow',
                                                           extension='.nii.gz')
         # Refine selection with non-BIDS entity filtering
-        from connectomix.utils.tools import apply_nonbids_filter
+        from connectomix.core.utils.bids import apply_nonbids_filter
         map_files = apply_nonbids_filter("method", method, map_files)
         map_files = map_files if seed is None else apply_nonbids_filter("seed", seed, map_files)
         if len(map_files) == 0:
@@ -193,8 +192,7 @@ def get_maps_from_participant_level(subjects, layout, entities, method):
     return group_dict
 
 
-# Fucntion to get participant-level data for paired analysis
-def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
+def load_connectivity_matrices_for_paired_samples(layout, entities, config):
     """
     returns: A dict with key equal to each subject and whose value is a length-2 list with the loaded connectivity matrices
     """
@@ -213,8 +211,8 @@ def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
 
     method = config["method"]
 
-    sample1_dict = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, sample1_entities, method)
-    sample2_dict = retrieve_connectivity_matrices_from_particpant_level(subjects, layout, sample2_entities, method)
+    sample1_dict = load_connectivity_matrices_from_particpant_level(subjects, layout, sample1_entities, method)
+    sample2_dict = load_connectivity_matrices_from_particpant_level(subjects, layout, sample2_entities, method)
 
     # Let's make a consistency check, just to make sure we have what we think we have
     # This is probably not necessary though
@@ -235,8 +233,7 @@ def retrieve_connectivity_matrices_for_paired_samples(layout, entities, config):
     return paired_samples
 
 
-# Tool to extract covariate and confounds from participants.tsv in the same order as in given subject list
-def retrieve_info_from_participant_table(layout, subjects, covariate, confounds=None):
+def load_info_from_participant_table(layout, subjects, covariate, confounds=None):
     """
     Tool to extract data of interest from the participants.tsv file of the dataset.
 
@@ -302,8 +299,7 @@ def retrieve_info_from_participant_table(layout, subjects, covariate, confounds=
     return extracted_data  # This is a DataFrame
 
 
-# Helper function to select confounds
-def select_confounds(confounds_file, config):
+def load_confounds(confounds_file, config):
     """
     Extract confounds selected for denoising from fMRIPrep confounds file.
 
@@ -351,7 +347,6 @@ def select_confounds(confounds_file, config):
     return selected_confounds
 
 
-# Helper function to load the configuration file
 def load_config(config):
     """
     Load configuration either from dict or config file.
@@ -422,3 +417,138 @@ def load_seed_file(seeds_file):
             f"All labels loaded from {seeds_file} are not unique after removing spaces, dashes or underscores. Please correct this in your seeds file.")
 
     return coords, labels
+
+
+def load_mask(layout, entities):
+    entites_for_mask = entities.copy()
+    entites_for_mask["desc"] = "brain"
+    entites_for_mask["suffix"] = "mask"
+    mask_img = layout.derivatives["fMRIPrep"].get(**entites_for_mask)
+    if len(mask_img) == 1:
+        mask_img = mask_img[0]
+    elif len(mask_img) == 0:
+        print(entites_for_mask)
+        raise ValueError(f"Mask img for entities {entities} not found.")
+    else:
+        raise ValueError(f"More that one mask for entitites {entities} found: {mask_img}.")
+    return mask_img
+
+
+def load_files_for_analysis(layout, config):
+    """
+    Get functional, json and confound files from layout.derivatives,
+    according to parameters in config.
+
+    Parameters
+    ----------
+    layout : BIDSLayout
+    config : dict
+
+    Returns
+    -------
+    func_files : list
+    json_files : list
+    confound_files : list
+    """
+    # Get subjects, task, session, run and space from config file
+
+    entities = load_entities_from_config(config)
+
+    # Select the functional, confound and metadata files
+    func_files = layout.derivatives["fMRIPost-AROMA" if config["ica_aroma"] else "fMRIPrep"].get(
+        suffix="bold",
+        extension="nii.gz",
+        return_type="filename",
+        desc="nonaggrDenoised" if config["ica_aroma"] else "preproc",
+        **entities
+    )
+    json_files = layout.derivatives["fMRIPrep"].get(
+        suffix="bold",
+        extension="json",
+        return_type="filename",
+        desc="preproc",
+        **entities
+    )
+
+    entities.pop("space")
+    confound_files = layout.derivatives["fMRIPrep"].get(
+        suffix="timeseries",
+        extension="tsv",
+        return_type="filename",
+        **entities
+    )
+
+    # TODO: add warning when some requested subjects don't have matching func files
+    if not func_files:
+        raise FileNotFoundError("No functional files found")
+    if not confound_files:
+        raise FileNotFoundError("No confound files found")
+    if len(func_files) != len(confound_files):
+        raise ValueError(
+            f"Mismatched number of files: func_files {len(func_files)} and confound_files {len(confound_files)}")
+    if len(func_files) != len(json_files):
+        raise ValueError(f"Mismatched number of files: func_files {len(func_files)} and json_files {len(json_files)}")
+
+    return func_files, json_files, confound_files
+
+
+def load_derivatives(derivatives_list):
+    """Convert list of 'key=value' items into a dictionary."""
+    derivatives_dict = {}
+    if derivatives_list:
+        for item in derivatives_list:
+            if '=' in item:
+                key, value = item.split('=', 1)
+                derivatives_dict[key] = value
+            else:
+                raise argparse.ArgumentTypeError(
+                    f"Invalid format for -d/--derivatives: '{item}' must be in 'key=value' format.")
+    return derivatives_dict
+
+
+def load_entities_from_config(config):
+    """
+    Extract BIDS entities from config file.
+
+    Parameters
+    ----------
+    config : dict
+
+    Returns
+    -------
+    dict
+        Fields: subject, task, run, session and space. Each field may be str- or list of str- valued
+
+    """
+    subject = config.get("subject")
+    task = config.get("tasks")
+    run = config.get("runs")
+    session = config.get("sessions")
+    space = config.get("spaces")
+    return dict(subject=subject, task=task, run=run, session=session, space=space)
+
+
+def load_group_level_covariates(layout, subjects_label, config):
+    participants_file = layout.get(return_type="filename", extension="tsv", scope="raw")[0]
+    participants_df = pd.read_csv(participants_file, sep='\t')
+
+    if not isinstance(config["covariates"], list):
+        config["covariates"] = [config["covariates"]]
+
+    covariates = participants_df[["participant_id", *config["covariates"]]]
+    covariates = covariates.rename(columns={"participant_id": "subject_label"}).copy()
+
+    if "group" in config["covariates"]:
+        group_labels = set(covariates["group"].values)
+
+        for group in group_labels:
+            covariates[group] = 0
+            covariates.loc[covariates["group"] == group, group] = 1
+
+        covariates.drop(columns=["group"], inplace=True)
+
+    covariates.rename(columns={"participant_id": "subject_label"}, inplace=True)
+
+    # TODO: add a filter on df covariates to include only lines with "subject_label" included in subjects_label
+
+    return None if len(covariates.columns) == 1 else covariates

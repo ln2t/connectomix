@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import importlib.resources
 
-from connectomix.utils.modes import participant_level_analysis, group_level_analysis
+from connectomix.core.core import participant_level_pipeline, group_level_pipeline
 from connectomix.tests.paths import bids_dir, fmriprep_dir, output_dir
 
 example_seeds_for_seedToSeed = str(importlib.resources.files("connectomix.tests.seeds").joinpath("example_seeds_for_seedToSeed.tsv"))
@@ -10,7 +10,7 @@ method = "seedToSeed"
 
 # Group
 ## One-sample t-test
-group_level_analysis(bids_dir,
+group_level_pipeline(bids_dir,
                      output_dir,
                      config={"method": method,
                              "custom_seeds_name": "test",
@@ -19,7 +19,7 @@ group_level_analysis(bids_dir,
                              "contrast": "intercept"})
 
 # Participant
-participant_level_analysis(bids_dir,
+participant_level_pipeline(bids_dir,
                            output_dir,
                            derivatives={"fmriprep": fmriprep_dir},
                            config={"method": method,
