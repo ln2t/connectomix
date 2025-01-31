@@ -4,8 +4,8 @@ import importlib.resources
 from connectomix.core.core import participant_level_pipeline, group_level_pipeline
 from connectomix.tests.paths import bids_dir, fmriprep_dir, output_dir
 
-precuneus_L_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precuneus_L.nii.gz"))
-precentral_R_mask = str(importlib.resources.files("connectomix.tests.seeds").joinpath("AAL_Precentral_R.nii.gz"))
+precuneus_L_mask = str(importlib.resources.files("connectomix.tests.data").joinpath("AAL_Precuneus_L.nii.gz"))
+precentral_R_mask = str(importlib.resources.files("connectomix.tests.data").joinpath("AAL_Precentral_R.nii.gz"))
 
 method = "roiToVoxel"
 roi_masks = {"precentralR": precentral_R_mask,

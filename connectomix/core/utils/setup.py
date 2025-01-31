@@ -341,7 +341,7 @@ def setup_config_stats(config):
 # high_pass: {config.get("high_pass")} # High-pass filtering, in Hz, applied to BOLD data. Low (<0.008 Hz) values does minimal changes to the signal, while high (>0.01) values improves sensitivity.
 # low_pass: {config.get("low_pass")} # Low-pass filtering, in Hz, applied to BOLD data. High (>0.1 Hz) values does minimal changes to the signal, while low (< 0.08 Hz)values improves specificity.
 # seeds_file: {config["seeds_file"]} # Path to seed file for seed-based ROIs
-# radius: {config["radius"]} # Radius, in mm, to create the spheres at the coordinates of the seeds for seed-based ROIs
+# radius: {config["radius"]} # Radius, in mm, to create the spheres at the coordinates of the data for seed-based ROIs
 #     """
 #
 #     # Build filenames for each output

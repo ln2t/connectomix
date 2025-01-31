@@ -4,7 +4,7 @@ import importlib.resources
 from connectomix.core.core import participant_level_pipeline, group_level_pipeline
 from connectomix.tests.paths import bids_dir, fmriprep_dir, output_dir
 
-example_seeds_for_seedToVoxel = str(importlib.resources.files("connectomix.tests.seeds").joinpath("example_seeds_for_seedToVoxel.tsv"))
+example_seeds_for_seedToVoxel = str(importlib.resources.files("connectomix.tests.data").joinpath("example_seeds_for_seedToVoxel.tsv"))
 
 method = "seedToVoxel"
 

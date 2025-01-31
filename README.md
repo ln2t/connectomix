@@ -225,7 +225,7 @@ confound_columns:
 connectivity_kind: correlation  # Options: covariance, correlation, partial correlation, precision
 
 # Method to define regions of interest
-method: atlas  # Options: atlas, seeds, ica
+method: atlas  # Options: atlas, data, ica
 
 # Method-specific options
 method_options:

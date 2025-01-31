@@ -47,7 +47,7 @@ def extract_timeseries(func_file, config):
     Raises
     ------
     FileNotFoundError
-        When ROIs are defined using seeds, the seeds are read from a seeds file. This error is raised if the seeds file is not found.
+        When ROIs are defined using data, the data are read from a data file. This error is raised if the data file is not found.
 
     Returns
     -------

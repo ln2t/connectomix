@@ -19,7 +19,7 @@ from connectomix.core.utils.tools import img_is_not_empty, \
 from connectomix.core.utils.bids import build_output_path, alpha_value_to_bids_valid_string
 
 
-def write_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, label, config):
+def write_significant_contrast_maps(layout, contrast_path, non_parametric_neg_pvals_path, label, config):
     for significance_level in ["uncorrected", "fdr", "fwe"]:
         alpha = float(config[f"{significance_level}_alpha"])
         from connectomix.core.utils.loaders import load_entities_from_config
@@ -31,46 +31,37 @@ def write_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path
                                                       label,
                                                       "group",
                                                       config,
-                                                      suffix=significance_level + alpha_value_to_bids_valid_string(alpha),
-                                                      extension=".nii.gz")
+                                                      suffix=significance_level + alpha_value_to_bids_valid_string(alpha))
 
-        # entities["seed"] = label
-        # thresholded_contrast_path = layout.derivatives["connectomix"].build_path({**entities,
-        #                                                                           "analysis_label": config[
-        #                                                                               "analysis_label"],
-        #                                                                           "method": config["method"],
-        #                                                                           "seed": label,
-        #                                                                           "significance_level": significance_level
-        #                                                                           },
-        #                                                                          path_patterns=[
-        #                                                                              "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_{significance_level}.nii.gz"],
-        #                                                                          validate=False)
-        # from connectomix.core.makers import ensure_directory
-        # ensure_directory(thresholded_contrast_path)
+        if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+            thresholded_data = None
+            match significance_level:
+                case "uncorrected":
+                    thresholded_data, _ = threshold_stats_img(contrast_path,
+                                                             alpha=alpha,
+                                                             height_control=None,
+                                                             two_sided=True)
+                case "fdr":
+                    thresholded_data, _ = threshold_stats_img(contrast_path,
+                                                             alpha=alpha,
+                                                             height_control="fdr",
+                                                             two_sided=True)
+                case "fwe":
+                    mask = math_img(f"img >= -np.log10({alpha})", img=non_parametric_neg_pvals_path)
+                    mask = binarize_img(mask)
 
-        match significance_level:
-            case "uncorrected":
-                thresholded_img, _ = threshold_stats_img(contrast_path,
-                                                         alpha=alpha,
-                                                         height_control=None,
-                                                         two_sided=True)
-                thresholded_img.to_filename(thresholded_contrast_path)
-            case "fdr":
-                thresholded_img, _ = threshold_stats_img(contrast_path,
-                                                         alpha=alpha,
-                                                         height_control="fdr",
-                                                         two_sided=True)
-                thresholded_img.to_filename(thresholded_contrast_path)
-            case "fwe":
-                mask = math_img(f"img >= -np.log10({alpha})", img=np_logp_max_mass_path)
-                mask = binarize_img(mask)
+                    if img_is_not_empty(mask):
+                        masked_data = apply_mask(contrast_path, mask)
+                        thresholded_data = unmask(masked_data, mask)
+                    else:
+                        warnings.warn(
+                            f"For map {contrast_path}, no voxel survives FWE thresholding at alpha level {alpha}.")
+                        thresholded_data = None
 
-                if img_is_not_empty(mask):
-                    masked_data = apply_mask(contrast_path, mask)
-                    unmask(masked_data, mask).to_filename(thresholded_contrast_path)
-                else:
-                    warnings.warn(
-                        f"For map {contrast_path}, no voxel survives FWE thresholding at alpha level {alpha}.")
+            thresholded_data and thresholded_data.to_filename(thresholded_contrast_path)
+
+        elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+            raise ValueError("This is work in progress")
 
 
 def write_default_config_file(bids_dir, derivatives, level):

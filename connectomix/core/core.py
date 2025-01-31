@@ -87,12 +87,15 @@ def group_level_pipeline(bids_dir, output_dir, config):
     write_copy_of_config(layout, config)
     config = setup_config(layout, config, "group")
 
-    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
-        from connectomix.core.processing import roi_to_voxel_group_analysis
-        roi_to_voxel_group_analysis(layout, config)
-    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
-        from connectomix.core.processing import roi_to_roi_group_analysis
-        roi_to_roi_group_analysis(layout, config)
+    from connectomix.core.processing.group_processing import group_analysis
+    group_analysis(layout, config)
+
+    # if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+    #     from connectomix.core.processing.group_processing import group_roi_to_voxel
+    #     group_roi_to_voxel(layout, config)
+    # elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+    #     from connectomix.core.processing.group_processing import group_roi_to_roi
+    #     group_roi_to_roi(layout, config)
 
     print("Group-level analysis completed.")
 

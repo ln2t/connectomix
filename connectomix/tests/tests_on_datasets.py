@@ -10,18 +10,18 @@ output_dir = os.path.join(derivatives_dir, 'connectomix-roiToVoxel-dev')
 
 # Participant analysis
 config = {}
-config['seeds_file'] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix/seeds/example_seeds.tsv"
+config['seeds_file'] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix/data/example_seeds.tsv"
 participant_level_analysis(bids_dir, output_dir, derivatives, config)
 
 # Group analysis - mean effect
 config = {}
-config['seeds_file'] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix/seeds/example_seeds.tsv"
+config['seeds_file'] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix/data/example_seeds.tsv"
 config["analysis_label"] = "meanEffect"
 group_level_analysis(bids_dir, output_dir, config)
 
 # Group analysis - covariate (effect of age)
 # config = {}
-# config['seeds_file'] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix/seeds/example_seeds.tsv"
+# config['seeds_file'] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix/data/example_seeds.tsv"
 # config["analysis_label"] = "effetOfAge"
 # config["group_confounds"] = "age"
 # config["group_contrast"] = "age"
@@ -29,7 +29,7 @@ group_level_analysis(bids_dir, output_dir, config)
 
 # Group analysis, independent samples comparison (controls versus patients)
 config = {}
-config['seeds_file'] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix/seeds/example_seeds.tsv"
+config['seeds_file'] = "/data/2021-Hilarious_Mosquito-978d4dbc2f38/code/connectomix/data/example_seeds.tsv"
 config["group_confounds"] = "group"
 config["group_contrast"] = "patient-control"
 config["analysis_label"] = "PatientVsControls"

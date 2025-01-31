@@ -13,7 +13,7 @@ import warnings
 
 import numpy as np
 
-from connectomix.core.processing.stats import compute_non_parametric_max_mass
+from connectomix.core.processing.stats import non_parametric_stats
 from connectomix.core.utils.loaders import load_group_level_covariates
 from connectomix.core.utils.writers import write_group_level_contrast_plots
 
@@ -166,7 +166,7 @@ def create_and_fit_group_glm(second_level_input, design_matrix, config):
         data = [sym_matrix_to_vec(np.load(file)) for file in second_level_input["effects_map_path"]]
         data = np.vstack(data)
 
-        glm = {"model": [], "result": [], "design_matrix": []}
+        glm = {"data": data, "design_matrix": design_matrix, "model": [], "result": []}
 
         for i in range(data.shape[1]):
             y_i = data[:, i]
@@ -179,42 +179,9 @@ def create_and_fit_group_glm(second_level_input, design_matrix, config):
                 result = model.fit()
 
             glm["result"].append(result)
-            glm["design_matrix"].append(design_matrix)
     else:
         glm = None
     return glm
-
-
-def group_roi_to_voxel(layout, config):
-    from connectomix.core.utils.loaders import load_entities_from_config
-    entities = load_entities_from_config(config)
-    entities.pop("subject")
-
-    if config["method"] == "seedToVoxel":
-        from connectomix.core.utils.loaders import load_seed_file
-        coords, labels = load_seed_file(config["seeds_file"])
-    elif config["method"] == "roiToVoxel":
-        labels = list(config["roi_masks"].keys())
-        coords = None
-
-    for label in labels:
-        second_level_input = make_group_input(layout,
-                                              label,
-                                              config)  # get all first-level maps. In paired case, compute differences. Resamples and save all in folder.
-        design_matrix = make_group_design_matrix(layout, second_level_input, label, config)
-        glm = create_and_fit_group_glm(second_level_input, design_matrix, config)
-        contrast_path = compute_group_contrast(layout, glm, label, config)
-
-        np_logp_max_mass_path = compute_non_parametric_max_mass(layout, glm, label, config)
-        from connectomix.core.utils.writers import write_significant_contrast_maps
-        write_significant_contrast_maps(layout, contrast_path, np_logp_max_mass_path, label, config)
-
-    if config["method"] == "seedToVoxel":
-        # TODO: make this compatible with roiToVoxel
-        for coord, label in zip(coords, labels):
-            write_group_level_contrast_plots(layout, contrast_path, coord, label, config)
-            from connectomix.core.utils.writers import write_max_mass_plot
-            write_max_mass_plot(layout, np_logp_max_mass_path, label, coord, config)
 
 
 def group_roi_to_roi(layout, config):
@@ -369,7 +336,7 @@ def group_roi_to_roi(layout, config):
             json.dump(thresholds, f, indent=4)
 
         # Get ROIs coords and labels for plotting purposes
-        if method == "seeds":
+        if method == "data":
             from connectomix.core.utils.loaders import load_seed_file
             coords, labels = load_seed_file(config["seeds_file"])
 
@@ -418,3 +385,41 @@ def group_roi_to_roi(layout, config):
         # Generate report
         from connectomix.core.utils.writers import write_group_analysis_report
         write_group_analysis_report(layout, entities, config)
+
+
+def group_analysis(layout, config):
+    from connectomix.core.utils.loaders import load_entities_from_config
+    from connectomix.core.utils.writers import write_significant_contrast_maps
+
+    entities = load_entities_from_config(config)
+    entities.pop("subject")
+
+    labels = []
+    coords = []
+    if config["method"] == "seedToVoxel":
+        from connectomix.core.utils.loaders import load_seed_file
+        coords, labels = load_seed_file(config["seeds_file"])
+    elif config["method"] == "roiToVoxel":
+        labels = list(config["roi_masks"].keys())
+        coords = [None for _ in labels]
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+        labels = [None]
+        coords = [None]
+
+    for label in labels:
+        second_level_input = make_group_input(layout,
+                                              label,
+                                              config)  # get all first-level maps. In paired case, compute differences. Resamples and save all in folder.
+        design_matrix = make_group_design_matrix(layout, second_level_input, label, config)
+        glm = create_and_fit_group_glm(second_level_input, design_matrix, config)
+        contrast_path = compute_group_contrast(layout, glm, label, config)
+        non_parametric_neg_pvals_path = non_parametric_stats(layout, glm, label, config)
+        write_significant_contrast_maps(layout, contrast_path, non_parametric_neg_pvals_path, label, config)
+
+    # Save plots
+    # if config["method"] == "seedToVoxel":
+    #     # TODO: make this compatible with roiToVoxel
+    for coord, label in zip(coords, labels):
+        write_group_level_contrast_plots(layout, contrast_path, coord, label, config)
+        from connectomix.core.utils.writers import write_max_mass_plot
+        write_max_mass_plot(layout, non_parametric_neg_pvals_path, label, coord, config)

@@ -20,7 +20,7 @@ def add_new_entities(entities, label, config):
             suffix = "effectSize"
             entities["extension"] = "nii.gz"
         case "seedToSeed":
-            new_entity_key = "seeds"
+            new_entity_key = "data"
             new_entity_val = config["custom_seeds_name"]
             suffix = config["connectivity_kind"]
             entities["extension"] = "npy"

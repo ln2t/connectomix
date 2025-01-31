@@ -138,9 +138,9 @@ class TestConnectomix(unittest.TestCase):
     #     # Add actual assertions when the method is implemented
 
     # def test_extract_timeseries_seeds_method(self):
-    #     # Placeholder: test timeseries extraction using seeds method
+    #     # Placeholder: test timeseries extraction using data method
     #     config = {
-    #         'method': 'seeds',
+    #         'method': 'data',
     #         'method_options': {'radius': 5, 'seeds_file': 'dummy_seeds.tsv'},
     #         'confound_columns': ['trans_x', 'trans_y', 'trans_z']
     #     }

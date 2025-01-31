@@ -1,12 +1,12 @@
 import numpy as np
 from nilearn.connectome import sym_matrix_to_vec, vec_to_sym_matrix
 from nilearn.glm.second_level import non_parametric_inference
+from nilearn.mass_univariate import permuted_ols
 from scipy.stats import permutation_test
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools import add_constant
 
-# STATS
-# Permutation testing with stat max thresholding
+
 def generate_permuted_null_distributions(group_data, config, layout, entities, observed_stats, design_matrix=None):
     """
     Perform a two-sided permutation test to determine positive and negative thresholds separately.
@@ -82,7 +82,7 @@ def generate_permuted_null_distributions(group_data, config, layout, entities, o
     print("Permutations computed.")
     return perm_data.reshape([-1, 1])[0:], perm_data.reshape([-1, 1])[1:]  # Returning all maxima and all minima
 
-# Regression analysis of each connectivity value with a covariate, with optionnal confounds and optional permuted columns
+
 def regression_analysis(group_data, design_matrix, permutate=False):
     """
     Performs regression analysis on symmetric connectivity matrices using vectorization.
@@ -143,8 +143,7 @@ def regression_analysis(group_data, design_matrix, permutate=False):
 
     return t_values_matrix, p_values_matrix
 
-# Define a function to compute the difference in connectivity between the two groups
-# Todo: adapt this for paired tests
+
 def stat_func(x, y):
     """
     Function defining the statistics to compute for the permutation-based analysis.
@@ -162,49 +161,44 @@ def stat_func(x, y):
 
     """
     from scipy.stats import ttest_ind
-    # Compute the t-statistic between two independent groups
     t_stat, _ = ttest_ind(x, y)
     return t_stat
 
 
-def compute_non_parametric_max_mass(layout, glm, label, config):
+def non_parametric_stats(layout, glm, label, config):
+    from connectomix.core.utils.bids import build_output_path
     from connectomix.core.utils.loaders import load_entities_from_config
     entities = load_entities_from_config(config)
     entities.pop("subject")
 
-    from connectomix.core.utils.bids import build_output_path
-    np_logp_max_mass_path = build_output_path(layout,
-                                              entities,
-                                              label,
-                                              "group",
-                                              config,
-                                              suffix="logpMaxMass",
-                                              extension=".nii.gz")
 
-    # entities["seed"] = label
-    #
-    # np_logp_max_mass_path = layout.derivatives["connectomix"].build_path({**entities,
-    #                                                                       "analysis_label": config["analysis_label"],
-    #                                                                       "method": config["method"],
-    #                                                                       "seed": label
-    #                                                                       },
-    #                                                                      path_patterns=[
-    #                                                                          "group/{analysis_label}/group_[ses-{session}_][run-{run}_][task-{task}]_space-{space}_method-{method}_seed-{seed}_analysis-{analysis_label}_logpMaxMass.nii.gz"],
-    #                                                                      validate=False)
-    #
-    # from connectomix.core.makers import ensure_directory
-    # ensure_directory(np_logp_max_mass_path)
+    non_parametric_neg_pvals_path = build_output_path(layout,
+                                                      entities,
+                                                      label,
+                                                      "group",
+                                                      config,
+                                                      suffix="logpMaxMass")
 
-    np_outputs = non_parametric_inference(glm.second_level_input_,
-                                          design_matrix=glm.design_matrix_,
-                                          second_level_contrast=config["contrast"],
-                                          first_level_contrast=label,
-                                          smoothing_fwhm=config["smoothing"],
-                                          two_sided_test=config["two_sided_test"],
-                                          n_jobs=config["n_jobs"],
-                                          threshold=float(config["cluster_forming_alpha"]),
-                                          n_perm=config["n_permutations"])
+    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+        non_parametric_outputs = non_parametric_inference(glm.second_level_input_,
+                                                          design_matrix=glm.design_matrix_,
+                                                          second_level_contrast=config["contrast"],
+                                                          first_level_contrast=label,
+                                                          smoothing_fwhm=config["smoothing"],
+                                                          two_sided_test=config["two_sided_test"],
+                                                          n_jobs=config["n_jobs"],
+                                                          threshold=float(config["cluster_forming_alpha"]),
+                                                          n_perm=config["n_permutations"])
+        non_parametric_outputs["logp_max_mass"].to_filename(non_parametric_neg_pvals_path)
 
-    np_outputs["logp_max_mass"].to_filename(np_logp_max_mass_path)
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+        non_parametric_outputs = permuted_ols(glm["design_matrix"],
+                                              glm["data"],
+                                              two_sided_test=config["two_sided_test"],
+                                              n_jobs=config["n_jobs"],
+                                              threshold=float(config["cluster_forming_alpha"]),
+                                              n_perm=config["n_permutations"])
+        lopg_max_mass_matrix = vec_to_sym_matrix(non_parametric_outputs["logp_max_mass"])
+        np.save(non_parametric_neg_pvals_path, lopg_max_mass_matrix)
 
-    return np_logp_max_mass_path
+    return non_parametric_neg_pvals_path
