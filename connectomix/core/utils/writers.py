@@ -1,67 +1,206 @@
 import json
 import shutil
-import warnings
 
 import numpy as np
 import yaml
 from bids import BIDSLayout
 from matplotlib import pyplot as plt
 
-from nilearn.glm import threshold_stats_img
-from nilearn.image import math_img, binarize_img
-from nilearn.masking import apply_mask, unmask
-from nilearn.plotting import plot_matrix, plot_connectome, plot_glass_brain, plot_stat_map
+from nilearn.plotting import plot_matrix, plot_connectome, plot_glass_brain, plot_stat_map, plot_design_matrix
 from pathlib import Path
 
 from connectomix.core.utils.setup import setup_config
-from connectomix.core.utils.tools import img_is_not_empty, \
-    make_parent_dir
+from connectomix.core.utils.tools import make_parent_dir
 from connectomix.core.utils.bids import build_output_path, alpha_value_to_bids_valid_string
 
 
-def write_significant_contrast_maps(layout, contrast_path, non_parametric_neg_pvals_path, label, config):
-    for significance_level in ["uncorrected", "fdr", "fwe"]:
-        alpha = float(config[f"{significance_level}_alpha"])
+# def write_significant_contrast_maps(layout, contrast_path, non_parametric_neg_pvals_path, label, config):
+#     for thresholding_strategy in config["thresholding_strategies"]:
+#         alpha = float(config[f"{thresholding_strategy}_alpha"])
+#         from connectomix.core.utils.loaders import load_entities_from_config
+#         entities = load_entities_from_config(config)
+#         entities.pop("subject")
+#
+#         thresholded_contrast_path = build_output_path(layout,
+#                                                       entities,
+#                                                       label,
+#                                                       "group",
+#                                                       config,
+#                                                       suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha))
+#
+#         thresholded_data = None
+#
+#         if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+#             match thresholding_strategy:
+#                 case "uncorrected":
+#                     thresholded_data, _ = threshold_stats_img(contrast_path,
+#                                                              alpha=alpha,
+#                                                              height_control=None,
+#                                                              two_sided=True)
+#                 case "fdr":
+#                     thresholded_data, _ = threshold_stats_img(contrast_path,
+#                                                              alpha=alpha,
+#                                                              height_control="fdr",
+#                                                              two_sided=True)
+#                 case "fwe":
+#                     mask = math_img(f"img >= -np.log10({alpha})", img=non_parametric_neg_pvals_path)
+#                     mask = binarize_img(mask)
+#
+#                     if img_is_not_empty(mask):
+#                         masked_data = apply_mask(contrast_path, mask)
+#                         thresholded_data = unmask(masked_data, mask)
+#                     else:
+#                         warnings.warn(
+#                             f"For map {contrast_path}, no voxel survives FWE thresholding at alpha level {alpha}.")
+#                         thresholded_data = None
+#
+#             thresholded_data and thresholded_data.to_filename(thresholded_contrast_path)
+#
+#         elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+#             match thresholding_strategy:
+#                 case "uncorrected":
+#                     pass
+#                     uncorr_mask = p_values < uncorr_alpha
+#                     thresholded_data =  []
+#                 case "fdr":
+#                     pass
+#                     thresholded_data = []
+#                 case "fwe":
+#                     pass
+#                     mask = math_img(f"img >= -np.log10({alpha})", img=non_parametric_neg_pvals_path)
+#                     mask = binarize_img(mask)
+#
+#                     if img_is_not_empty(mask):
+#                         masked_data = apply_mask(contrast_path, mask)
+#                         thresholded_data = unmask(masked_data, mask)
+#                     else:
+#                         warnings.warn(
+#                             f"For map {contrast_path}, no voxel survives FWE thresholding at alpha level {alpha}.")
+#                         thresholded_data = None
+#             pass
+#             # save thresholded_data
+#             raise ValueError("This is work in progress")
+
+
+def write_design_matrix(layout, design_matrix, label, config):
+    from connectomix.core.utils.loaders import load_entities_from_config
+    entities = load_entities_from_config(config)
+    entities.pop("subject")
+    from connectomix.core.utils.bids import build_output_path
+    design_matrix_plot_path = build_output_path(layout,
+                                                entities,
+                                                label,
+                                                "group",
+                                                config,
+                                                contrast=None,
+                                                suffix="designMatrix",
+                                                extension=".svg")
+
+    plot_design_matrix(design_matrix, output_file=design_matrix_plot_path)
+    plt.close('all')
+
+
+def write_permutation_dist(layout, permutation_dist, label, config):
+    if permutation_dist is not None:
+        from connectomix.core.utils.bids import build_output_path
         from connectomix.core.utils.loaders import load_entities_from_config
         entities = load_entities_from_config(config)
         entities.pop("subject")
 
-        thresholded_contrast_path = build_output_path(layout,
+        permutation_dist_path = build_output_path(layout,
+                                                  entities,
+                                                  label,
+                                                  "group",
+                                                  config,
+                                                  suffix="permutationDistribution",
+                                                  extension=".npy")
+
+        histogram_path = build_output_path(layout,
+                            entities,
+                            label,
+                            "group",
+                            config,
+                            suffix="permutationDistribution",
+                            extension=".svg")
+
+        plt.hist(permutation_dist, bins=10, edgecolor='black')
+
+        plt.title("Permutation-generated null distribution")
+        plt.xlabel('t-values')
+        plt.ylabel('Frequency')
+
+        plt.savefig(histogram_path)
+        plt.close("all")
+        np.save(permutation_dist_path, permutation_dist)
+
+
+def write_contrast_scores(layout, contrast_scores, label, config):
+    from connectomix.core.utils.loaders import load_entities_from_config
+    from connectomix.core.utils.bids import build_output_path
+
+    entities = load_entities_from_config(config)
+    entities.pop("subject")
+
+    for score_type in contrast_scores.keys():
+        if score_type == "p_values":
+            suffix = "p"
+        elif score_type == "z_values":
+            suffix = "z"
+        elif score_type == "t_values":
+            suffix = "t"  # because that's only what we do
+
+        score_path = build_output_path(layout,
+                                          entities,
+                                          label,
+                                          "group",
+                                          config,
+                                          suffix=suffix)
+
+        plot_path = build_output_path(layout,
+                                      entities,
+                                      label,
+                                      "group",
+                                      config,
+                                      suffix=suffix,
+                                      extension='.svg')
+
+        if contrast_scores[score_type] is not None:
+            if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+                contrast_scores[score_type].to_filename(score_path)
+                # TODO: save plot of significant_data[thresholding_strategy] to plot_path
+            elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+                np.save(score_path, contrast_scores[score_type])
+                write_matrix_plot(contrast_scores[score_type], plot_path, label=label)
+
+
+def write_significant_data(layout, significant_data, label, config):
+    for thresholding_strategy in config["thresholding_strategies"]:
+        alpha = float(config[f"{thresholding_strategy}_alpha"])
+        from connectomix.core.utils.loaders import load_entities_from_config
+        entities = load_entities_from_config(config)
+        entities.pop("subject")
+
+        significant_data_path = build_output_path(layout,
                                                       entities,
                                                       label,
                                                       "group",
                                                       config,
-                                                      suffix=significance_level + alpha_value_to_bids_valid_string(alpha))
+                                                      suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha))
+        plot_path = build_output_path(layout,
+                                      entities,
+                                      label,
+                                      "group",
+                                      config,
+                                      suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha),
+                                      extension='.svg')
 
-        if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
-            thresholded_data = None
-            match significance_level:
-                case "uncorrected":
-                    thresholded_data, _ = threshold_stats_img(contrast_path,
-                                                             alpha=alpha,
-                                                             height_control=None,
-                                                             two_sided=True)
-                case "fdr":
-                    thresholded_data, _ = threshold_stats_img(contrast_path,
-                                                             alpha=alpha,
-                                                             height_control="fdr",
-                                                             two_sided=True)
-                case "fwe":
-                    mask = math_img(f"img >= -np.log10({alpha})", img=non_parametric_neg_pvals_path)
-                    mask = binarize_img(mask)
-
-                    if img_is_not_empty(mask):
-                        masked_data = apply_mask(contrast_path, mask)
-                        thresholded_data = unmask(masked_data, mask)
-                    else:
-                        warnings.warn(
-                            f"For map {contrast_path}, no voxel survives FWE thresholding at alpha level {alpha}.")
-                        thresholded_data = None
-
-            thresholded_data and thresholded_data.to_filename(thresholded_contrast_path)
-
-        elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
-            raise ValueError("This is work in progress")
+        if significant_data[thresholding_strategy] is not None:
+            if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+                significant_data[thresholding_strategy].to_filename(significant_data_path)
+                # TODO: save glassbrain of significant_data[thresholding_strategy] to plot_path
+            elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+                np.save(significant_data_path, significant_data[thresholding_strategy])
+                write_matrix_plot(significant_data[thresholding_strategy], plot_path, label=label)
 
 
 def write_default_config_file(bids_dir, derivatives, level):
@@ -401,12 +540,11 @@ def write_max_mass_plot(layout, np_logp_max_mass_path, label, coords, config):
         threshold=-np.log10(float(config["fwe_alpha"]))).savefig(np_logp_max_mass_plot_path)
 
 
-def write_matrix_plot(layout, conn_matrix, entities, labels, config):
-    conn_matrix_plot_path = build_output_path(layout, entities, None, "participant", config, extension=".svg")
+def write_matrix_plot(matrix, path, label=None):
     plt.figure(figsize=(10, 10))
-    plot_matrix(conn_matrix, labels=labels, colorbar=True)
-    plt.savefig(conn_matrix_plot_path)
-    plt.close()
+    plot_matrix(matrix, labels=label, colorbar=True)
+    plt.savefig(path)
+    plt.close('all')
 
 
 def write_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config):

@@ -112,41 +112,6 @@ def extract_timeseries(func_file, config):
 
             timeseries = np.hstack(timeseries)
 
-    # if method in config["supported_atlases"] or (method == "roiToVoxel" and config["roi_masks"] is not None):
-    #     if method in config["supported_atlases"]:
-    #         from connectomix.core.loaders import get_atlas_data
-    #         imgs, labels, _ = get_atlas_data(method)
-    #         imgs = [imgs]
-    #     else:
-    #         labels = list(config["roi_masks"].keys())
-    #         imgs = list(config["roi_masks"].values())
-    #
-    #         for roi_path in imgs:
-    #             if not os.path.isfile(roi_path):
-    #                 raise FileNotFoundError(
-    #                     f"No file found at provided path {roi_path} for roi_mask. Please review your configuration.")
-    #
-    #     timeseries = []
-    #     for img in imgs:
-    #         masker = NiftiLabelsMasker(
-    #             labels_img=img,
-    #             standardize="zscore_sample",
-    #             detrend=False,
-    #             high_pass=None,
-    #             low_pass=None,
-    #             t_r=t_r  # TODO: check if tr is necessary when filtering is not applied
-    #         )
-    #         timeseries.append(masker.fit_transform(func_file))
-    #     timeseries = np.hstack(timeseries)
-    # if method == "ica":
-    #     # ICA-based extraction
-    #     extractor = config["extractor"]
-    #     extractor.high_pass = None
-    #     extractor.low_pass = None
-    #     extractor.t_r = t_r
-    #     timeseries = extractor.transform(func_file)
-    #     labels = None
-
     return timeseries, labels
 
 
@@ -225,7 +190,7 @@ def participant_roi_to_roi(layout, func_file, timeseries_list, labels, config):
     np.fill_diagonal(conn_matrix, 0)
     conn_matrix_path = build_output_path(layout, entities, None, "participant", config)
     np.save(conn_matrix_path, conn_matrix)
-    write_matrix_plot(layout, conn_matrix, entities, labels, config)
+    # write_matrix_plot(layout, conn_matrix, entities, labels, config)
 
 
 def participant_analysis(layout, func_file, config):

@@ -6,7 +6,7 @@ from pathlib import Path
 from connectomix.core.utils.tools import camel_case_list_of_strings, make_parent_dir
 
 
-def add_new_entities(entities, label, config):
+def add_new_entities(entities, config, label=None):
 
     match config["method"]:
         case "seedToVoxel":
@@ -134,7 +134,7 @@ def contrast_string_to_bids_entity_value(contrast):
 
 
 def build_output_path(layout, entities, label, level, config, **kwargs):
-    entities = add_new_entities(entities, label, config)
+    entities = add_new_entities(entities, config, label)
     if kwargs:
         for key in kwargs.keys():
             entities[key] = kwargs[key]

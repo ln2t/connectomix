@@ -232,7 +232,15 @@ def setup_config_analysis(config, level):
 def setup_config_stats(config):
     from connectomix.core.utils.tools import config_helper
 
-    # Stats and permutations
+    config["two_sided_test"] = config_helper(config,
+                                             "two_sided_test",
+                                             True,
+                                             [True, False])
+
+    config["thresholding_strategies"] = config_helper(config,
+                                                      "thresholding_strategies",
+                                                      ["uncorrected", "fdr", "fwe"])
+
     config["uncorrected_alpha"] = config_helper(config,
                                                 "uncorrected_alpha",
                                                 0.001)
@@ -249,20 +257,16 @@ def setup_config_stats(config):
                                              "n_permutations",
                                              20)
 
-    config["two_sided_test"] = config_helper(config,
-                                             "two_sided_test",
-                                             True,
-                                             [True, False])
-
     config["n_jobs"] = config_helper(config,
                                      "n_jobs",
-                                     2)
+                                     1)
 
     if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
-        # p-value for cluster forming threshold
-        config["cluster_forming_alpha"] = config_helper(config,
+        config["cluster_forming_alpha"] = str(config_helper(config,
                                                         "cluster_forming_alpha",
-                                                        0.01)
+                                                        0.01))
+    elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
+        config["cluster_forming_alpha"] = None
 
     return config
 

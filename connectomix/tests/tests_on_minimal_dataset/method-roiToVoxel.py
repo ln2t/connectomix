@@ -18,6 +18,8 @@ participant_level_pipeline(bids_dir,
                            config={"method": method,
                                    "roi_masks": roi_masks})
 
+plt.close('all')
+
 # Group
 ## One-sample t-test
 group_level_pipeline(bids_dir,
@@ -26,6 +28,8 @@ group_level_pipeline(bids_dir,
                              "roi_masks": roi_masks,
                              "analysis_name": "testMeanEffect",
                              "contrast": "intercept"})
+
+plt.close('all')
 
 ## Two-sample t-test, unpaired
 group_level_pipeline(bids_dir,
@@ -36,6 +40,8 @@ group_level_pipeline(bids_dir,
                              "covariates" : "group",
                              "contrast": "control-patient",
                              "add_intercept": False})
+
+plt.close('all')
 
 ## Regression
 group_level_pipeline(bids_dir,

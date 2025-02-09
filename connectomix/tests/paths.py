@@ -13,6 +13,6 @@ output_dir = os.path.join("/derivatives", ds, f"connectomix-{__version__}-tests"
 
 # tower paths
 
-bids_dir = os.path.join("/data/openneuro", ds)
-fmriprep_dir = os.path.join("/data/openneuro", ds, "derivatives", "fmriprep")
-output_dir = os.path.join("/data/openneuro", ds, "derivatives", f"connectomix-{__version__}-tests")
+# bids_dir = os.path.join("/data/openneuro", ds)
+# fmriprep_dir = os.path.join("/data/openneuro", ds, "derivatives", "fmriprep")
+# output_dir = os.path.join("/data/openneuro", ds, "derivatives", f"connectomix-{__version__}-tests")
