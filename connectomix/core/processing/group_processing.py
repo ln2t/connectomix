@@ -1,23 +1,15 @@
-import os
-import json
 import pandas as pd
 import warnings
 import numpy as np
-from statsmodels.stats.multitest import multipletests
 import statsmodels.api as sm
-from scipy.stats import ttest_ind, ttest_rel
 from nilearn.glm.second_level import SecondLevelModel, make_second_level_design_matrix
 from nilearn.glm.contrasts import expression_to_contrast_vector
-from nilearn.plotting import find_probabilistic_atlas_cut_coords
 from nilearn.connectome import sym_matrix_to_vec, vec_to_sym_matrix
 
-from connectomix.core.utils.tools import find_labels_and_coords
+from connectomix.core.utils.tools import find_labels_and_coords, get_cluster_tables
 from connectomix.core.processing.stats import compute_significant_data, compute_z_from_t
-from connectomix.core.utils.loaders import load_group_level_covariates, load_seed_file, load_atlas_data
-from connectomix.core.utils.writers import (write_permutation_dist,
-                                            write_significant_data,
-                                            write_contrast_scores,
-                                            write_design_matrix)
+from connectomix.core.utils.loaders import load_group_level_covariates
+from connectomix.core.utils.writers import write_results
 
 def make_group_input(layout, config, label=None):
     from connectomix.core.utils.loaders import load_entities_from_config
@@ -334,34 +326,36 @@ def create_and_fit_group_glm(second_level_input, design_matrix, config):
 #         write_group_analysis_report(layout, entities, config)
 
 
-def group_analysis(layout, config):
-
-    labels, coords = find_labels_and_coords(config)
-
+def run_single_group_analysis(layout, label, config):
+    results = {}
+    second_level_input = make_group_input(layout, config, label)
+    design_matrix = make_group_design_matrix(layout, second_level_input, config)
+    glm = create_and_fit_group_glm(second_level_input, design_matrix, config)
+    contrast_results = compute_group_contrast(glm, config)
+    significant_data, permutation_dist = compute_significant_data(contrast_results, glm, config)
     if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
-        for label in labels:
-            second_level_input = make_group_input(layout, config, label)
-            design_matrix = make_group_design_matrix(layout, second_level_input, config)
-            glm = create_and_fit_group_glm(second_level_input, design_matrix, config)
-            contrast_results = compute_group_contrast(glm, config)
-            significant_data, permutation_dist = compute_significant_data(contrast_results, glm, config)
+        cluster_tables = get_cluster_tables(significant_data, config)
+    else:
+        cluster_tables = None
 
-            write_design_matrix(layout, design_matrix, label, config)
-            write_permutation_dist(layout, permutation_dist, label, config)
-            write_contrast_scores(layout, contrast_results, label, config)
-            write_significant_data(layout, significant_data, label, coords, config)
+    results["design_matrix"] = design_matrix
+    results["permutation_dist"] = permutation_dist
+    results["contrast_results"] = contrast_results
+    results["significant_data"] = significant_data
+    results["cluster_tables"] = cluster_tables
 
+    return results
+
+
+def group_analysis(layout, config):
+    labels, coords = find_labels_and_coords(config)
+    if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
+        for (label, coord) in zip(labels, coords):
+            results = run_single_group_analysis(layout, label, config)
+            write_results(layout, results, label, coord, config)
     elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
-        second_level_input = make_group_input(layout, config, label=None)
-        design_matrix = make_group_design_matrix(layout, second_level_input, config)
-        glm = create_and_fit_group_glm(second_level_input, design_matrix, config)
-        contrast_results = compute_group_contrast(glm, config)
-        significant_data, permutation_dist = compute_significant_data(contrast_results, glm, config)
-
-        write_design_matrix(layout, design_matrix, labels, config)
-        write_permutation_dist(layout, permutation_dist, labels, config)
-        write_contrast_scores(layout, contrast_results, labels, config)
-        write_significant_data(layout, significant_data, labels, coords, config)
+        results = run_single_group_analysis(layout, None, config)
+        write_results(layout, results, labels, coords, config)
 
     # Save plots
     # if config["method"] == "seedToVoxel":

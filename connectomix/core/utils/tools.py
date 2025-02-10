@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from nibabel import Nifti1Image
 from nilearn.image import load_img, resample_img, index_img, clean_img
+from nilearn.reporting import get_clusters_table
 from bids import BIDSLayout
 from pathlib import Path
 import warnings
@@ -309,7 +310,7 @@ def find_labels_and_coords(config):
     elif config["method"] == "roiToVoxel" or config["method"] == "roiToRoi":
         if config["method"] == "roiToVoxel":
             labels = list(config["roi_masks"].keys())
-            coords = None
+            coords = [None for _ in labels]
         elif config["method"] == "roiToRoi" and not config.get("canica", False):
             from connectomix.core.utils.loaders import load_atlas_data
             _, labels, coords = load_atlas_data(config["atlas"], get_cut_coords=True)
@@ -318,3 +319,29 @@ def find_labels_and_coords(config):
             coords = None
 
     return labels, coords
+
+
+def locate_clusters_on_atlas(cluster_table, config):
+    # TODO write this function
+    pass
+
+
+def get_cluster_tables(significant_data, config):
+    cluster_tables = {}
+    for thresholding_strategy in significant_data.keys():
+        if significant_data[thresholding_strategy] is not None:
+            cluster_table = get_clusters_table(significant_data[thresholding_strategy],
+                                               stat_threshold=0.01,
+                                               two_sided=config["two_sided_test"])
+            if cluster_table.empty:
+                print("No signigificant cluster found.")
+            else:
+                if "atlas" in config.keys():
+                    cluster_table = locate_clusters_on_atlas(cluster_table, config)
+                else:
+                    print("No atlas provided, skipping cluster location identification")
+        else:
+            cluster_table = None
+
+        cluster_tables[thresholding_strategy] = cluster_table
+    return cluster_tables
