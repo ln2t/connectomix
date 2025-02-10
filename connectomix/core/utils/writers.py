@@ -173,7 +173,7 @@ def write_contrast_scores(layout, contrast_scores, label, config):
                 write_matrix_plot(contrast_scores[score_type], plot_path, label=label)
 
 
-def write_significant_data(layout, significant_data, label, config):
+def write_significant_data(layout, significant_data, label, coords, config):
     for thresholding_strategy in config["thresholding_strategies"]:
         alpha = float(config[f"{thresholding_strategy}_alpha"])
         from connectomix.core.utils.loaders import load_entities_from_config
@@ -186,12 +186,20 @@ def write_significant_data(layout, significant_data, label, config):
                                                       "group",
                                                       config,
                                                       suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha))
-        plot_path = build_output_path(layout,
+        matrix_plot_path = build_output_path(layout,
                                       entities,
                                       label,
                                       "group",
                                       config,
                                       suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha),
+                                      extension='.svg')
+
+        connectome_plot_path = build_output_path(layout,
+                                      entities,
+                                      label,
+                                      "group",
+                                      config,
+                                      suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha) + "Connectome",
                                       extension='.svg')
 
         if significant_data[thresholding_strategy] is not None:
@@ -200,7 +208,8 @@ def write_significant_data(layout, significant_data, label, config):
                 # TODO: save glassbrain of significant_data[thresholding_strategy] to plot_path
             elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
                 np.save(significant_data_path, significant_data[thresholding_strategy])
-                write_matrix_plot(significant_data[thresholding_strategy], plot_path, label=label)
+                write_matrix_plot(significant_data[thresholding_strategy], matrix_plot_path, label=label)
+                write_connectome_plot(significant_data[thresholding_strategy], connectome_plot_path, coords)
 
 
 def write_default_config_file(bids_dir, derivatives, level):
@@ -545,6 +554,13 @@ def write_matrix_plot(matrix, path, label=None):
     plot_matrix(matrix, labels=label, colorbar=True)
     plt.savefig(path)
     plt.close('all')
+
+
+def write_connectome_plot(matrix, path, coords):
+    plt.figure(figsize=(10, 10))
+    plot_connectome(matrix, node_coords=coords)
+    plt.savefig(path)
+    plt.close()
 
 
 def write_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config):

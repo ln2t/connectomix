@@ -312,7 +312,7 @@ def find_labels_and_coords(config):
             coords = None
         elif config["method"] == "roiToRoi" and not config.get("canica", False):
             from connectomix.core.utils.loaders import load_atlas_data
-            _, labels, coords = load_atlas_data(config["atlas"])
+            _, labels, coords = load_atlas_data(config["atlas"], get_cut_coords=True)
         if config.get("canica", False):
             labels = None
             coords = None

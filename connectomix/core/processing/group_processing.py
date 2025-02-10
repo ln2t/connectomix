@@ -349,7 +349,7 @@ def group_analysis(layout, config):
             write_design_matrix(layout, design_matrix, label, config)
             write_permutation_dist(layout, permutation_dist, label, config)
             write_contrast_scores(layout, contrast_results, label, config)
-            write_significant_data(layout, significant_data, label, config)
+            write_significant_data(layout, significant_data, label, coords, config)
 
     elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
         second_level_input = make_group_input(layout, config, label=None)
@@ -361,7 +361,7 @@ def group_analysis(layout, config):
         write_design_matrix(layout, design_matrix, labels, config)
         write_permutation_dist(layout, permutation_dist, labels, config)
         write_contrast_scores(layout, contrast_results, labels, config)
-        write_significant_data(layout, significant_data, labels, config)
+        write_significant_data(layout, significant_data, labels, coords, config)
 
     # Save plots
     # if config["method"] == "seedToVoxel":
