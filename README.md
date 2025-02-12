@@ -5,19 +5,16 @@
 ## Overview
 
 Connectomix is a BIDS app designed to compute functional connectomes from fMRI data preprocessed with **fMRIPrep**.
-It facilitates both participant-level and group-level analyses using various methods for defining regions of interest (ROIs) and computing connectivity measures.
+It facilitates both participant-level and group-level analyses using various methods for defining seeds or regions of interest (ROIs) and computing connectivity measures.
 Connectomix leverages the Brain Imaging Data Structure (BIDS) to organize data and outputs, ensuring compatibility with existing neuroimaging workflows.
 
 **Key features include:**
 
 - Extraction of time series data from preprocessed fMRI data, with flexible denoising strategies.
 - Computation of functional connectivity matrices using methods like atlas-based parcellation, seed-based analysis, and Independent Component Analysis (ICA).
-- Support for multiple connectivity measures (e.g., correlation, partial correlation).
 - Generation of group-level statistical comparisons, including permutation testing.
-- Automatic generation of default configuration files tailored to your dataset.
 - BIDS-compliant outputs for seamless integration with other neuroimaging tools.
 - An Autonomous mode where paths and configuration are guessed before launching the analysis, without any other input required.
-- Report generation containing summary of the findings at group-level.
 
 ## Installation
 
@@ -77,18 +74,15 @@ For more information on Docker and managing containers, visit the [Docker Docume
 
 ### Python Installations
 
-Connectomix requires **Python 3** and several Python packages. Install the necessary dependencies using `pip`:
-
-```bash
-pip install nibabel nilearn pandas numpy matplotlib scipy statsmodels bids yaml
-```
+Connectomix requires **Python 3.11** and several Python packages. Install the necessary dependencies using the provided `requirements.txt` file.
 
 Alternatively, you can use a virtual environment or conda environment to manage dependencies:
 
 ```bash
-conda create -n connectomix_env python=3.8
-conda activate connectomix_env
-pip install nibabel nilearn pandas numpy matplotlib scipy statsmodels bids yaml
+git clone git@github.com:ln2t/connectomix.git
+virtualenv venv python=3.11
+source venv/bin/activate
+pip install -e .
 ```
 
 ## Usage
@@ -96,7 +90,7 @@ pip install nibabel nilearn pandas numpy matplotlib scipy statsmodels bids yaml
 Connectomix can be executed from the command line with the following syntax:
 
 ```bash
-python connectomix.py bids_dir derivatives_dir analysis_level [options]
+connectomix bids_dir derivatives_dir analysis_level [options]
 ```
 
 - **`bids_dir`**: The root directory of the BIDS dataset.
@@ -105,7 +99,7 @@ python connectomix.py bids_dir derivatives_dir analysis_level [options]
 
 ### Command-Line Arguments
 
-- `--fmriprep_dir`: Path to the fMRIPrep outputs directory. If not provided, Connectomix will look for it in `bids_dir/derivatives/fmriprep`.
+- `--derivatives fmriprep=/path/to/fmriprep`: Path to the fMRIPrep outputs directory. If not provided, Connectomix will look for it in `bids_dir/derivatives/fmriprep`.
 - `--config`: Path to a configuration file (`.json`, `.yaml`, or `.yml`) specifying analysis parameters. If not provided, default parameters will be used.
 - `--helper`: Generates a default configuration file based on the dataset contents.
 - `--autonomous`: Runs Connectomix in autonomous mode, automatically guessing paths and settings. In that case only, all the other arguments can be ignored, but the command must be run at a specific place in your directory tree (see below).
@@ -117,32 +111,31 @@ python connectomix.py bids_dir derivatives_dir analysis_level [options]
 To run a participant-level analysis, assuming fmriprep derivatives are stored in `/path/to/bids_dataset/derivatives/fmriprep`:
 
 ```bash
-python connectomix.py /path/to/bids_dataset /path/to/derivatives/connectomix participant
+connectomix /path/to/bids_dataset /path/to/derivatives/connectomix participant
 ```
 
 This will use the default configuration for the analysis.
-Moreover, if the fmriprep directory is located somewhere else, you can add the option `--fmriprep_dir /path/to/fmriprep` to manually specify this.
+Moreover, if the fmriprep directory is located somewhere else, you can add the option `--derivatives fmriprep=/path/to/fmriprep` to manually specify this.
 
 To generate a default participant-level configuration file:
 
 ```bash
-python connectomix.py /path/to/bids_dataset /path/to/derivatives/connectomix participant --helper
+connectomix /path/to/bids_dataset /path/to/derivatives/connectomix participant --helper
 ```
 
 The configuration file is then created in `/path/to/derivatives/connectomix/config` (the result is also printed in the terminal). Once you are happy with the configuration, you can launch the analysis with you configuration by using the option `--config /path/to/participant_config.yaml`
 
 **Important note about denoising**: the configuration file contain the confounding time-series that one wish to remove from the signal, as well as other denoising options such as low- and high-pass filtering cutoffs. Unfortunately, there is no one-fits-all method to denoising fMRI data.
-By default, connectomix will select 6 motion parameters and perform global signal as well as white matter + CSF signal regression.
-Moreover, the signal is demeaned and de-trended as well as filtered to keep the 0.01Hz-0.08Hz band. This is a classic 9P model, discussed e.g. in Ciric et al, "Benchmarking of participant-level confound regression strategies for the control of motion artifact in studies of functional connectivity", NeuroImage, 2017.
+By default, connectomix will select 6 motion parameters as well as white matter + CSF signal regression.
+Moreover, the signal is demeaned and de-trended as well as filtered to keep the 0.01Hz-0.08Hz band. This is quite a standard choice, for more information please consult e.g. in Ciric et al, "Benchmarking of participant-level confound regression strategies for the control of motion artifact in studies of functional connectivity", NeuroImage, 2017.
 
-Another possibility supported by connectomix is to use ICA-AROMA denoised data. In that case, preprocessed data from fMRIPrep must be further processed AROMA. The recommended implementation is using [fmripost-aroma](https://github.com/nipreps/fmripost-aroma). using the `--denoising-method nonaggr` option.
-
+Another possibility supported by connectomix is to use ICA-AROMA denoised data. In that case, preprocessed data from fMRIPrep must be further processed AROMA. The recommended implementation is using [fmripost-aroma](https://github.com/nipreps/fmripost-aroma). using the `--denoising-method nonaggr` option (WIP)
 #### Group-Level Analysis
 
 To run a group-level analysis:
 
 ```bash
-python connectomix.py /path/to/bids_dataset /path/to/derivatives/connectomix group --config /path/to/group_config.yaml
+connectomix /path/to/bids_dataset /path/to/derivatives/connectomix group --config /path/to/group_config.yaml
 ```
 
 Note that a configuration file is mandatory in that case, as this is the place where the two groups of subjects to compare are specified.
@@ -150,17 +143,17 @@ Note that a configuration file is mandatory in that case, as this is the place w
 To generate a default group-level configuration file:
 
 ```bash
-python connectomix.py /path/to/bids_dataset /path/to/derivatives group --helper
+connectomix /path/to/bids_dataset /path/to/derivatives group --helper
 ```
 
 The result of this default configuration file is then saved at `/path/to/derivatives/connectomix/config` and can be edited before launching the analysis (the result is also printed in the terminal). Caution: by default, the number of permutations is set to 10000. This will take a lot of time to run, so if your goal is to test your configuration or simply if you don't care about this, set the field `n_permutations` to a very low value (e.g. 10) in the configuration file.
 
-#### Autonomous Mode
+#### Autonomous Mode (WIP)
 
 Connectomix can be run in autonomous mode to automatically determine paths and settings:
 
 ```bash
-python connectomix.py --autonomous
+connectomix --autonomous
 ```
 
 The strategy for this mode is as follows:
@@ -181,9 +174,7 @@ A participant-level configuration file specifies parameters such as:
 
 - **Subjects** to process.
 - **Tasks**, **runs**, **sessions**, and **spaces** to include.
-- **Confound variables** to use during time series extraction. They correspond to columns in the confounds computed by fMRIPrep.
-- **Connectivity measures** to compute (e.g., correlation, partial correlation).
-- **Methods** for defining ROIs (e.g., atlas-based, seed-based, ICA).
+- **Methods** for defining ROIs (seedToVoxel, seedToSeed, roiToVoxel, roiToRoi).
 
 **Example participant-level configuration (`participant_config.yaml`):**
 
