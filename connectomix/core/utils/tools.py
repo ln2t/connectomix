@@ -1,13 +1,11 @@
 import nibabel as nib
 
 import os
-import pandas as pd
 from nibabel import Nifti1Image
 from nilearn.image import load_img, resample_img, index_img, clean_img
 from nilearn.reporting import get_clusters_table
 from bids import BIDSLayout
 from pathlib import Path
-import warnings
 
 import numpy as np
 
@@ -30,17 +28,6 @@ def print_subject(layout, func_file):
     print(f"Processing subject {entities['subject']}")
 
 
-def setup_and_check_connectivity_kinds(config):
-    # Set up connectivity measures
-    connectivity_kinds = config["connectivity_kinds"]
-    if isinstance(connectivity_kinds, str):
-        connectivity_kinds = [connectivity_kinds]
-    elif not isinstance(connectivity_kinds, list):
-        raise ValueError(
-            f"The connectivity_kinds value must either be a string or a list. You provided {connectivity_kinds}.")
-    return connectivity_kinds
-
-
 def check_affines_match(imgs):
     """
     Check if the affines of a list of Niimg objects (or file paths to .nii or .nii.gz) match.
@@ -59,106 +46,6 @@ def check_affines_match(imgs):
         if not np.allclose(img.affine, reference_affine):
             return False
     return True
-
-
-def check_group_has_several_members(group_subjects):
-    """
-    A basic tool to check if provided group of subjects actually contain more than one element.
-
-    Parameters
-    ----------
-    group_subjects : list
-        List of subjects.
-
-    Raises
-    ------
-    ValueError
-        Wrong size for the group list.
-
-    Returns
-    -------
-    None.
-
-    """
-    if len(group_subjects) == 0:
-        raise ValueError("One group has no member, please review your configuration file.")
-    elif len(group_subjects) == 1:
-        raise ValueError(
-            "Detecting a group with only one member, this is not yet supported. If this is not what you intended to do, review your configuration file.")
-
-
-def guess_groups(layout):
-    """
-    Reads the participants.tsv file, checks for a "group" column, and returns lists of participants for each group.
-
-    Parameters:
-    - layout
-
-    Returns:
-    - groups_dict: A dictionary with group names as keys and lists of participant IDs as values.
-
-    Raises:
-    - Warning: If there are not exactly two groups.
-    """
-
-    # Path to the participants.tsv file
-    participants_file = Path(layout.get(extension="tsv", scope="raw", return_type="filename")[0])
-
-    # Read the participants.tsv file
-    participants_df = pd.read_csv(participants_file, sep="\t")
-
-    groups_dict = {}
-
-    # Check if the "group" column exists
-    if "group" in participants_df.columns:
-        # Create lists of participants for each group
-        groups_dict = {}
-        unique_groups = participants_df["group"].unique()
-
-        # We also need the list of participants that have been processed at participant-level
-        processed_participants = layout.derivatives["connectomix"].get_subjects()
-
-        for group_value in unique_groups:
-            # Get the list of participant IDs for the current group
-            participants_in_group = participants_df.loc[
-                participants_df["group"] == group_value, 'participant_id'].tolist()
-
-            # Remove the 'sub-' prefix:
-            participants_in_group = [subject.replace('sub-', '') for subject in participants_in_group]
-
-            # Refine selection to keep only participants already processed at participant-level
-            groups_dict[group_value] = list(set(processed_participants) & set(participants_in_group))
-        # Raise a warning if there are not exactly two groups
-        if len(groups_dict) != 2:
-            warnings.warn(f"Expected exactly two groups, but found {len(groups_dict)} groups.")
-    else:
-        warnings.warn("No group column ground in the participants.tsv file, cannot guess any grouping.")
-
-    return groups_dict
-
-
-def convert_4d_to_3d(imgs):
-    """
-    Convert list of 4D (or 3D) images into list of 3D images, when the fourth dimension contains only one image.
-
-    Parameters
-    ----------
-    imgs : list
-        List of Niimg or str of Path
-
-    Returns
-    -------
-    imgs_3D : list
-    """
-    imgs_3D = []
-    for img in imgs:
-        img = nib.load(img) if isinstance(img, (str, Path)) else img
-        if len(img.shape) == 4:
-            if img.shape[3] == 1:
-                imgs_3D.append(index_img(img, 0))
-            else:
-                raise ValueError("More that one image in fourth dimension, cannot convert 4D image to 3D")
-    return imgs_3D
 
 
 def img_is_not_empty(img):
@@ -279,8 +166,7 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
                                                                                                            validate=False)
         denoised_paths.append(denoised_path)
 
-        if not Path(denoised_path).exists():
-            from connectomix.core.utils.tools import make_parent_dir
+        if not Path(denoised_path).exists() or (Path(denoised_path).exists() and config["overwrite_denoised_files"]):
             make_parent_dir(denoised_path)
 
             from connectomix.core.utils.loaders import load_confounds

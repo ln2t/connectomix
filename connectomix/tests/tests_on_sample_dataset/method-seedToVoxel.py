@@ -9,13 +9,13 @@ example_seeds_for_seedToVoxel = str(importlib.resources.files("connectomix.tests
 method = "seedToVoxel"
 
 # Participant
-# participant_level_pipeline(bids_dir,
-#                            output_dir,
-#                            derivatives={"fmriprep": fmriprep_dir},
-#                            config={"method": method,
-#                                    "seeds_file": example_seeds_for_seedToVoxel})
-#
-# plt.close('all')
+participant_level_pipeline(bids_dir,
+                           output_dir,
+                           derivatives={"fmriprep": fmriprep_dir},
+                           config={"method": method,
+                                   "seeds_file": example_seeds_for_seedToVoxel})
+
+plt.close('all')
 
 # Group
 ## One-sample t-test

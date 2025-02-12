@@ -98,6 +98,11 @@ def setup_config_preprocessing(config):
                                         "confound_columns",
                                         default_confounds)
 
+    config["overwrite_denoised_files"] = config_helper(config,
+                                                       "overwrite_denoised_files",
+                                                       True,
+                                                       [True, False])
+
     # ICA-AROMA denoising
     config["ica_aroma"] = config_helper(config,
                                         "ica_aroma",
@@ -269,96 +274,3 @@ def setup_config_stats(config):
         config["cluster_forming_alpha"] = None
 
     return config
-
-# def create_participant_level_default_config_file(bids_dir, output_dir, fmriprep_dir):
-#     """
-#     Create default configuration file in YAML format for default parameters, at participant level.
-#     The configuration file is saved at 'derivatives_dir/config/default_participant_level_config.yaml'
-#
-#     Parameters
-#     ----------
-#     bids_dir : str or Path
-#         Path to BIDS directory.
-#     output_dir : str or Path
-#         Path to derivatives.
-#     fmriprep_dir : str or Path
-#         Path to fMRIPrep derivatives.
-#
-#     Returns
-#     -------
-#     None.
-#
-#     """
-#
-#     # Print some stuff for the primate using this function
-#     print("Generating default configuration file for default parameters, please wait while the dataset is explored...")
-#
-#     # Create derivative directory
-#     output_dir = Path(output_dir)
-#     output_dir.mkdir(parents=True, exist_ok=True)
-#
-#     # Create the dataset_description.json file
-#     from connectomix.core.makers import create_dataset_description
-#     create_dataset_description(output_dir)
-#
-#     # Create a BIDSLayout to parse the BIDS dataset
-#     layout = BIDSLayout(bids_dir, derivatives=[fmriprep_dir, output_dir])
-#
-#     # Load all default values in config file
-#     config = setup_config({}, layout, "participant")
-#
-#     # Prepare the YAML content with comments
-#     yaml_content_with_comments = f"""\
-# # Connectomix Configuration File
-# # This file is generated automatically. Please modify the parameters as needed.
-# # Full documentation is located at github.com/ln2t/connectomix
-# # Important note: more parameters can be tuned than those shown here, this is only a starting point.
-#
-# # List of subjects
-# subjects: {config.get("subjects")}
-#
-# # List of tasks
-# tasks: {config.get("tasks")}
-#
-# # List of runs
-# runs: {config.get("runs")}
-#
-# # List of sessions
-# sessions: {config.get("sessions")}
-#
-# # List of output spaces
-# spaces: {config.get("spaces")}
-#
-# # Confounding variables to include when extracting timeseries. Choose from confounds computed from fMRIPrep.
-# confound_columns: {config.get("confound_columns")}
-#
-# # Use ICA-AROMA denoised data or not. If set to True, fMRIPrep output must be further processed using fMRIPost-AROMA (see https://github.com/nipreps/fmripost-aroma)
-# ica_aroma: {config.get("ica_aroma")}
-#
-# # Kind of connectivity measure to compute
-# connectivity_kind: {config.get("connectivity_kinds")}  # Choose from covariance, correlation, partial correlation or precision. This option is passed to nilearn.connectome.ConnectivityMeasure.
-#
-# # Method to define regions of interests to compute connectivity
-# method: {config.get("method")} # Method to determine ROIs to compute variance. Uses the Schaeffer 2018 with 100 rois by default. More options are described in the documentation.
-#
-# # Other parameters
-# high_pass: {config.get("high_pass")} # High-pass filtering, in Hz, applied to BOLD data. Low (<0.008 Hz) values does minimal changes to the signal, while high (>0.01) values improves sensitivity.
-# low_pass: {config.get("low_pass")} # Low-pass filtering, in Hz, applied to BOLD data. High (>0.1 Hz) values does minimal changes to the signal, while low (< 0.08 Hz)values improves specificity.
-# seeds_file: {config["seeds_file"]} # Path to seed file for seed-based ROIs
-# radius: {config["radius"]} # Radius, in mm, to create the spheres at the coordinates of the data for seed-based ROIs
-#     """
-#
-#     # Build filenames for each output
-#     yaml_file = Path(output_dir) / 'config' / 'default_participant_level_config.yaml'
-#
-#     from connectomix.core.makers import ensure_directory
-#     ensure_directory(yaml_file)
-#
-#     # Save the YAML content with comments
-#     with open(yaml_file, 'w') as yaml_out:
-#         yaml_out.write(yaml_content_with_comments)
-#
-#     print(f"Default YAML configuration file saved at {yaml_file}. Go to github.com/ln2t/connectomix for more details.")
-#     print("See also below for the output:")
-#     print(yaml_content_with_comments)
-
