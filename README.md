@@ -225,7 +225,7 @@ confound_columns:
 connectivity_kind: correlation  # Options: covariance, correlation, partial correlation, precision
 
 # Method to define regions of interest
-method: atlas  # Options: atlas, seeds, ica
+method: atlas  # Options: atlas, data, ica
 
 # Method-specific options
 method_options:
@@ -309,6 +309,12 @@ Connectomix generates BIDS-compliant outputs in the specified derivatives direct
 
 - Participant-level outputs are organized under `derivatives/connectomix/sub-XX/`.
 - Group-level outputs are organized under `derivatives/connectomix/group/`.
+
+**Entities:**
+- Participant-level outputs have the following entities, on top of the ones inherited by BIDS (sub, task, space, session, run):
+    - method: "roiToVoxel"; desc: name of the seed; suffix: "effectSize"; extension: ".svg" for a plot and ".nii.gz" for the actual map
+    - method: "roiToRoi"; desc: "seeds" to indicate that seeds from a custom file has been used or the name of the atlas used to extract the ROIs; suffix: "correlationMatrix"; extension: ".svg" for a plot and ".npy" for the data  
+
 
 ## Dependencies
 
