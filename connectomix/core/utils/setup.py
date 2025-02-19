@@ -95,7 +95,7 @@ def setup_config_preprocessing(config):
 
     # Confounds for denoising
     config["confounds"] = config_helper(config,
-                                        "confound_columns",
+                                        "confounds",
                                         default_confounds)
 
     config["overwrite_denoised_files"] = config_helper(config,
