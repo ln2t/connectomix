@@ -181,8 +181,7 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
                       low_pass=low_pass,
                       high_pass=high_pass,
                       t_r=load_repetition_time(json_file),
-                      confounds=confounds,
-                      ensure_finite=True).to_filename(denoised_path)
+                      confounds=confounds).to_filename(denoised_path)
         else:
             print(f"Denoised data {denoised_path} already exists, skipping.")
     return denoised_paths
