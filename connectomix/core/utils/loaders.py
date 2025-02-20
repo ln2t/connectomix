@@ -148,6 +148,7 @@ def replace_nans_with_mean(df):
 
     return df_copy
 
+
 def load_config(config):
     """
     Load configuration either from dict or config file.

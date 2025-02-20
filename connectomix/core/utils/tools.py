@@ -158,7 +158,7 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
     # Denoise the data
     denoised_paths = []
     for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
-        print(f"Denoising file {func_file}")
+        print(f"Denoising file {os.path.basename(func_file)}")
         entities = layout.parse_file_entities(func_file)
         denoised_path = func_file if config['ica_aroma'] else layout.derivatives["connectomix"].build_path(entities,
                                                                                                            path_patterns=[
@@ -183,7 +183,7 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
                       t_r=load_repetition_time(json_file),
                       confounds=confounds).to_filename(denoised_path)
         else:
-            print(f"Denoised data {denoised_path} already exists, skipping.")
+            print(f"Denoised data {os.path.basename(denoised_path)} already exists, skipping.")
     return denoised_paths
 
 
