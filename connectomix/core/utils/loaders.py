@@ -122,8 +122,31 @@ def load_confounds(confounds_file, config):
 
     selected_confounds = confounds[config.get("confounds")]
 
-    return selected_confounds
+    return replace_nans_with_mean(selected_confounds)
 
+def replace_nans_with_mean(df):
+    """
+    Replace NaN values in each column of a DataFrame with the mean of the existing values in that column.
+
+    Parameters:
+    df (pd.DataFrame): The input DataFrame with potential NaN values.
+
+    Returns:
+    pd.DataFrame: A new DataFrame with NaN values replaced by the mean of the respective columns.
+    """
+    # Create a copy of the DataFrame to avoid modifying the original one
+    df_copy = df.copy()
+
+    # Iterate over each column in the DataFrame
+    for column in df_copy.columns:
+        # Check if the column contains NaN values
+        if df_copy[column].isnull().any():
+            # Calculate the mean of the existing values in the column
+            mean_value = df_copy[column].mean()
+            # Replace NaN values with the mean value
+            df_copy[column] = df_copy[column].fillna(mean_value)
+
+    return df_copy
 
 def load_config(config):
     """
