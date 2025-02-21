@@ -95,7 +95,7 @@ def compute_significant_data(contrast_results, glm, config):
                         masked_data = apply_mask(contrast_results["z_values"], mask)
                         significant_data[thresholding_strategy] = unmask(masked_data, mask)
                     else:
-                        warnings.warn(
+                        print(
                             f"No voxel survives FWE thresholding at alpha level {alpha} for this analysis.")
                         significant_data[thresholding_strategy] = None
 
@@ -104,7 +104,7 @@ def compute_significant_data(contrast_results, glm, config):
                     if np.any(fwe_mask != 0):
                         significant_data[thresholding_strategy] = contrast_results["z_values"] * fwe_mask
                     else:
-                        warnings.warn(
+                        print(
                             f"No voxel survives FWE thresholding at alpha level {alpha} for this analysis.")
                         significant_data[thresholding_strategy] = None
 

@@ -118,7 +118,7 @@ def load_confounds(confounds_file, config):
             if motion_parameter in config["confound_columns"]:
                 config["confound_columns"].remove(motion_parameter)
                 warnings.warn(
-                    f"Motion parameter {motion_parameter} is detected in the confounds list, but you have selected aroma-denoising, which already deals with motion paramters. Removing {motion_parameter} from the confounds list.")
+                    f"Motion parameter {motion_parameter} is detected in the confounds list, but you have selected aroma-denoising, which already deals with motion parameters. Removing {motion_parameter} from the confounds list.")
 
     selected_confounds = confounds[config.get("confounds")]
 
