@@ -124,6 +124,7 @@ def load_confounds(confounds_file, config):
 
     return replace_nans_with_mean(selected_confounds)
 
+
 def replace_nans_with_mean(df):
     """
     Replace NaN values in each column of a DataFrame with the mean of the existing values in that column.
@@ -225,7 +226,7 @@ def load_mask(layout, entities):
     entites_for_mask = entities.copy()
     entites_for_mask["desc"] = "brain"
     entites_for_mask["suffix"] = "mask"
-    mask_img = layout.derivatives["fMRIPrep"].get(**entites_for_mask)
+    mask_img = layout.derivatives.get_pipeline("fMRIPrep").get(**entites_for_mask)
     if len(mask_img) == 1:
         mask_img = mask_img[0]
     elif len(mask_img) == 0:
@@ -257,14 +258,14 @@ def load_files_for_analysis(layout, config):
     entities = load_entities_from_config(config)
 
     # Select the functional, confound and metadata files
-    func_files = layout.derivatives["fMRIPost-AROMA" if config["ica_aroma"] else "fMRIPrep"].get(
+    func_files = layout.derivatives.get_pipeline("fMRIPost-AROMA" if config["ica_aroma"] else "fMRIPrep").get(
         suffix="bold",
         extension="nii.gz",
         return_type="filename",
         desc="nonaggrDenoised" if config["ica_aroma"] else "preproc",
         **entities
     )
-    json_files = layout.derivatives["fMRIPrep"].get(
+    json_files = layout.derivatives.get_pipeline("fMRIPrep").get(
         suffix="bold",
         extension="json",
         return_type="filename",
@@ -273,7 +274,7 @@ def load_files_for_analysis(layout, config):
     )
 
     entities.pop("space")
-    confound_files = layout.derivatives["fMRIPrep"].get(
+    confound_files = layout.derivatives.get_pipeline("fMRIPrep").get(
         suffix="timeseries",
         extension="tsv",
         return_type="filename",

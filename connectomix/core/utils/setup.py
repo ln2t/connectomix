@@ -44,7 +44,7 @@ def setup_config_bids(config, layout, level):
     elif level == "group":
         derivatives_to_parse = "connectomix"
 
-    derivatives_layout = layout.derivatives[derivatives_to_parse]
+    derivatives_layout = layout.derivatives.get_pipeline(derivatives_to_parse)
 
     config["subject"] = config_helper(config,
                                       "subject",
@@ -201,36 +201,6 @@ def setup_config_analysis(config, level):
         config["contrast"] = config_helper(config,
                                           "contrast",
                                           "intercept")
-
-        # Roi-to-roi specific parameters
-        #
-        # config["group1_subjects"] = config_helper(config,
-        #                                           "group1_subjects",
-        #                                           None)
-        # config["group2_subjects"] = config_helper(config,
-        #                                           "group2_subjects",
-        #                                           None)
-        #
-        # if config["analysis_type"] == 'independent' and config["group1_subjects"] is None:
-        #     from connectomix.core.tools import guess_groups
-        #     guessed_groups = guess_groups(layout)
-        #     if len(guessed_groups) == 2:
-        #         group1_name = list(guessed_groups.keys())[0]
-        #         group2_name = list(guessed_groups.keys())[1]
-        #         warnings.warn(
-        #             f"Group have been guessed. Assuming group 1 is {group1_name} and group 2 is {group2_name}")
-        #         config["group1_subjects"] = list(guessed_groups.values())[0]
-        #         config["group2_subjects"] = list(guessed_groups.values())[1]
-        #         config[
-        #             "analysis_label"] = f"{group1_name}VersuS{group2_name}"  # This overwrites the above generic name to ensure people don't get confused with the automatic selection of subjects
-        #         warnings.warn(f"Setting analysis label to {config['analysis_label']}")
-        #         config["group1_name"] = group1_name
-        #         config["group2_name"] = group2_name
-        #     else:
-        #         config["group1_subjects"] = config.get("subjects", layout.derivatives[
-        #             "connectomix"].get_subjects())  # this is used only through the --helper tool (or the autonomous mode)
-        #         warnings.warn("Could not detect two groups, putting all subjects into first group.")
-
     return config
 
 

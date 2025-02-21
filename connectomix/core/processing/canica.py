@@ -32,19 +32,19 @@ def compute_canica_components(layout, func_filenames, config):
 
     # Build path to save canICA components
     # TODO: update these path-building steps using build_output_path
-    canica_filename = layout.derivatives["connectomix"].build_path(entities,
+    canica_filename = layout.derivatives.get_pipeline("connectomix").build_path(entities,
                                                                    path_patterns=[
                                                                        "canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.nii.gz"],
                                                                    validate=False)
-    canica_sidecar = layout.derivatives["connectomix"].build_path(entities,
+    canica_sidecar = layout.derivatives.get_pipeline("connectomix").build_path(entities,
                                                                   path_patterns=[
                                                                       "canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_canicacomponents.json"],
                                                                   validate=False)
-    extracted_regions_filename = layout.derivatives["connectomix"].build_path(entities,
+    extracted_regions_filename = layout.derivatives.get_pipeline("connectomix").build_path(entities,
                                                                               path_patterns=[
                                                                                   "canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_extractedregions.nii.gz"],
                                                                               validate=False)
-    extracted_regions_sidecar = layout.derivatives["connectomix"].build_path(entities,
+    extracted_regions_sidecar = layout.derivatives.get_pipeline("connectomix").build_path(entities,
                                                                              path_patterns=[
                                                                                  "canica/[ses-{session}_][run-{run}_]task-{task}_space-{space}_extractedregions.json"],
                                                                              validate=False)

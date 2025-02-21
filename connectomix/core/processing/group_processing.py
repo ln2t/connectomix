@@ -22,7 +22,7 @@ def make_group_input(layout, config, label=None):
     second_level_input = pd.DataFrame(columns=["subject_label",
                                                "map_name",
                                                "effects_map_path"])
-    files = layout.derivatives["connectomix"].get(return_type="filename",
+    files = layout.derivatives.get_pipeline("connectomix").get(return_type="filename",
                                                   extension=extension,
                                                   **entities)
 

@@ -142,7 +142,7 @@ def build_output_path(layout, entities, label, level, config, **kwargs):
         pattern = "sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_[{new_entity_key}-][{new_entity_val}_]{suffix}.{extension}"
     elif level == "group":
         pattern = "group/{method}/{analysis_name}/[ses-{session}/][ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_[{new_entity_key}-][{new_entity_val}_][analysis-{analysis_name}_][contrast-{contrast}_]{suffix}.{extension}"
-    output_path = layout.derivatives["connectomix"].build_path(entities, path_patterns=[pattern], validate=False)
+    output_path = layout.derivatives.get_pipeline("connectomix").build_path(entities, path_patterns=[pattern], validate=False)
     make_parent_dir(output_path)
 
     return output_path

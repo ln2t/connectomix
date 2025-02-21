@@ -211,7 +211,7 @@ def write_copy_of_config(layout, config):
 
     # Save a copy of the config file to the config directory
     path = Path(
-        layout.derivatives["connectomix"].root) / "config" / "backups" / f"config_{timestamp}.json"
+        layout.derivatives.get_pipeline("connectomix").root) / "config" / "backups" / f"config_{timestamp}.json"
 
     # First make sure destination is valid
     make_parent_dir(path)

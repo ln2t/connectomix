@@ -6,27 +6,7 @@ from bids import BIDSLayout
 from connectomix.core.utils.writers import write_default_config_file, write_copy_of_config
 from connectomix.core.processing.participant_processing import post_fmriprep_preprocessing
 
-
 def participant_level_pipeline(bids_dir, output_dir, derivatives, config):
-    """
-    Main function to run the participant analysis
-
-    Parameters
-    ----------
-    bids_dir : str or Path
-        Path to bids_dir.
-    output_dir : str or Path
-        Path to connectomix derivatives.
-    derivatives : dict
-        Paths to data preprocessed with fMRIPrep and, optionally, fmripost-aroma: derivatives["fmriprep"]="/path/to/fmriprep", etc.
-    config : dict or str or Path
-        Configuration dict or path to configuration file (can be a .json or .yaml or .yml).
-
-    Returns
-    -------
-    None.
-
-    """
     from connectomix.version import __version__
     from connectomix.core.utils.tools import print_subject
     from connectomix.core.utils.bids import setup_bidslayout
@@ -77,7 +57,6 @@ def group_level_pipeline(bids_dir, output_dir, config):
     # Print version information
     from connectomix.version import __version__
     print(f"Running connectomix (Group-level) version {__version__}")
-
     # Create BIDSLayout with pipeline and other derivatives
     from connectomix.core.utils.bids import setup_bidslayout
     layout = setup_bidslayout(bids_dir, output_dir)
@@ -137,12 +116,12 @@ def autonomous_mode(run=False):
         # Connectomix folder exists and is unique, checking if something has already been run at participant-level
         connectomix_folder = connectomix_folder[0]
         layout = BIDSLayout(bids_dir, derivatives=[connectomix_folder])
-        if len(layout.derivatives["connectomix"].get_subjects()) == 0:
+        if len(layout.derivatives.get_pipeline("connectomix").get_subjects()) == 0:
             print("No participant-level result detected, assuming participant-level analysis")
             analysis_level = "participant"
         else:
             print(
-                f"Detected participant-level results for subjects {layout.derivatives['connectomix'].get_subjects()}, assuming group-level analysis")
+                f"Detected participant-level results for subjects {layout.derivatives.get_pipeline('connectomix').get_subjects()}, assuming group-level analysis")
             analysis_level = "group"
 
     else:
