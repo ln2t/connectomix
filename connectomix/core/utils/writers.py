@@ -238,7 +238,7 @@ def write_results(layout, results, label, coords, config):
 
 def write_cluster_tables(layout, cluster_tables, label, config):
     for thresholding_strategy in cluster_tables.keys():
-        if cluster_tables[thresholding_strategy] is not None:
+        if cluster_tables[thresholding_strategy] is not None and len(cluster_tables[thresholding_strategy]) > 0:
             alpha = float(config[f"{thresholding_strategy}_alpha"])
             from connectomix.core.utils.loaders import load_entities_from_config
             entities = load_entities_from_config(config)
