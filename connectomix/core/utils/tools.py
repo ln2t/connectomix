@@ -88,8 +88,8 @@ def resample_to_reference(layout, func_files, config):
     resampled_files = []
     for func_file in func_files:
         # Build BIDS-compliant filename for resampled data
-        entities = layout.derivatives["connectomix"].parse_file_entities(func_file)
-        resampled_path = layout.derivatives["connectomix"].build_path(entities,
+        entities = layout.derivatives.get_pipeline("connectomix").parse_file_entities(func_file)
+        resampled_path = layout.derivatives.get_pipeline("connectomix").build_path(entities,
                                                                       path_patterns=[
                                                                           'sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_desc-resampled.nii.gz'],
                                                                       validate=False)
@@ -160,7 +160,7 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
     for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
         print(f"Denoising file {os.path.basename(func_file)}")
         entities = layout.parse_file_entities(func_file)
-        denoised_path = func_file if config['ica_aroma'] else layout.derivatives["connectomix"].build_path(entities,
+        denoised_path = func_file if config['ica_aroma'] else layout.derivatives.get_pipeline("connectomix").build_path(entities,
                                                                                                            path_patterns=[
                                                                                                                'sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_denoised.nii.gz'],
                                                                                                            validate=False)
@@ -231,3 +231,29 @@ def get_cluster_tables(significant_data, config):
 
         cluster_tables[thresholding_strategy] = cluster_table
     return cluster_tables
+
+
+def setup_terminal_colors():
+    import warnings
+    import sys
+    import traceback
+
+    # ANSI escape codes for colors
+    YELLOW = '\033[93m'
+    RESET = '\033[0m'
+
+    def custom_warning_format(message, category, filename, lineno, line=None):
+        # Define the color for the warning message
+        return f"{YELLOW}{filename}:{lineno}: {category.__name__}: {message}{RESET}\n"
+
+    # Set the custom warning formatter
+    warnings.formatwarning = custom_warning_format
+
+    # ANSI escape codes for colors
+    RED = '\033[91m'
+    RESET = '\033[0m'
+
+    def custom_exception_handler(exc_type, exc_value, exc_traceback):
+        # Format the exception traceback with color
+        tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        print(f"{RED}{tb_str}{RESET}", end="")
