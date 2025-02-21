@@ -10,7 +10,7 @@ from nilearn.plotting import plot_matrix, plot_connectome, plot_stat_map, plot_d
 from pathlib import Path
 
 from connectomix.core.utils.setup import setup_config
-from connectomix.core.utils.tools import make_parent_dir
+from connectomix.core.utils.tools import make_parent_dir, img_is_not_empty
 from connectomix.core.utils.bids import build_output_path, alpha_value_to_bids_valid_string
 
 def write_design_matrix(layout, design_matrix, label, config):
@@ -133,7 +133,7 @@ def write_significant_data(layout, significant_data, label, coords, config):
                                       suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha) + "Connectome",
                                       extension='.svg')
 
-        if significant_data[thresholding_strategy] is not None:
+        if significant_data[thresholding_strategy] is not None and img_is_not_empty(significant_data[thresholding_strategy]):
             if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
                 significant_data[thresholding_strategy].to_filename(significant_data_path)
                 # TODO: save glassbrain of significant_data[thresholding_strategy] to plot_path
@@ -279,25 +279,26 @@ def write_map_at_cut_coords(map, path, coord, config):
     plot.savefig(path)
 
 
-def write_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config):
+def write_roi_to_voxel_plot(layout, roi_to_voxel_img, entities, label, config):
     roi_to_voxel_plot_path = build_output_path(layout, entities, label, "participant", config, extension=".svg")
 
-    if config.get("seeds_file", False):
-        from connectomix.core.utils.loaders import load_seed_file
-        coords, labels = load_seed_file(config["seeds_file"])
-        coord = coords[labels.index(label)]
+    if not img_is_not_empty(roi_to_voxel_img):
+        if config.get("seeds_file", False):
+            from connectomix.core.utils.loaders import load_seed_file
+            coords, labels = load_seed_file(config["seeds_file"])
+            coord = coords[labels.index(label)]
 
-        roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
-                                          title=f"seed-to-voxel effect size for seed {label} (coords {coords})",
-                                          cut_coords=coord)
-        roi_to_voxel_plot.add_markers(marker_coords=[coord],
-                                      marker_color="k",
-                                      marker_size=2 * config["radius"])
-    else:
-        roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
-                                          title=f"roi-to-voxel effect size for roi {label}")
+            roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
+                                              title=f"seed-to-voxel effect size for seed {label} (coords {coords})",
+                                              cut_coords=coord)
+            roi_to_voxel_plot.add_markers(marker_coords=[coord],
+                                          marker_color="k",
+                                          marker_size=2 * config["radius"])
+        else:
+            roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
+                                              title=f"roi-to-voxel effect size for roi {label}")
 
-    roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
+        roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
 
 
 def write_dataset_description(output_dir):
