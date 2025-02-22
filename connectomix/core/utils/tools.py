@@ -53,7 +53,10 @@ def img_is_not_empty(img):
     Check if a NIfTI image has at least one non-zero voxel.
     """
     # Get the data array
-    data = img.get_fdata()
+    if type(img) == Nifti1Image:
+        data = img.get_fdata()
+    else:
+        data = img
 
     # Check if there is at least one non-zero voxel
     return np.any(data != 0)
