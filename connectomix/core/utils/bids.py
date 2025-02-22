@@ -40,9 +40,6 @@ def add_new_entities(entities, config, label=None):
     entities["suffix"] = suffix
 
     entities["analysis_name"] = config.get("analysis_name", None)
-    entities["contrast"] = config.get("contrast", None)
-    if entities["contrast"]:
-        entities["contrast"] = contrast_string_to_bids_entity_value(entities["contrast"])
 
     return entities
 
@@ -124,15 +121,6 @@ def remove_pair_making_entity(entities):
     return unique_entities
 
 
-def contrast_string_to_bids_entity_value(contrast):
-    # TODO: improve this as it does not behave very nicely in cases where + and - are both present
-    if "+" in contrast:
-        contrast = "Plus".join(camel_case_list_of_strings(contrast.split("+")))
-    if "-" in contrast:
-        contrast = "Minus".join(camel_case_list_of_strings(contrast.split("-")))
-    return contrast
-
-
 def build_output_path(layout, entities, label, level, config, **kwargs):
     entities = add_new_entities(entities, config, label)
     if kwargs:
@@ -141,7 +129,7 @@ def build_output_path(layout, entities, label, level, config, **kwargs):
     if level == "participant":
         pattern = "sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_[{new_entity_key}-][{new_entity_val}_]{suffix}.{extension}"
     elif level == "group":
-        pattern = "group/{method}/{analysis_name}/[ses-{session}/][ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_[{new_entity_key}-][{new_entity_val}_][analysis-{analysis_name}_][contrast-{contrast}_]{suffix}.{extension}"
+        pattern = "group/{method}/{analysis_name}/[ses-{session}/][ses-{session}_][run-{run}_]task-{task}_space-{space}_method-{method}_[{new_entity_key}-][{new_entity_val}_][analysis-{analysis_name}_]{suffix}.{extension}"
     output_path = layout.derivatives.get_pipeline("connectomix").build_path(entities, path_patterns=[pattern], validate=False)
     make_parent_dir(output_path)
 
