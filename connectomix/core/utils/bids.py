@@ -3,7 +3,7 @@ import os
 from bids import BIDSLayout
 from pathlib import Path
 
-from connectomix.core.utils.tools import camel_case_list_of_strings, make_parent_dir
+from connectomix.core.utils.tools import make_parent_dir
 
 
 def add_new_entities(entities, config, label=None):
