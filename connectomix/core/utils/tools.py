@@ -84,7 +84,7 @@ def resample_to_reference(layout, func_files, config):
     """
 
     # Choose the first functional file as the reference for alignment
-    if config.get("reference_functional_file") == "first_functional_file":
+    if config["reference_functional_file"] == "first_functional_file":
         config["reference_functional_file"] = func_files[0]
     reference_img = load_img(config["reference_functional_file"])
 
@@ -176,8 +176,8 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
             confounds = load_confounds(str(confound_file), config)
 
             # Set filter options based on the config file
-            high_pass = config['high_pass']
-            low_pass = config['low_pass']
+            high_pass = config["high_pass"]
+            low_pass = config["low_pass"]
 
             from connectomix.core.utils.loaders import load_repetition_time
             clean_img(func_file,
@@ -238,9 +238,8 @@ def get_cluster_tables(significant_data, config):
 
 def setup_terminal_colors():
     import warnings
-    import sys
     import traceback
-
+    import sys
     # ANSI escape codes for colors
     YELLOW = '\033[93m'
     RESET = '\033[0m'
@@ -260,3 +259,6 @@ def setup_terminal_colors():
         # Format the exception traceback with color
         tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
         print(f"{RED}{tb_str}{RESET}", end="")
+
+    # Set the custom exception handler
+    sys.excepthook = custom_exception_handler
