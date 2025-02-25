@@ -220,7 +220,7 @@ def get_cluster_tables(significant_data, config):
     for thresholding_strategy in significant_data.keys():
         if significant_data[thresholding_strategy] is not None:
             cluster_table = get_clusters_table(significant_data[thresholding_strategy],
-                                               stat_threshold=0.01,
+                                               stat_threshold=config["cluster_forming_alpha"],
                                                two_sided=config["two_sided_test"])
             if cluster_table.empty:
                 print("No signigificant cluster found.")
