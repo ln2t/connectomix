@@ -295,12 +295,6 @@ two_sided_test: true
 uncorrected_alpha: 0.001
 ```
 
-## Troubleshooting
-
-- **No Functional Files Found**: Ensure your fMRIPrep outputs are correctly placed in the derivatives directory and that the `space`, `task`, `run`, and `session` specified in the configuration match the available data.
-- **Mismatch in Number of Functional and Confound Files**: Verify that each functional file has a corresponding confound file from fMRIPrep.
-- **Multiple Matches for Subjects**: Ensure your configuration parameters uniquely identify each subject's data.
-
 ## Contact
 
 For questions, issues, or contributions, please visit the GitHub repository:
