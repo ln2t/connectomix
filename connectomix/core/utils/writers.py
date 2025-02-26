@@ -1,4 +1,5 @@
 import json
+import os.path
 import shutil
 
 import numpy as np
@@ -10,7 +11,7 @@ from nilearn.plotting import plot_matrix, plot_connectome, plot_stat_map, plot_d
 from pathlib import Path
 
 from connectomix.core.utils.setup import setup_config
-from connectomix.core.utils.tools import make_parent_dir
+from connectomix.core.utils.tools import make_parent_dir, img_is_not_empty
 from connectomix.core.utils.bids import build_output_path, alpha_value_to_bids_valid_string
 
 def write_design_matrix(layout, design_matrix, label, config):
@@ -29,6 +30,8 @@ def write_design_matrix(layout, design_matrix, label, config):
 
     plot_design_matrix(design_matrix, output_file=design_matrix_plot_path)
     plt.close('all')
+
+    return design_matrix_plot_path
 
 
 def write_permutation_dist(layout, permutation_dist, label, config):
@@ -63,6 +66,9 @@ def write_permutation_dist(layout, permutation_dist, label, config):
         plt.savefig(histogram_path)
         plt.close("all")
         np.save(permutation_dist_path, permutation_dist)
+    else:
+        permutation_dist_path = None
+    return permutation_dist_path
 
 
 def write_contrast_scores(layout, contrast_scores, label, coord, config):
@@ -103,6 +109,8 @@ def write_contrast_scores(layout, contrast_scores, label, coord, config):
                 np.save(score_path, contrast_scores[score_type])
                 write_matrix_plot(contrast_scores[score_type], plot_path, label=label)
 
+        return plot_path
+
 
 def write_significant_data(layout, significant_data, label, coords, config):
     for thresholding_strategy in config["thresholding_strategies"]:
@@ -133,7 +141,7 @@ def write_significant_data(layout, significant_data, label, coords, config):
                                       suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha) + "Connectome",
                                       extension='.svg')
 
-        if significant_data[thresholding_strategy] is not None:
+        if significant_data[thresholding_strategy] is not None and img_is_not_empty(significant_data[thresholding_strategy]):
             if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
                 significant_data[thresholding_strategy].to_filename(significant_data_path)
                 # TODO: save glassbrain of significant_data[thresholding_strategy] to plot_path
@@ -141,6 +149,8 @@ def write_significant_data(layout, significant_data, label, coords, config):
                 np.save(significant_data_path, significant_data[thresholding_strategy])
                 write_matrix_plot(significant_data[thresholding_strategy], matrix_plot_path, label=label)
                 write_connectome_plot(significant_data[thresholding_strategy], connectome_plot_path, coords)
+
+        return connectome_plot_path
 
 
 def write_default_config_file(bids_dir, derivatives, level):
@@ -188,6 +198,7 @@ def write_default_config_file(bids_dir, derivatives, level):
         yaml.dump(config, yaml_out, default_flow_style=False)
 
     print(f"Default YAML configuration file saved at {yaml_file}. Go to github.com/ln2t/connectomix for more details.")
+    return yaml_file
 
 
 def write_copy_of_config(layout, config):
@@ -211,7 +222,7 @@ def write_copy_of_config(layout, config):
 
     # Save a copy of the config file to the config directory
     path = Path(
-        layout.derivatives["connectomix"].root) / "config" / "backups" / f"config_{timestamp}.json"
+        layout.derivatives.get_pipeline("connectomix").root) / "config" / "backups" / f"config_{timestamp}.json"
 
     # First make sure destination is valid
     make_parent_dir(path)
@@ -224,7 +235,7 @@ def write_copy_of_config(layout, config):
             json.dump(config, fp, indent=4)
 
     print(f"Configuration file saved to {path}")
-    return None
+    return path
 
 
 def write_results(layout, results, label, coords, config):
@@ -238,7 +249,7 @@ def write_results(layout, results, label, coords, config):
 
 def write_cluster_tables(layout, cluster_tables, label, config):
     for thresholding_strategy in cluster_tables.keys():
-        if cluster_tables[thresholding_strategy] is not None:
+        if cluster_tables[thresholding_strategy] is not None and len(cluster_tables[thresholding_strategy]) > 0:
             alpha = float(config[f"{thresholding_strategy}_alpha"])
             from connectomix.core.utils.loaders import load_entities_from_config
             entities = load_entities_from_config(config)
@@ -253,6 +264,10 @@ def write_cluster_tables(layout, cluster_tables, label, config):
                                            extension=".csv")
 
             cluster_tables[thresholding_strategy].to_csv(table_path, sep=',')
+        else:
+            table_path = None
+
+    return table_path
 
 
 def write_matrix_plot(matrix, path, label=None):
@@ -279,25 +294,30 @@ def write_map_at_cut_coords(map, path, coord, config):
     plot.savefig(path)
 
 
-def write_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config):
+def write_roi_to_voxel_plot(layout, roi_to_voxel_img, entities, label, config):
     roi_to_voxel_plot_path = build_output_path(layout, entities, label, "participant", config, extension=".svg")
 
-    if config.get("seeds_file", False):
-        from connectomix.core.utils.loaders import load_seed_file
-        coords, labels = load_seed_file(config["seeds_file"])
-        coord = coords[labels.index(label)]
+    if img_is_not_empty(roi_to_voxel_img):
+        if config.get("seeds_file", False):
+            from connectomix.core.utils.loaders import load_seed_file
+            coords, labels = load_seed_file(config["seeds_file"])
+            coord = coords[labels.index(label)]
 
-        roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
-                                          title=f"seed-to-voxel effect size for seed {label} (coords {coords})",
-                                          cut_coords=coord)
-        roi_to_voxel_plot.add_markers(marker_coords=[coord],
-                                      marker_color="k",
-                                      marker_size=2 * config["radius"])
+            roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
+                                              title=f"seed-to-voxel effect size for seed {label} (coords {coords})",
+                                              cut_coords=coord)
+            roi_to_voxel_plot.add_markers(marker_coords=[coord],
+                                          marker_color="k",
+                                          marker_size=2 * config["radius"])
+        else:
+            roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
+                                              title=f"roi-to-voxel effect size for roi {label}")
+
+        roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
     else:
-        roi_to_voxel_plot = plot_stat_map(roi_to_voxel_img,
-                                          title=f"roi-to-voxel effect size for roi {label}")
+        roi_to_voxel_plot_path = None
 
-    roi_to_voxel_plot.savefig(roi_to_voxel_plot_path)
+    return roi_to_voxel_plot_path
 
 
 def write_dataset_description(output_dir):
@@ -324,5 +344,7 @@ def write_dataset_description(output_dir):
             "CodeURL": "https://github.com/ln2t/connectomix"
         }
     }
+    output_dir = Path(output_dir)
+    Path(output_dir).mkdir(exist_ok=True, parents=True)
     with open(output_dir / "dataset_description.json", 'w') as f:
         json.dump(description, f, indent=4)

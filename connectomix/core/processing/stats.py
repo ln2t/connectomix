@@ -22,6 +22,8 @@ def compute_z_from_t(t_score, degree_of_freedom):
 
 
 def non_parametric_stats(glm, config):
+    print(f"Fwe correction requested, computing permutations with {config['n_permutations']} permutations"
+          f" (this may take a while)...")
     if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
         non_parametric_outputs = non_parametric_inference(glm.second_level_input_,
                                                           design_matrix=glm.design_matrix_,
@@ -83,7 +85,6 @@ def compute_significant_data(contrast_results, glm, config):
                         significant_data[thresholding_strategy] = contrast_results["z_values"] * fdr_mask
 
             case "fwe":
-                print("Fwe correction requested, computing permutations (this may take a while)...")
                 logp_max_stat, permutation_dist = non_parametric_stats(glm, config)
 
                 if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
@@ -94,7 +95,7 @@ def compute_significant_data(contrast_results, glm, config):
                         masked_data = apply_mask(contrast_results["z_values"], mask)
                         significant_data[thresholding_strategy] = unmask(masked_data, mask)
                     else:
-                        warnings.warn(
+                        print(
                             f"No voxel survives FWE thresholding at alpha level {alpha} for this analysis.")
                         significant_data[thresholding_strategy] = None
 
@@ -103,7 +104,7 @@ def compute_significant_data(contrast_results, glm, config):
                     if np.any(fwe_mask != 0):
                         significant_data[thresholding_strategy] = contrast_results["z_values"] * fwe_mask
                     else:
-                        warnings.warn(
+                        print(
                             f"No voxel survives FWE thresholding at alpha level {alpha} for this analysis.")
                         significant_data[thresholding_strategy] = None
 

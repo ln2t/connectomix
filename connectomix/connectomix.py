@@ -7,5 +7,9 @@ Created: August 2022
 """
 
 from connectomix.core.core import main
+from connectomix.core.utils.tools import setup_terminal_colors
+
+setup_terminal_colors()
+
 if __name__ == "__main__":
     main()

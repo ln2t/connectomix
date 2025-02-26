@@ -118,11 +118,36 @@ def load_confounds(confounds_file, config):
             if motion_parameter in config["confound_columns"]:
                 config["confound_columns"].remove(motion_parameter)
                 warnings.warn(
-                    f"Motion parameter {motion_parameter} is detected in the confounds list, but you have selected aroma-denoising, which already deals with motion paramters. Removing {motion_parameter} from the confounds list.")
+                    f"Motion parameter {motion_parameter} is detected in the confounds list, but you have selected aroma-denoising, which already deals with motion parameters. Removing {motion_parameter} from the confounds list.")
 
     selected_confounds = confounds[config.get("confounds")]
 
-    return selected_confounds
+    return replace_nans_with_mean(selected_confounds)
+
+
+def replace_nans_with_mean(df):
+    """
+    Replace NaN values in each column of a DataFrame with the mean of the existing values in that column.
+
+    Parameters:
+    df (pd.DataFrame): The input DataFrame with potential NaN values.
+
+    Returns:
+    pd.DataFrame: A new DataFrame with NaN values replaced by the mean of the respective columns.
+    """
+    # Create a copy of the DataFrame to avoid modifying the original one
+    df_copy = df.copy()
+
+    # Iterate over each column in the DataFrame
+    for column in df_copy.columns:
+        # Check if the column contains NaN values
+        if df_copy[column].isnull().any():
+            # Calculate the mean of the existing values in the column
+            mean_value = df_copy[column].mean()
+            # Replace NaN values with the mean value
+            df_copy[column] = df_copy[column].fillna(mean_value)
+
+    return df_copy
 
 
 def load_config(config):
@@ -201,7 +226,7 @@ def load_mask(layout, entities):
     entites_for_mask = entities.copy()
     entites_for_mask["desc"] = "brain"
     entites_for_mask["suffix"] = "mask"
-    mask_img = layout.derivatives["fMRIPrep"].get(**entites_for_mask)
+    mask_img = layout.derivatives.get_pipeline("fMRIPrep").get(**entites_for_mask)
     if len(mask_img) == 1:
         mask_img = mask_img[0]
     elif len(mask_img) == 0:
@@ -233,14 +258,14 @@ def load_files_for_analysis(layout, config):
     entities = load_entities_from_config(config)
 
     # Select the functional, confound and metadata files
-    func_files = layout.derivatives["fMRIPost-AROMA" if config["ica_aroma"] else "fMRIPrep"].get(
+    func_files = layout.derivatives.get_pipeline("fMRIPost-AROMA" if config["ica_aroma"] else "fMRIPrep").get(
         suffix="bold",
         extension="nii.gz",
         return_type="filename",
         desc="nonaggrDenoised" if config["ica_aroma"] else "preproc",
         **entities
     )
-    json_files = layout.derivatives["fMRIPrep"].get(
+    json_files = layout.derivatives.get_pipeline("fMRIPrep").get(
         suffix="bold",
         extension="json",
         return_type="filename",
@@ -249,7 +274,7 @@ def load_files_for_analysis(layout, config):
     )
 
     entities.pop("space")
-    confound_files = layout.derivatives["fMRIPrep"].get(
+    confound_files = layout.derivatives.get_pipeline("fMRIPrep").get(
         suffix="timeseries",
         extension="tsv",
         return_type="filename",

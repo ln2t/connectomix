@@ -53,7 +53,10 @@ def img_is_not_empty(img):
     Check if a NIfTI image has at least one non-zero voxel.
     """
     # Get the data array
-    data = img.get_fdata()
+    if type(img) == Nifti1Image:
+        data = img.get_fdata()
+    else:
+        data = img
 
     # Check if there is at least one non-zero voxel
     return np.any(data != 0)
@@ -81,15 +84,15 @@ def resample_to_reference(layout, func_files, config):
     """
 
     # Choose the first functional file as the reference for alignment
-    if config.get("reference_functional_file") == "first_functional_file":
+    if config["reference_functional_file"] == "first_functional_file":
         config["reference_functional_file"] = func_files[0]
     reference_img = load_img(config["reference_functional_file"])
 
     resampled_files = []
     for func_file in func_files:
         # Build BIDS-compliant filename for resampled data
-        entities = layout.derivatives["connectomix"].parse_file_entities(func_file)
-        resampled_path = layout.derivatives["connectomix"].build_path(entities,
+        entities = layout.derivatives.get_pipeline("connectomix").parse_file_entities(func_file)
+        resampled_path = layout.derivatives.get_pipeline("connectomix").build_path(entities,
                                                                       path_patterns=[
                                                                           'sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_desc-resampled.nii.gz'],
                                                                       validate=False)
@@ -158,9 +161,9 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
     # Denoise the data
     denoised_paths = []
     for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
-        print(f"Denoising file {func_file}")
+        print(f"Denoising file {os.path.basename(func_file)}")
         entities = layout.parse_file_entities(func_file)
-        denoised_path = func_file if config['ica_aroma'] else layout.derivatives["connectomix"].build_path(entities,
+        denoised_path = func_file if config['ica_aroma'] else layout.derivatives.get_pipeline("connectomix").build_path(entities,
                                                                                                            path_patterns=[
                                                                                                                'sub-{subject}/[ses-{session}/]sub-{subject}_[ses-{session}_][run-{run}_]task-{task}_space-{space}_denoised.nii.gz'],
                                                                                                            validate=False)
@@ -173,8 +176,8 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
             confounds = load_confounds(str(confound_file), config)
 
             # Set filter options based on the config file
-            high_pass = config['high_pass']
-            low_pass = config['low_pass']
+            high_pass = config["high_pass"]
+            low_pass = config["low_pass"]
 
             from connectomix.core.utils.loaders import load_repetition_time
             clean_img(func_file,
@@ -183,7 +186,7 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
                       t_r=load_repetition_time(json_file),
                       confounds=confounds).to_filename(denoised_path)
         else:
-            print(f"Denoised data {denoised_path} already exists, skipping.")
+            print(f"Denoised data {os.path.basename(denoised_path)} already exists, skipping.")
     return denoised_paths
 
 
@@ -217,7 +220,7 @@ def get_cluster_tables(significant_data, config):
     for thresholding_strategy in significant_data.keys():
         if significant_data[thresholding_strategy] is not None:
             cluster_table = get_clusters_table(significant_data[thresholding_strategy],
-                                               stat_threshold=0.01,
+                                               stat_threshold=config["cluster_forming_alpha"],
                                                two_sided=config["two_sided_test"])
             if cluster_table.empty:
                 print("No signigificant cluster found.")
@@ -231,3 +234,31 @@ def get_cluster_tables(significant_data, config):
 
         cluster_tables[thresholding_strategy] = cluster_table
     return cluster_tables
+
+
+def setup_terminal_colors():
+    import warnings
+    import traceback
+    import sys
+    # ANSI escape codes for colors
+    YELLOW = '\033[93m'
+    RESET = '\033[0m'
+
+    def custom_warning_format(message, category, filename, lineno, line=None):
+        # Define the color for the warning message
+        return f"{YELLOW}{filename}:{lineno}: {category.__name__}: {message}{RESET}\n"
+
+    # Set the custom warning formatter
+    warnings.formatwarning = custom_warning_format
+
+    # ANSI escape codes for colors
+    RED = '\033[91m'
+    RESET = '\033[0m'
+
+    def custom_exception_handler(exc_type, exc_value, exc_traceback):
+        # Format the exception traceback with color
+        tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        print(f"{RED}{tb_str}{RESET}", end="")
+
+    # Set the custom exception handler
+    sys.excepthook = custom_exception_handler

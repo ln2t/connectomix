@@ -160,10 +160,10 @@ def participant_roi_to_voxel(layout, func_file, timeseries_list, labels, config)
     for timeseries, label in zip(timeseries_list.T, labels):
         roi_to_voxel_img = create_and_fit_participant_glm(config["t_r"], mask_img, func_file, timeseries.reshape(-1, 1))
         from connectomix.core.utils.bids import build_output_path
-        from connectomix.core.utils.writers import write_roi_to_voxel_map
+        from connectomix.core.utils.writers import write_roi_to_voxel_plot
         roi_to_voxel_path = build_output_path(layout, entities, label, "participant", config)
         roi_to_voxel_img.to_filename(roi_to_voxel_path)
-        write_roi_to_voxel_map(layout, roi_to_voxel_img, entities, label, config)
+        write_roi_to_voxel_plot(layout, roi_to_voxel_img, entities, label, config)
 
 
 def participant_roi_to_roi(layout, func_file, timeseries_list, labels, config):
