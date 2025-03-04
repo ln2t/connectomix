@@ -6,7 +6,7 @@ from bids import BIDSLayout
 from connectomix.core.utils.writers import write_default_config_file, write_copy_of_config
 from connectomix.core.processing.participant_processing import post_fmriprep_preprocessing
 
-def participant_level_pipeline(bids_dir, output_dir, derivatives, config):
+def participant_level_pipeline(bids_dir, output_dir, derivatives, config, cli_options=None):
     from connectomix.version import __version__
     from connectomix.core.utils.tools import print_subject
     from connectomix.core.utils.bids import setup_bidslayout
@@ -19,7 +19,7 @@ def participant_level_pipeline(bids_dir, output_dir, derivatives, config):
 
     layout = setup_bidslayout(bids_dir, output_dir, derivatives)
     write_copy_of_config(layout, config)
-    config = setup_config(layout, config, "participant")
+    config = setup_config(layout, config, "participant", cli_options)
 
     print(f"Selected method for connectivity analysis: {config['method']}")
 
@@ -188,6 +188,7 @@ def main():
     parser.add_argument("--helper", help="Helper function to write default configuration files.", action="store_true")
 
     args = parser.parse_args()
+    cli_options = {"participant_label": args.participant_label}
 
     # Convert the list of "key=value" pairs to a dictionary
     from connectomix.core.utils.loaders import load_derivatives
@@ -217,7 +218,7 @@ def main():
                     raise FileNotFoundError(
                         f"fMRIPrep directory {derivatives['fmriprep']} not found. Use '--derivatives fmriprep=/path/to/fmriprep' to specify path manually.")
                 else:
-                    participant_level_pipeline(args.bids_dir, args.output_dir, derivatives, args.config)
+                    participant_level_pipeline(args.bids_dir, args.output_dir, derivatives, args.config, cli_options)
 
             elif args.analysis_level == "group":
                 group_level_pipeline(args.bids_dir, args.output_dir, args.config)
