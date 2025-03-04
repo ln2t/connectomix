@@ -102,13 +102,11 @@ def test_denoise():
         img1_path = create_nifti_file(img1_dir,
                           img1_name,
                           shape,
-                          repetition_time=3,
-                          is_func=True)
+                          repetition_time=3)
         img2_path = create_nifti_file(img2_dir,
                           img2_name,
                           shape,
-                          repetition_time=3,
-                          is_func=True)
+                          repetition_time=3)
 
         input_imgs = [img1_path, img2_path]
 
