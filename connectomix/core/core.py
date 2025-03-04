@@ -65,6 +65,7 @@ def group_level_pipeline(bids_dir, output_dir, config):
     from connectomix.core.utils.setup import setup_config
     write_copy_of_config(layout, config)
     config = setup_config(layout, config, "group")
+    print(f"Selected method: {config['method']}")
 
     from connectomix.core.processing.group_processing import group_analysis
     group_analysis(layout, config)
