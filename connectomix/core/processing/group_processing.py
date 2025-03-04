@@ -154,6 +154,7 @@ def group_analysis(layout, config):
     labels, coords = find_labels_and_coords(config)
     if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
         for (label, coord) in zip(labels, coords):
+            print(f"Analysis for seed/roi {label}")
             results = run_single_group_analysis(layout, label, config)
             write_results(layout, results, label, coord, config)
     elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
