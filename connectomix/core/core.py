@@ -1,12 +1,10 @@
-import argparse
-import warnings
 from pathlib import Path
 from bids import BIDSLayout
 
 from connectomix.core.utils.writers import write_default_config_file, write_copy_of_config
 from connectomix.core.processing.participant_processing import post_fmriprep_preprocessing
 
-def participant_level_pipeline(bids_dir, output_dir, derivatives, config):
+def participant_level_pipeline(bids_dir, output_dir, derivatives, config, cli_options=None):
     from connectomix.version import __version__
     from connectomix.core.utils.tools import print_subject
     from connectomix.core.utils.bids import setup_bidslayout
@@ -19,7 +17,7 @@ def participant_level_pipeline(bids_dir, output_dir, derivatives, config):
 
     layout = setup_bidslayout(bids_dir, output_dir, derivatives)
     write_copy_of_config(layout, config)
-    config = setup_config(layout, config, "participant")
+    config = setup_config(layout, config, "participant", cli_options)
 
     print(f"Selected method for connectivity analysis: {config['method']}")
 
@@ -65,6 +63,7 @@ def group_level_pipeline(bids_dir, output_dir, config):
     from connectomix.core.utils.setup import setup_config
     write_copy_of_config(layout, config)
     config = setup_config(layout, config, "group")
+    print(f"Selected method: {config['method']}")
 
     from connectomix.core.processing.group_processing import group_analysis
     group_analysis(layout, config)
@@ -149,7 +148,7 @@ def autonomous_mode(run=False):
             "If you are happy with this configuration, run this command or simply relaunch the autonomous mode add the --run flag.")
 
 
-def main():
+def main(args):
     """
     Main function to launch the software. Ir reads arguments from sys.argv, which is filled automatically when calling the script from command line.
 
@@ -159,40 +158,11 @@ def main():
 
     """
 
+    cli_options = {"participant_label": args.participant_label}
 
-    # Set warnings to appear only once
-    warnings.simplefilter("once")
-
-    parser = argparse.ArgumentParser(
-        description="Connectomix: Functional Connectivity from fMRIPrep outputs using BIDS structure")
-
-    # Define the autonomous flag
-    parser.add_argument("--autonomous", action="store_true",
-                        help="Run the script in autonomous mode, guessing paths and settings.")
-
-    # Define the run flag
-    parser.add_argument("--run", action="store_true", help="Run the analysis based on what the autonomous mode found.")
-
-    # Define positional arguments for bids_dir, derivatives_dir, and analysis_level
-    parser.add_argument("bids_dir", nargs="?", type=str, help="BIDS root directory containing the dataset.")
-    parser.add_argument("output_dir", nargs="?", type=str, help="Directory where to store the outputs.")
-    parser.add_argument("analysis_level", nargs="?", choices=["participant", "group"],
-                        help="Analysis level: either 'participant' or 'group'.")
-
-    # Define optional arguments that apply to both analysis levels
-    parser.add_argument("-d", "--derivatives", nargs="+",
-                        help="Specify pre-computed derivatives as 'key=value' pairs (e.g., -d fmriprep=/path/to/fmriprep fmripost-aroma=/path/to/fmripost-aroma).")
-    parser.add_argument("-c", "--config", type=str, help="Path to the configuration file.")
-    parser.add_argument("-p", "--participant_label", type=str, help="Participant label to process (e.g., 'sub-01').")
-    parser.add_argument("--helper", help="Helper function to write default configuration files.", action="store_true")
-
-    args = parser.parse_args()
-
-    # Convert the list of "key=value" pairs to a dictionary
     from connectomix.core.utils.loaders import load_derivatives
     derivatives = load_derivatives(args.derivatives)
 
-    # Run autonomous mode if flag is used
     if args.autonomous:
         autonomous_mode(run=args.run)
     else:
@@ -216,7 +186,7 @@ def main():
                     raise FileNotFoundError(
                         f"fMRIPrep directory {derivatives['fmriprep']} not found. Use '--derivatives fmriprep=/path/to/fmriprep' to specify path manually.")
                 else:
-                    participant_level_pipeline(args.bids_dir, args.output_dir, derivatives, args.config)
+                    participant_level_pipeline(args.bids_dir, args.output_dir, derivatives, args.config, cli_options)
 
             elif args.analysis_level == "group":
                 group_level_pipeline(args.bids_dir, args.output_dir, args.config)

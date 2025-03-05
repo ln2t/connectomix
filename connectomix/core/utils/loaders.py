@@ -173,6 +173,9 @@ def load_config(config):
 
     """
 
+    if config is None:
+        config = {}
+
     if isinstance(config, dict):
         return config
     else:
@@ -231,7 +234,7 @@ def load_mask(layout, entities):
         mask_img = mask_img[0]
     elif len(mask_img) == 0:
         print(entites_for_mask)
-        raise ValueError(f"Mask img for entities {entities} not found.")
+        raise ValueError(f"Mask img for entities {entites_for_mask} not found.")
     else:
         raise ValueError(f"More that one mask for entitites {entities} found: {mask_img}.")
     return mask_img

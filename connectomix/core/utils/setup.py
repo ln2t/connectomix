@@ -3,7 +3,7 @@ import warnings
 from bids import BIDSLayout
 
 
-def setup_config(layout, config, level):
+def setup_config(layout, config, level, cli_options=None):
     """
     Set the configuration fields to their default values if not explicitly specified in the input config.
 
@@ -24,7 +24,7 @@ def setup_config(layout, config, level):
     """
     from connectomix.core.utils.loaders import load_config
     config = load_config(config)
-    config = setup_config_bids(config, layout, level)
+    config = setup_config_bids(config, layout, level, cli_options)
     config = setup_config_analysis(config, level)
 
     if level == "participant":
@@ -35,7 +35,7 @@ def setup_config(layout, config, level):
     return config
 
 
-def setup_config_bids(config, layout, level):
+def setup_config_bids(config, layout, level, cli_options=None):
     from connectomix.core.utils.tools import config_helper
 
     derivatives_to_parse = ""
@@ -45,6 +45,9 @@ def setup_config_bids(config, layout, level):
         derivatives_to_parse = "connectomix"
 
     derivatives_layout = layout.derivatives.get_pipeline(derivatives_to_parse)
+
+    if cli_options and "participant_label" in cli_options:
+        config["subject"] = cli_options["participant_label"]
 
     config["subject"] = config_helper(config,
                                       "subject",

@@ -21,11 +21,11 @@ For each of these methods, the analysis can also be performed at the group level
 
 Reproducibility is a central concern for the contributors of this project. The pipeline complies with the BIDS-app guidelines, leveraging the well-established BIDS framework to organize raw and processed data. The complete set of parameters or options are defined (and can be customized) using configuration files. These files use a human-readable text format, making them easy to understand, share, and modify. If a parameter is not explicitly set by the user, the pipeline uses default values from the literature and verbosely reports any of these choices.
 
-Another important feature at the participant level is the ability to denoise the data using conventional denoising strategies.
+Another important feature at the participant level is the ability to denoise the data using custom denoising strategies.
 
 ### Similar Software
 
-Similar software includes giga_connectome, xcp_d, and CONN.
+Similar tools include giga_connectome, xcp_d, and CONN.
 
 ## What Connectomix Does NOT Do
 
@@ -35,7 +35,7 @@ Currently, the following features are not supported:
 - Paired analysis (coming soon)
 - Participant-level reports, including metrics to assess denoising efficiency
 - Group-level reports
-- ReHo and (f)ALFF analysis
+- ReHo and (f)ALFF analysis, maybe!
 
 ## Configuration Files for Reproducible Analyses
 
@@ -46,8 +46,9 @@ To address these issues, two components are necessary:
 2. The exact parameters fed into the code to process your data are required.
 
 The first component is managed by the Git repository structure and the versioning system it allows. The second component is made possible through the use of configuration files, which are central to the pipeline. These files specify the parameters or options in the pipeline. If a parameter is missing, Connectomix uses its default value and warns the user.
+The downside is that there is not GUI.
 
-Each time the software is launched, it creates a copy of the configuration file, allowing you to "roll back" to previous analyses if things get messed up.
+Moreover, each time the software is launched, it creates a copy of the configuration file, allowing you to "roll back" to previous analyses if things get messed up.
 
 ### Available Options/Parameters
 
