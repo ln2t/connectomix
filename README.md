@@ -1,6 +1,6 @@
 # Connectomix: Functional Connectivity from fMRIPrep Outputs Using BIDS Structure
 
-![License](https://img.shields.io/github/license/ln2t/connectomix)
+![License](https://img.shields.io/github/license/ln2t/connectomix) [![codecov](https://codecov.io/gh/ln2t/connectomix/graph/badge.svg?token=3PAEFC703X)](https://codecov.io/gh/ln2t/connectomix)
 
 ## Overview
 
@@ -295,12 +295,6 @@ thresholding_strategies:
 two_sided_test: true
 uncorrected_alpha: 0.001
 ```
-
-## Troubleshooting
-
-- **No Functional Files Found**: Ensure your fMRIPrep outputs are correctly placed in the derivatives directory and that the `space`, `task`, `run`, and `session` specified in the configuration match the available data.
-- **Mismatch in Number of Functional and Confound Files**: Verify that each functional file has a corresponding confound file from fMRIPrep.
-- **Multiple Matches for Subjects**: Ensure your configuration parameters uniquely identify each subject's data.
 
 ## Contact
 
