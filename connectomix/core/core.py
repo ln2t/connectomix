@@ -3,6 +3,7 @@ from bids import BIDSLayout
 
 from connectomix.core.utils.writers import write_default_config_file, write_copy_of_config
 from connectomix.core.processing.participant_processing import post_fmriprep_preprocessing
+from connectomix.core.utils.tools import parse_args
 
 def participant_level_pipeline(bids_dir, output_dir, derivatives, config, cli_options=None):
     from connectomix.version import __version__
@@ -148,7 +149,7 @@ def autonomous_mode(run=False):
             "If you are happy with this configuration, run this command or simply relaunch the autonomous mode add the --run flag.")
 
 
-def main(args):
+def main(args=None):
     """
     Main function to launch the software. Ir reads arguments from sys.argv, which is filled automatically when calling the script from command line.
 
@@ -157,6 +158,9 @@ def main(args):
     None.
 
     """
+
+    if args is None:
+        args = parse_args()
 
     cli_options = {"participant_label": args.participant_label}
 
