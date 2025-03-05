@@ -9,12 +9,10 @@ Created: August 2022
 import warnings
 
 from connectomix.core.core import main
-from connectomix.core.utils.tools import (setup_terminal_colors,
-                                          parse_args)
+from connectomix.core.utils.tools import setup_terminal_colors
 
 setup_terminal_colors()
 warnings.simplefilter("once")
 
 if __name__ == "__main__":
-    args = parse_args()
-    main(args)
+    main()
