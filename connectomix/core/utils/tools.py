@@ -1,5 +1,5 @@
 import nibabel as nib
-
+import argparse
 import os
 from nibabel import Nifti1Image
 from nilearn.image import load_img, resample_img, index_img, clean_img
@@ -262,3 +262,30 @@ def setup_terminal_colors():
 
     # Set the custom exception handler
     sys.excepthook = custom_exception_handler
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Connectomix: Functional Connectivity from fMRIPrep outputs using BIDS structure")
+
+    # Define the autonomous flag
+    parser.add_argument("--autonomous", action="store_true",
+                        help="Run the script in autonomous mode, guessing paths and settings.")
+
+    # Define the run flag
+    parser.add_argument("--run", action="store_true", help="Run the analysis based on what the autonomous mode found.")
+
+    # Define positional arguments for bids_dir, derivatives_dir, and analysis_level
+    parser.add_argument("bids_dir", nargs="?", type=str, help="BIDS root directory containing the dataset.")
+    parser.add_argument("output_dir", nargs="?", type=str, help="Directory where to store the outputs.")
+    parser.add_argument("analysis_level", nargs="?", choices=["participant", "group"],
+                        help="Analysis level: either 'participant' or 'group'.")
+
+    # Define optional arguments that apply to both analysis levels
+    parser.add_argument("-d", "--derivatives", nargs="+",
+                        help="Specify pre-computed derivatives as 'key=value' pairs (e.g., -d fmriprep=/path/to/fmriprep fmripost-aroma=/path/to/fmripost-aroma).")
+    parser.add_argument("-c", "--config", type=str, help="Path to the configuration file.")
+    parser.add_argument("-p", "--participant_label", type=str, help="Participant label to process (e.g., 'sub-01').")
+    parser.add_argument("--helper", help="Helper function to write default configuration files.", action="store_true")
+
+    return parser.parse_args()

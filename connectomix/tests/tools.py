@@ -1,8 +1,9 @@
 import os
-import json
+import json, yaml
 import numpy as np
 import nibabel as nib
 import pandas as pd
+from bids import BIDSLayout
 
 def generate_bids_dataset(bids_dir,
                           num_subjects,
@@ -198,7 +199,7 @@ def create_synthetic_fmriprep_outputs(output_dir, num_subjects, task_names, sess
                         json.dump(sidecar_json, f, indent=4)
 
                     # Create mask for functional data
-                    mask_filename = filename.replace('_bold', '_mask')
+                    mask_filename = filename.replace('_bold', '_mask').replace('-preproc', '-brain')
                     create_nifti_file(func_dir, mask_filename, func_shape[:-1], is_mask=True)
 
                     # Create confounds file
@@ -239,6 +240,7 @@ def create_nifti_file(directory, filename, shape, repetition_time=None, is_mask=
 def create_confounds_file(directory, filename, num_timepoints):
     # Define some common confounds
     confounds = {
+        'csf_wm': np.random.rand(num_timepoints),
         'trans_x': np.random.rand(num_timepoints),
         'trans_y': np.random.rand(num_timepoints),
         'trans_z': np.random.rand(num_timepoints),
@@ -253,3 +255,33 @@ def create_confounds_file(directory, filename, num_timepoints):
     # Save the confounds file
     confounds_path = os.path.join(directory, f'{filename}.tsv')
     confounds_df.to_csv(confounds_path, sep='\t', index=False)
+
+
+def create_synthetic_seeds_file(seeds_path, num_seeds=2):
+    coord_max = 8
+    x_max = coord_max
+    y_max = coord_max
+    z_max = coord_max
+
+    seed_df = pd.DataFrame(columns=["seed_label", "x", "y", "z"])
+
+    for seed_id in range(1, num_seeds + 1):
+        seed_data = [f"seed{seed_id:02d}",
+                     np.random.randint(x_max),
+                     np.random.randint(y_max),
+                     np.random.randint(z_max)]
+        seed_df.loc[len(seed_df)] = seed_data
+
+    seed_df.to_csv(seeds_path, sep='\t', index=False, header=False)
+
+
+def create_synthetic_config_file(bids_dir, derivative, level, config_path, method, seeds_path=None):
+    from connectomix.core.utils.setup import setup_config
+    layout = BIDSLayout(bids_dir, derivatives=derivative)
+    config = setup_config(layout, {}, level)
+    config["seeds_file"] = seeds_path
+    config["method"] = method
+    config["radius"] = 0
+    config["spaces"] = ["MNI152NLin6Asym"]
+    with open(config_path, "w") as f:
+        yaml.dump(config, f)
