@@ -162,7 +162,9 @@ def main(args=None):
     if args is None:
         args = parse_args()
 
-    cli_options = {"participant_label": args.participant_label}
+    cli_options = {"participant_label": args.participant_label,
+                   "session": args.session,
+                   "task": args.task}
 
     from connectomix.core.utils.loaders import load_derivatives
     derivatives = load_derivatives(args.derivatives)

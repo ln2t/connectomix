@@ -46,8 +46,14 @@ def setup_config_bids(config, layout, level, cli_options=None):
 
     derivatives_layout = layout.derivatives.get_pipeline(derivatives_to_parse)
 
-    if cli_options and "participant_label" in cli_options:
+    if cli_options and cli_options.get("participant_label", None) is not None:
         config["subject"] = cli_options["participant_label"]
+
+    if cli_options and cli_options.get("session", None) is not None:
+        config["sessions"] = cli_options["session"]
+
+    if cli_options and cli_options.get("task", None) is not None:
+        config["tasks"] = cli_options["task"]
 
     config["subject"] = config_helper(config,
                                       "subject",

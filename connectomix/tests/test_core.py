@@ -36,6 +36,8 @@ def test_main_participant():
         args.analysis_level = "participant"
         args.derivatives = [f"fmriprep={fmriprep_dir}"]
         args.autonomous = False
+        args.session = None
+        args.task = None
         args.run = None
         args.config = config_path
         args.participant_label = '01'
@@ -90,6 +92,8 @@ def test_main_group():
         args.analysis_level = "participant"
         args.derivatives = [f"fmriprep={fmriprep_dir}"]
         args.autonomous = False
+        args.session = None
+        args.task = None
         args.run = None
         args.config = config_path
         args.participant_label = ['01', '02']

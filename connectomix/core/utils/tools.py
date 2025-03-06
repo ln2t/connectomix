@@ -285,7 +285,9 @@ def parse_args():
     parser.add_argument("-d", "--derivatives", nargs="+",
                         help="Specify pre-computed derivatives as 'key=value' pairs (e.g., -d fmriprep=/path/to/fmriprep fmripost-aroma=/path/to/fmripost-aroma).")
     parser.add_argument("-c", "--config", type=str, help="Path to the configuration file.")
-    parser.add_argument("-p", "--participant_label", type=str, help="Participant label to process (e.g., 'sub-01').")
+    parser.add_argument("-p", "--participant_label", type=str, help="Participant label to process (e.g., '01').")
+    parser.add_argument("-s", "--session", type=str, help="Session to process (e.g., '1').")
+    parser.add_argument("-t", "--task", type=str, help="Task to process (e.g., 'restingstate').")
     parser.add_argument("--helper", help="Helper function to write default configuration files.", action="store_true")
 
     return parser.parse_args()
