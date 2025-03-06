@@ -11,6 +11,9 @@ import yaml
 from nilearn import datasets
 from nilearn.plotting import find_parcellation_cut_coords
 
+from connectomix.core.utils.tools import custom_print
+
+
 def load_atlas_data(atlas_name, get_cut_coords=False):
     """
     A wrapper function for nilearn.datasets atlas-fetching core.
@@ -34,19 +37,19 @@ def load_atlas_data(atlas_name, get_cut_coords=False):
     """
 
     if atlas_name == "schaeffer100":
-        print("Using Schaefer 2018 atlas with 100 rois")
+        custom_print("Using Schaefer 2018 atlas with 100 rois")
         atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
         maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=maps) if get_cut_coords else []
         labels = atlas["labels"]
     elif atlas_name == "aal":
-        print("Using AAL atlas")
+        custom_print("Using AAL atlas")
         atlas = datasets.fetch_atlas_aal()
         maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
         labels = atlas["labels"]
     elif atlas_name == "harvardoxford":
-        print("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
+        custom_print("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
         atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
         maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
@@ -233,7 +236,6 @@ def load_mask(layout, entities):
     if len(mask_img) == 1:
         mask_img = mask_img[0]
     elif len(mask_img) == 0:
-        print(entites_for_mask)
         raise ValueError(f"Mask img for entities {entites_for_mask} not found.")
     else:
         raise ValueError(f"More that one mask for entitites {entities} found: {mask_img}.")

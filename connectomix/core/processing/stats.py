@@ -1,4 +1,3 @@
-import warnings
 import numpy as np
 from nilearn.connectome import sym_matrix_to_vec, vec_to_sym_matrix
 from nilearn.glm.second_level import non_parametric_inference
@@ -8,11 +7,7 @@ from nilearn.mass_univariate import permuted_ols
 from nilearn.image import math_img, binarize_img
 from nilearn.masking import apply_mask, unmask
 
-from scipy.stats import permutation_test
-from statsmodels.regression.linear_model import OLS
-from statsmodels.tools import add_constant
-
-from connectomix.core.utils.tools import img_is_not_empty
+from connectomix.core.utils.tools import img_is_not_empty, custom_print
 
 
 def compute_z_from_t(t_score, degree_of_freedom):
@@ -22,7 +17,7 @@ def compute_z_from_t(t_score, degree_of_freedom):
 
 
 def non_parametric_stats(glm, config):
-    print(f"Fwe correction requested, computing permutations with {config['n_permutations']} permutations"
+    custom_print(f"Fwe correction requested, computing permutations with {config['n_permutations']} permutations"
           f" (this may take a while)...")
     if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
         non_parametric_outputs = non_parametric_inference(glm.second_level_input_,
@@ -79,7 +74,7 @@ def compute_significant_data(contrast_results, glm, config):
                     fdr_z_threshold = fdr_threshold(sym_matrix_to_vec(contrast_results["z_values"]), alpha)
                     if fdr_z_threshold is np.inf:
                         significant_data[thresholding_strategy] = None
-                        print("Computed FDR threshold is infinite.")
+                        custom_print("Computed FDR threshold is infinite.")
                     else:
                         fdr_mask = contrast_results["z_values"] < fdr_z_threshold
                         significant_data[thresholding_strategy] = contrast_results["z_values"] * fdr_mask
@@ -95,7 +90,7 @@ def compute_significant_data(contrast_results, glm, config):
                         masked_data = apply_mask(contrast_results["z_values"], mask)
                         significant_data[thresholding_strategy] = unmask(masked_data, mask)
                     else:
-                        print(
+                        custom_print(
                             f"No voxel survives FWE thresholding at alpha level {alpha} for this analysis.")
                         significant_data[thresholding_strategy] = None
 
@@ -104,7 +99,7 @@ def compute_significant_data(contrast_results, glm, config):
                     if np.any(fwe_mask != 0):
                         significant_data[thresholding_strategy] = contrast_results["z_values"] * fwe_mask
                     else:
-                        print(
+                        custom_print(
                             f"No voxel survives FWE thresholding at alpha level {alpha} for this analysis.")
                         significant_data[thresholding_strategy] = None
 

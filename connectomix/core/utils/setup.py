@@ -1,7 +1,7 @@
 import warnings
-
 from bids import BIDSLayout
 
+from connectomix.core.utils.tools import custom_print
 
 def setup_config(layout, config, level, cli_options=None):
     """
@@ -120,7 +120,7 @@ def setup_config_preprocessing(config):
 
     # For ICA-AROMA, default to space 'MNI152NLin6Asym'
     if config["ica_aroma"]:
-        print("Defaulting to space MNI152NLin6Asym for ICA-AROMA denoising (overriding spaces from config file")
+        custom_print("Defaulting to space MNI152NLin6Asym for ICA-AROMA denoising (overriding spaces from config file")
         config["spaces"] = ['MNI152NLin6Asym']
     elif "MNI152NLin6Asym" in config["spaces"]:
         warnings.warn(

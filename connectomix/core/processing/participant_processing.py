@@ -10,7 +10,7 @@ from nilearn.input_data import NiftiLabelsMasker, NiftiSpheresMasker
 
 import numpy as np
 
-from connectomix.core.utils.tools import denoise
+from connectomix.core.utils.tools import denoise, custom_print
 
 
 def post_fmriprep_preprocessing(layout, config):
@@ -18,15 +18,15 @@ def post_fmriprep_preprocessing(layout, config):
     from connectomix.core.utils.loaders import load_files_for_analysis
     from connectomix.core.utils.tools import resample_to_reference
     func_files, json_files, confound_files = load_files_for_analysis(layout, config)
-    print(f"Found {len(func_files)} functional files:")
-    [print(os.path.basename(fn)) for fn in func_files]
+    custom_print(f"Found {len(func_files)} functional files:")
+    [custom_print(os.path.basename(fn)) for fn in func_files]
 
     # Resample all functional files to the reference image
     resampled_files = resample_to_reference(layout, func_files, config)
-    print("All functional files resampled to match the reference image.")
+    custom_print("All functional files resampled to match the reference image.")
 
     denoised_files = denoise(layout, resampled_files, confound_files, json_files, config)
-    print("Denoising finished.")
+    custom_print("Denoising finished.")
 
     return denoised_files, json_files
 
