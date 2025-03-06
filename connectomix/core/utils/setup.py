@@ -128,7 +128,7 @@ def setup_config_analysis(config, level):
 
     config["method"] = config_helper(config,
                                      "method",
-                                     "seedToVoxel",
+                                     "roiToRoi",
                                      ["seedToVoxel", "roiToVoxel", "roiToRoi", "seedToSeed"])
 
     allowed_connectivity_kinds = ["correlation", "covariance", "partial correlation", "precision"]
