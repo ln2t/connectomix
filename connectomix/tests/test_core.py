@@ -69,7 +69,6 @@ def test_main_group():
         bids_dir = os.path.join(temp_dir, "rawdata")
         output_dir = os.path.join(temp_dir, "derivatives/connectomix")
         fmriprep_dir = os.path.join(temp_dir, "derivatives/fmriprep")
-        derivatives = {"fmriprep": fmriprep_dir, "connectomix": output_dir}
 
         generate_bids_dataset(bids_dir,
                               num_subjects,
