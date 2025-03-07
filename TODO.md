@@ -8,7 +8,6 @@
 - report at group level
 - add overlay with roi in roiToVoxel plots (both at participant- and group-level)
 - add a config value config["categorial_variable"]=nameOfCovar to imply that the group-level covariate "nameOfCovar" must be treated as a categorial variable (like it is now done by default for "group")
-- add standard predefined denoising strategies
 - allow for regexes when defining noise confounds at participant-level
 
 # Analyzes
