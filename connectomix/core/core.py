@@ -3,7 +3,7 @@ from bids import BIDSLayout
 
 from connectomix.core.utils.writers import write_default_config_file, write_copy_of_config
 from connectomix.core.processing.participant_processing import post_fmriprep_preprocessing
-from connectomix.core.utils.tools import parse_args
+from connectomix.core.utils.tools import parse_args, custom_print
 
 def participant_level_pipeline(bids_dir, output_dir, derivatives, config, cli_options=None):
     from connectomix.version import __version__
@@ -14,13 +14,13 @@ def participant_level_pipeline(bids_dir, output_dir, derivatives, config, cli_op
     from connectomix.core.utils.loaders import load_repetition_time
     from connectomix.core.utils.setup import setup_config
 
-    print(f"Running connectomix (Participant-level) version {__version__}")
+    custom_print(f"Running connectomix (Participant-level) version {__version__}")
 
     layout = setup_bidslayout(bids_dir, output_dir, derivatives)
     write_copy_of_config(layout, config)
     config = setup_config(layout, config, "participant", cli_options)
 
-    print(f"Selected method for connectivity analysis: {config['method']}")
+    custom_print(f"Selected method for connectivity analysis: {config['method']}")
 
     denoised_files, json_files = post_fmriprep_preprocessing(layout, config)
 
@@ -32,7 +32,7 @@ def participant_level_pipeline(bids_dir, output_dir, derivatives, config, cli_op
         config["t_r"] = load_repetition_time(json_file)
         participant_analysis(layout, func_file, config)
 
-    print("Participant-level analysis completed.")
+    custom_print("Participant-level analysis completed.")
 
 
 def group_level_pipeline(bids_dir, output_dir, config):
@@ -55,7 +55,7 @@ def group_level_pipeline(bids_dir, output_dir, config):
     """
     # Print version information
     from connectomix.version import __version__
-    print(f"Running connectomix (Group-level) version {__version__}")
+    custom_print(f"Running connectomix (Group-level) version {__version__}")
     # Create BIDSLayout with pipeline and other derivatives
     from connectomix.core.utils.bids import setup_bidslayout
     layout = setup_bidslayout(bids_dir, output_dir)
@@ -64,12 +64,12 @@ def group_level_pipeline(bids_dir, output_dir, config):
     from connectomix.core.utils.setup import setup_config
     write_copy_of_config(layout, config)
     config = setup_config(layout, config, "group")
-    print(f"Selected method: {config['method']}")
+    custom_print(f"Selected method: {config['method']}")
 
     from connectomix.core.processing.group_processing import group_analysis
     group_analysis(layout, config)
 
-    print("Group-level analysis completed.")
+    custom_print("Group-level analysis completed.")
 
 
 def autonomous_mode(run=False):
@@ -117,10 +117,10 @@ def autonomous_mode(run=False):
         connectomix_folder = connectomix_folder[0]
         layout = BIDSLayout(bids_dir, derivatives=[connectomix_folder])
         if len(layout.derivatives.get_pipeline("connectomix").get_subjects()) == 0:
-            print("No participant-level result detected, assuming participant-level analysis")
+            custom_print("No participant-level result detected, assuming participant-level analysis")
             analysis_level = "participant"
         else:
-            print(
+            custom_print(
                 f"Detected participant-level results for subjects {layout.derivatives.get_pipeline('connectomix').get_subjects()}, assuming group-level analysis")
             analysis_level = "group"
 
@@ -130,7 +130,7 @@ def autonomous_mode(run=False):
 
     # Step 4: Call the main function with guessed paths and settings
     if run:
-        print("... and now launching the analysis!")
+        custom_print("... and now launching the analysis!")
         if analysis_level == "participant":
             participant_level_pipeline(bids_dir, connectomix_folder, {"fmriprep": fmriprep_dir}, {})
         elif analysis_level == "group":
@@ -144,8 +144,8 @@ def autonomous_mode(run=False):
             create_group_level_default_config_file(bids_dir, connectomix_folder)
 
         cmd = f"python connectomix.py {bids_dir} {connectomix_folder} {analysis_level} --derivatives fmriprep={fmriprep_dir}"
-        print(f"Autonomous mode suggests the following command:\n{cmd}")
-        print(
+        custom_print(f"Autonomous mode suggests the following command:\n{cmd}")
+        custom_print(
             "If you are happy with this configuration, run this command or simply relaunch the autonomous mode add the --run flag.")
 
 
@@ -162,7 +162,10 @@ def main(args=None):
     if args is None:
         args = parse_args()
 
-    cli_options = {"participant_label": args.participant_label}
+    cli_options = {"participant_label": args.participant_label,
+                   "session": args.session,
+                   "task": args.task,
+                   "denoising": args.denoising}
 
     from connectomix.core.utils.loaders import load_derivatives
     derivatives = load_derivatives(args.derivatives)

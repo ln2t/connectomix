@@ -11,7 +11,7 @@ from nilearn.plotting import plot_matrix, plot_connectome, plot_stat_map, plot_d
 from pathlib import Path
 
 from connectomix.core.utils.setup import setup_config
-from connectomix.core.utils.tools import make_parent_dir, img_is_not_empty
+from connectomix.core.utils.tools import make_parent_dir, img_is_not_empty, custom_print
 from connectomix.core.utils.bids import build_output_path, alpha_value_to_bids_valid_string
 
 def write_design_matrix(layout, design_matrix, label, config):
@@ -185,7 +185,7 @@ def write_default_config_file(bids_dir, derivatives, level):
     layout = BIDSLayout(bids_dir, derivatives=list(derivatives.values()))
 
     # Print some stuff for the primate using this function
-    print("Generating default configuration file for default parameters, please wait while the dataset is explored...")
+    custom_print("Generating default configuration file for default parameters, please wait while the dataset is explored...")
 
     config = setup_config(layout, {}, level)
 
@@ -197,7 +197,7 @@ def write_default_config_file(bids_dir, derivatives, level):
     with open(yaml_file, 'w') as yaml_out:
         yaml.dump(config, yaml_out, default_flow_style=False)
 
-    print(f"Default YAML configuration file saved at {yaml_file}. Go to github.com/ln2t/connectomix for more details.")
+    custom_print(f"Default YAML configuration file saved at {yaml_file}. Go to github.com/ln2t/connectomix for more details.")
     return yaml_file
 
 
@@ -234,7 +234,7 @@ def write_copy_of_config(layout, config):
         with open(path, "w") as fp:
             json.dump(config, fp, indent=4)
 
-    print(f"Configuration file saved to {path}")
+    custom_print(f"Configuration file saved to {path}")
     return path
 
 

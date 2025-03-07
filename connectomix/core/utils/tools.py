@@ -1,3 +1,5 @@
+import json
+
 import nibabel as nib
 import argparse
 import os
@@ -14,7 +16,7 @@ def config_helper(config, key, default, choose_from=None):
     if key in config.keys():
         value = config[key]
     else:
-        print(f"Setting config field \"{key}\" to default value \"{default}\"")
+        custom_print(f"Setting config field \"{key}\" to default value \"{default}\"")
         value = default
 
     if choose_from:
@@ -25,7 +27,7 @@ def config_helper(config, key, default, choose_from=None):
 
 def print_subject(layout, func_file):
     entities = layout.parse_file_entities(func_file)
-    print(f"Processing subject {entities['subject']}")
+    custom_print(f"Processing subject {entities['subject']}")
 
 
 def check_affines_match(imgs):
@@ -109,7 +111,7 @@ def resample_to_reference(layout, func_files, config):
             if check_affines_match([img, reference_img]):
                 resampled_img = img
             else:
-                print("Doing some resampling, please wait...")
+                custom_print("Doing some resampling, please wait...")
                 resampled_img = resample_img(img, target_affine=reference_img.affine,
                                              target_shape=reference_img.shape[:3],
                                              interpolation='nearest',
@@ -117,7 +119,7 @@ def resample_to_reference(layout, func_files, config):
 
             resampled_img.to_filename(resampled_path)
         else:
-            print(f"Functional file {os.path.basename(resampled_path)} already exist, skipping resampling.")
+            custom_print(f"Functional file {os.path.basename(resampled_path)} already exist, skipping resampling.")
     return resampled_files
 
 
@@ -161,7 +163,7 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
     # Denoise the data
     denoised_paths = []
     for (func_file, confound_file, json_file) in zip(resampled_files, confound_files, json_files):
-        print(f"Denoising file {os.path.basename(func_file)}")
+        custom_print(f"Denoising file {os.path.basename(func_file)}")
         entities = layout.parse_file_entities(func_file)
         denoised_path = func_file if config['ica_aroma'] else layout.derivatives.get_pipeline("connectomix").build_path(entities,
                                                                                                            path_patterns=[
@@ -185,8 +187,14 @@ def denoise(layout, resampled_files, confound_files, json_files, config):
                       high_pass=high_pass,
                       t_r=load_repetition_time(json_file),
                       confounds=confounds).to_filename(denoised_path)
+
+            denoised_json_path = denoised_path.replace(".nii.gz", ".json")
+            denoised_json_dict = {"confounds": config.get("confounds")}
+            with open(denoised_json_path, "w") as f:
+                json.dump(denoised_json_dict, f, indent=4)
+
         else:
-            print(f"Denoised data {os.path.basename(denoised_path)} already exists, skipping.")
+            custom_print(f"Denoised data {os.path.basename(denoised_path)} already exists, skipping.")
     return denoised_paths
 
 
@@ -223,12 +231,12 @@ def get_cluster_tables(significant_data, config):
                                                stat_threshold=0,
                                                two_sided=config["two_sided_test"])
             if cluster_table.empty:
-                print("No signigificant cluster found.")
+                custom_print("No signigificant cluster found.")
             else:
                 if "atlas" in config.keys():
                     cluster_table = locate_clusters_on_atlas(cluster_table, config)
                 else:
-                    print("No atlas provided, skipping cluster location identification")
+                    custom_print("No atlas provided, skipping cluster location identification")
         else:
             cluster_table = None
 
@@ -236,10 +244,25 @@ def get_cluster_tables(significant_data, config):
     return cluster_tables
 
 
+def custom_print(*args, **kwargs):
+    # ANSI escape codes for colors
+    GREEN = '\033[92m'
+    CYAN = '\033[96m'
+    RESET = '\033[0m'
+
+    # Print with the specified color
+    print(f"{CYAN}", end="")
+    print(*args, **kwargs)
+    print(f"{RESET}", end="")
+
+
 def setup_terminal_colors():
     import warnings
     import traceback
     import sys
+
+
+
     # ANSI escape codes for colors
     YELLOW = '\033[93m'
     RESET = '\033[0m'
@@ -285,7 +308,10 @@ def parse_args():
     parser.add_argument("-d", "--derivatives", nargs="+",
                         help="Specify pre-computed derivatives as 'key=value' pairs (e.g., -d fmriprep=/path/to/fmriprep fmripost-aroma=/path/to/fmripost-aroma).")
     parser.add_argument("-c", "--config", type=str, help="Path to the configuration file.")
-    parser.add_argument("-p", "--participant_label", type=str, help="Participant label to process (e.g., 'sub-01').")
+    parser.add_argument("-p", "--participant_label", type=str, help="Participant label to process (e.g., '01').")
+    parser.add_argument("-s", "--session", type=str, help="Session to process (e.g., '1').")
+    parser.add_argument("-t", "--task", type=str, help="Task to process (e.g., 'restingstate').")
+    parser.add_argument("--denoising", type=str, help="A predefined denoising strategy (e.g. 'gs_csfwm_12p')")
     parser.add_argument("--helper", help="Helper function to write default configuration files.", action="store_true")
 
     return parser.parse_args()

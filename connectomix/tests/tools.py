@@ -278,7 +278,7 @@ def create_synthetic_seeds_file(seeds_path, num_seeds=2):
 def create_synthetic_config_file(bids_dir, derivative, level, config_path, method, seeds_path=None):
     from connectomix.core.utils.setup import setup_config
     layout = BIDSLayout(bids_dir, derivatives=derivative)
-    config = setup_config(layout, {}, level)
+    config = setup_config(layout, {"method": method}, level)
     config["seeds_file"] = seeds_path
     config["method"] = method
     config["radius"] = 0

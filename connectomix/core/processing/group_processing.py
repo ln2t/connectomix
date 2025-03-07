@@ -6,7 +6,7 @@ from nilearn.glm.second_level import SecondLevelModel, make_second_level_design_
 from nilearn.glm.contrasts import expression_to_contrast_vector
 from nilearn.connectome import sym_matrix_to_vec, vec_to_sym_matrix
 
-from connectomix.core.utils.tools import find_labels_and_coords, get_cluster_tables
+from connectomix.core.utils.tools import find_labels_and_coords, get_cluster_tables, custom_print
 from connectomix.core.processing.stats import compute_significant_data, compute_z_from_t
 from connectomix.core.utils.loaders import load_group_level_covariates
 from connectomix.core.utils.writers import write_results
@@ -41,7 +41,7 @@ def make_group_input(layout, config, label=None):
     if len(files) == 0:
         raise ValueError("No participant-level file found.")
     else:
-        print(f"Found {len(files)} files at participant-level.")
+        custom_print(f"Found {len(files)} files at participant-level.")
 
     for file in files:
         file_entities = layout.parse_file_entities(file)
@@ -67,7 +67,7 @@ def make_group_design_matrix(layout, second_level_input, config):
 
 
 def compute_group_contrast(glm, config):
-    print(f"Computing contrast label named \'{config['contrast']}\'")
+    custom_print(f"Computing contrast label named \'{config['contrast']}\'")
 
     if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
         contrast_dict = glm.compute_contrast(config["contrast"],
@@ -154,7 +154,7 @@ def group_analysis(layout, config):
     labels, coords = find_labels_and_coords(config)
     if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
         for (label, coord) in zip(labels, coords):
-            print(f"Analysis for seed/roi {label}")
+            custom_print(f"Analysis for seed/roi {label}")
             results = run_single_group_analysis(layout, label, config)
             write_results(layout, results, label, coord, config)
     elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":

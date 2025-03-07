@@ -36,6 +36,9 @@ def test_main_participant():
         args.analysis_level = "participant"
         args.derivatives = [f"fmriprep={fmriprep_dir}"]
         args.autonomous = False
+        args.session = None
+        args.task = None
+        args.denoising = None
         args.run = None
         args.config = config_path
         args.participant_label = '01'
@@ -69,7 +72,6 @@ def test_main_group():
         bids_dir = os.path.join(temp_dir, "rawdata")
         output_dir = os.path.join(temp_dir, "derivatives/connectomix")
         fmriprep_dir = os.path.join(temp_dir, "derivatives/fmriprep")
-        derivatives = {"fmriprep": fmriprep_dir, "connectomix": output_dir}
 
         generate_bids_dataset(bids_dir,
                               num_subjects,
@@ -91,6 +93,9 @@ def test_main_group():
         args.analysis_level = "participant"
         args.derivatives = [f"fmriprep={fmriprep_dir}"]
         args.autonomous = False
+        args.session = None
+        args.task = None
+        args.denoising = None
         args.run = None
         args.config = config_path
         args.participant_label = ['01', '02']

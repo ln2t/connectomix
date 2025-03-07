@@ -5,6 +5,8 @@ import os
 import json
 from bids import BIDSLayout
 
+from connectomix.core.utils.tools import denoise, custom_print
+
 
 def compute_canica_components(layout, func_filenames, config):
     """
@@ -76,10 +78,10 @@ def compute_canica_components(layout, func_filenames, config):
         canica.fit(func_filenames)
 
         # Save image to output filename
-        print(f"Saving canica components image to {canica_filename}")
+        custom_print(f"Saving canica components image to {canica_filename}")
         canica.components_img_.to_filename(canica_filename)
     else:
-        print(f"ICA component file {os.path.basename(canica_filename)} already exist, skipping computation.")
+        custom_print(f"ICA component file {os.path.basename(canica_filename)} already exist, skipping computation.")
 
     extractor_options = dict(threshold=config["canica_threshold"],
                              min_region_size=config["canica_min_region_size"],
@@ -97,9 +99,9 @@ def compute_canica_components(layout, func_filenames, config):
     )
     extractor.fit()
 
-    print(f"Number of ICA-based components extracted: {extractor.regions_img_.shape[-1]}")
+    custom_print(f"Number of ICA-based components extracted: {extractor.regions_img_.shape[-1]}")
 
-    print(f"Saving extracted ROIs to {extracted_regions_filename}")
+    custom_print(f"Saving extracted ROIs to {extracted_regions_filename}")
     extractor.regions_img_.to_filename(extracted_regions_filename)
 
     config['components'] = canica_filename
