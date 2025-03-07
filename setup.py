@@ -7,7 +7,7 @@ def read_requirements():
 
 setup(
     name='connectomix',
-    version='2.0.0',
+    version='2.1.0',
     url='https://github.com/ln2t/connectomix',
     author='Antonin Rovai',
     author_email='antonin.rovai@hubruxelles.be',
