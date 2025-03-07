@@ -28,7 +28,7 @@ def setup_config(layout, config, level, cli_options=None):
     config = setup_config_analysis(config, level)
 
     if level == "participant":
-        config = setup_config_preprocessing(config)
+        config = setup_config_preprocessing(config, cli_options)
     elif level == "group":
         config = setup_config_stats(config)
 
@@ -81,7 +81,7 @@ def setup_config_bids(config, layout, level, cli_options=None):
     return config
 
 
-def setup_config_preprocessing(config):
+def setup_config_preprocessing(config, cli_options=None):
     from connectomix.core.utils.tools import config_helper
 
     # Reference functional file for resampling
@@ -99,13 +99,22 @@ def setup_config_preprocessing(config):
                                        "low_pass",
                                        0.08)
 
+    from connectomix.data.denoising_strategies import denoising_strategies
+
     # List of default signal confounds for denoising
-    default_confounds = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z', 'csf_wm']
+    default_confounds = "csfwm_6p"
+
+    if cli_options and cli_options.get("denoising", None) is not None:
+        config["confounds"] = cli_options["denoising"]
 
     # Confounds for denoising
     config["confounds"] = config_helper(config,
                                         "confounds",
                                         default_confounds)
+
+    # Check if we are selecting a pre-defined denoising strategy
+    if type(config["confounds"]) == str and config["confounds"] in denoising_strategies:
+        config["confounds"] = denoising_strategies[config["confounds"]]
 
     config["overwrite_denoised_files"] = config_helper(config,
                                                        "overwrite_denoised_files",
