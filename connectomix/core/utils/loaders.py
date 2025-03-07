@@ -10,6 +10,7 @@ import pandas as pd
 import yaml
 from nilearn import datasets
 from nilearn.plotting import find_parcellation_cut_coords
+import importlib.resources
 
 from connectomix.core.utils.tools import custom_print
 
@@ -36,21 +37,23 @@ def load_atlas_data(atlas_name, get_cut_coords=False):
 
     """
 
+    nilearn_data_dir = importlib.resources.files("connectomix.data").joinpath("nilearn_data")
+
     if atlas_name == "schaeffer100":
         custom_print("Using Schaefer 2018 atlas with 100 rois")
-        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100)
+        atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100, data_dir=nilearn_data_dir)
         maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=maps) if get_cut_coords else []
         labels = atlas["labels"]
     elif atlas_name == "aal":
         custom_print("Using AAL atlas")
-        atlas = datasets.fetch_atlas_aal()
+        atlas = datasets.fetch_atlas_aal(data_dir=nilearn_data_dir)
         maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
         labels = atlas["labels"]
     elif atlas_name == "harvardoxford":
         custom_print("Using Harvard-Oxford atlas (cort-maxprob-thr25-1mm)")
-        atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm")
+        atlas = datasets.fetch_atlas_harvard_oxford("cort-maxprob-thr25-1mm", data_dir=nilearn_data_dir)
         maps = atlas["maps"]
         coords = find_parcellation_cut_coords(labels_img=atlas['maps']) if get_cut_coords else []
         labels = atlas["labels"]
