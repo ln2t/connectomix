@@ -18,5 +18,8 @@ setup(
         'console_scripts': [
             'connectomix = connectomix.connectomix:main',
         ]},
-    include_package_data=True
+    include_package_data=True,
+    package_data={
+            'connectomix': ['data/**'],
+        }
 )
