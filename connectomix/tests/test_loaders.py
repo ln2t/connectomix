@@ -1,6 +1,5 @@
 import os, json
 import tempfile
-from bids import BIDSLayout
 import pandas as pd
 import numpy as np
 import yaml
