@@ -7,9 +7,6 @@ WORKDIR /usr/src/app
 # Copy the current directory contents into the container at /usr/src/app
 COPY . .
 
-# Make port 80 available to the world outside this container (optional)
-EXPOSE 80
-
 # Install any needed packages specified in requirements.txt
 RUN pip install -r requirements.txt --trusted-host files.pythonhosted.org --trusted-host pypi.org --trusted-host pypi.python.org
 RUN pip install -e .

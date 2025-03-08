@@ -1,0 +1,16 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+# Copy the current directory contents into the container at /usr/src/app
+%files
+    . /usr/src/app
+
+# Set the working directory in the container
+%post
+    # Install any needed packages specified in requirements.txt
+    pip install --no-cache-dir -r /usr/src/app/requirements.txt --trusted-host files.pythonhosted.org --trusted-host pypi.org --trusted-host pypi.python.org
+    pip install --no-cache-dir -e /usr/src/app
+
+# Run the script by default when the container starts
+%runscript
+    exec connectomix "$@"
