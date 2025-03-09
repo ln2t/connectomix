@@ -84,7 +84,7 @@ def setup_config_bids(config, layout, level, cli_options=None):
 def setup_config_preprocessing(config, cli_options=None):
     from connectomix.core.utils.tools import config_helper
 
-    # Reference functional file for resampling
+    # Reference functional file for resampling - if path, relative to bids_dir
     config["reference_functional_file"] = config_helper(config,
                                                         "reference_functional_file",
                                                         "first_functional_file")
