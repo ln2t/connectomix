@@ -88,6 +88,8 @@ def resample_to_reference(layout, func_files, config):
     # Choose the first functional file as the reference for alignment
     if config["reference_functional_file"] == "first_functional_file":
         config["reference_functional_file"] = func_files[0]
+    else:
+        config["reference_functional_file"] = Path(layout.root) / config["reference_functional_file"]
     reference_img = load_img(config["reference_functional_file"])
 
     resampled_files = []
