@@ -1,3 +1,6 @@
+# Bugs
+- roiToVoxel FWE maps not saved? Check also seedToVoxel.
+
 # Misc
 - complete/update documentation
 - tune verbosity (using config file)
@@ -9,6 +12,8 @@
 - add overlay with roi in roiToVoxel plots (both at participant- and group-level)
 - add a config value config["categorial_variable"]=nameOfCovar to imply that the group-level covariate "nameOfCovar" must be treated as a categorial variable (like it is now done by default for "group")
 - allow for regexes when defining noise confounds at participant-level
+- export null distribution of max-stat also for xToVoxel methods
+- save various z-thresholds (uncorr., FDR, and FWE) in json file
 
 # Analyzes
 - Paired samples testing: inter-session OR inter-task OR inter-run comparison
