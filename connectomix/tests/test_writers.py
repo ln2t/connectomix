@@ -117,12 +117,14 @@ def test_write_significant_data():
                   "thresholding_strategies": ["fwe"],
                   "fwe_alpha": 0.05}
 
-        connectome_plot_path = write_significant_data(layout,
+        significant_data_path_list = write_significant_data(layout,
                                                       significant_data,
                                                       random_labels,
                                                       coords,
                                                       config)
-        assert os.path.isfile(connectome_plot_path)
+
+        for file_path in significant_data_path_list:
+            assert os.path.isfile(file_path)
 
 
 def test_write_default_config_file():

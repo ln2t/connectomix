@@ -113,6 +113,7 @@ def write_contrast_scores(layout, contrast_scores, label, coord, config):
 
 
 def write_significant_data(layout, significant_data, label, coords, config):
+    significant_data_path_list = []
     for thresholding_strategy in config["thresholding_strategies"]:
         alpha = float(config[f"{thresholding_strategy}_alpha"])
         from connectomix.core.utils.loaders import load_entities_from_config
@@ -125,6 +126,7 @@ def write_significant_data(layout, significant_data, label, coords, config):
                                                       "group",
                                                       config,
                                                       suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha))
+        significant_data_path_list.append(significant_data_path)
         matrix_plot_path = build_output_path(layout,
                                       entities,
                                       label,
@@ -151,6 +153,7 @@ def write_significant_data(layout, significant_data, label, coords, config):
                 write_matrix_plot(significant_data[thresholding_strategy], matrix_plot_path, label=label)
                 write_connectome_plot(significant_data[thresholding_strategy], connectome_plot_path, coords)
 
+    return significant_data_path_list
 
 def write_default_config_file(bids_dir, derivatives, level):
     """
