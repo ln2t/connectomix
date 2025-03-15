@@ -235,6 +235,7 @@ def get_cluster_tables(significant_data, config):
             if cluster_table.empty:
                 custom_print("No signigificant cluster found.")
             else:
+                custom_print(f"Found {len(cluster_table)} cluster(s) and subcluster(s) for {thresholding_strategy}")
                 if "atlas" in config.keys():
                     cluster_table = locate_clusters_on_atlas(cluster_table, config)
                 else:
