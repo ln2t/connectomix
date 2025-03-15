@@ -1,6 +1,3 @@
-# Bugs
-- roiToVoxel FWE maps not saved? Check also seedToVoxel.
-
 # Misc
 - complete/update documentation
 - tune verbosity (using config file)
