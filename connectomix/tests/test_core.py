@@ -56,9 +56,10 @@ def test_main_participant():
 
         shutil.rmtree(output_dir)
         main(args)
+
         assert os.path.isfile(os.path.join(output_dir,
                                            "sub-01",
-                                           "sub-01_task-restingstate_space-MNI152NLin6Asym_method-seedToSeed_data-correlation.npy"))
+                                           "sub-01_task-restingstate_space-MNI152NLin6Asym_method-seedToSeed_data-someName_correlation.npy"))
 
 def test_main_group():
     num_subjects = 10

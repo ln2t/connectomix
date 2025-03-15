@@ -113,6 +113,7 @@ def write_contrast_scores(layout, contrast_scores, label, coord, config):
 
 
 def write_significant_data(layout, significant_data, label, coords, config):
+    significant_data_path_list = []
     for thresholding_strategy in config["thresholding_strategies"]:
         alpha = float(config[f"{thresholding_strategy}_alpha"])
         from connectomix.core.utils.loaders import load_entities_from_config
@@ -125,6 +126,7 @@ def write_significant_data(layout, significant_data, label, coords, config):
                                                       "group",
                                                       config,
                                                       suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha))
+        significant_data_path_list.append(significant_data_path)
         matrix_plot_path = build_output_path(layout,
                                       entities,
                                       label,
@@ -142,6 +144,7 @@ def write_significant_data(layout, significant_data, label, coords, config):
                                       extension='.svg')
 
         if significant_data[thresholding_strategy] is not None and img_is_not_empty(significant_data[thresholding_strategy]):
+            custom_print(f"Saving file {os.path.basename(significant_data_path)}")
             if config["method"] == "seedToVoxel" or config["method"] == "roiToVoxel":
                 significant_data[thresholding_strategy].to_filename(significant_data_path)
                 # TODO: save glassbrain of significant_data[thresholding_strategy] to plot_path
@@ -150,8 +153,7 @@ def write_significant_data(layout, significant_data, label, coords, config):
                 write_matrix_plot(significant_data[thresholding_strategy], matrix_plot_path, label=label)
                 write_connectome_plot(significant_data[thresholding_strategy], connectome_plot_path, coords)
 
-        return connectome_plot_path
-
+    return significant_data_path_list
 
 def write_default_config_file(bids_dir, derivatives, level):
     """
@@ -263,6 +265,7 @@ def write_cluster_tables(layout, cluster_tables, label, config):
                                            suffix=thresholding_strategy + alpha_value_to_bids_valid_string(alpha),
                                            extension=".csv")
 
+            custom_print(f"Saving cluster table {os.path.basename(table_path)}")
             cluster_tables[thresholding_strategy].to_csv(table_path, sep=',')
         else:
             table_path = None

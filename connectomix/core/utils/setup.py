@@ -173,7 +173,7 @@ def setup_config_analysis(config, level):
                                                          allowed_connectivity_kinds)
             config["custom_seeds_name"] = config_helper(config,
                                                         "custom_seeds_name",
-                                                        None)
+                                                        "someName")
         case "roiToRoi":
             config["atlas"] = config_helper(config,
                                             "atlas",
