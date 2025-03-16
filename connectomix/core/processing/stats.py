@@ -1,6 +1,7 @@
 import numpy as np
 from nilearn.connectome import sym_matrix_to_vec, vec_to_sym_matrix
-from nilearn.glm.second_level import non_parametric_inference
+# from nilearn.glm.second_level import non_parametric_inference
+from connectomix.core.processing.nilearn_tools import non_parametric_inference
 from nilearn.glm import threshold_stats_img, fdr_threshold
 from nilearn.glm.contrasts import expression_to_contrast_vector
 from nilearn.mass_univariate import permuted_ols
@@ -30,7 +31,7 @@ def non_parametric_stats(glm, config):
                                                           threshold=float(config["cluster_forming_alpha"]),
                                                           n_perm=config["n_permutations"])
         logp_max_stat = non_parametric_outputs["logp_max_mass"]
-        permutation_dist = None  # TODO: extract t-null distribution from nilearn permuted_OLS function
+        permutation_dist = non_parametric_outputs["h0_max_t"][0, :]
 
     elif config["method"] == "seedToSeed" or config["method"] == "roiToRoi":
         contrast = expression_to_contrast_vector(config["contrast"], glm["design_matrix"].columns)
