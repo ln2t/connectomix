@@ -1,0 +1,22 @@
+# Core scientific dependencies
+nibabel>=5.2.0
+nilearn>=0.10.3
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+statsmodels>=0.14.0
+
+# BIDS and configuration
+pybids>=0.16.4
+PyYAML>=6.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Utilities
+colorama>=0.4.6
+tqdm>=4.65.0
+
+# Parallel processing
+joblib>=1.3.0
