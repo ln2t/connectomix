@@ -352,6 +352,16 @@ def run_participant_pipeline(
                     connectivity_paths = connectivity_paths_single
                 
                 # --- Generate HTML Report ---
+                # Extract condition name(s) from censoring summary for report filename
+                condition_for_report = None
+                if censoring_summary and censoring_summary.get('conditions'):
+                    condition_names = list(censoring_summary['conditions'].keys())
+                    if len(condition_names) == 1:
+                        condition_for_report = condition_names[0]
+                    elif len(condition_names) > 1:
+                        # Multiple conditions - join with "+"
+                        condition_for_report = '+'.join(sorted(condition_names))
+                
                 _generate_participant_report(
                     file_entities=file_entities,
                     config=config,
@@ -361,6 +371,7 @@ def run_participant_pipeline(
                     atlas_labels=atlas_labels,
                     logger=logger,
                     censoring_summary=censoring_summary,
+                    condition=condition_for_report,
                 )
         
         # === Summary ===
@@ -382,6 +393,7 @@ def _generate_participant_report(
     atlas_labels: Optional[List[str]],
     logger: logging.Logger,
     censoring_summary: Optional[Dict] = None,
+    condition: Optional[str] = None,
 ) -> Optional[Path]:
     """Generate HTML report for a participant analysis.
     
@@ -403,6 +415,8 @@ def _generate_participant_report(
         Logger instance.
     censoring_summary : dict or None
         Summary of temporal censoring applied.
+    condition : str or None
+        Condition name for output filename (when --conditions is used).
     
     Returns
     -------
@@ -485,6 +499,7 @@ def _generate_participant_report(
             desc=desc,
             label=config.label,
             censoring_summary=censoring_summary,
+            condition=condition,
         )
         
         # Generate report

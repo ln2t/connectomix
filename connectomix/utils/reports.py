@@ -757,6 +757,7 @@ class ParticipantReportGenerator:
         desc: Optional[str] = None,
         label: Optional[str] = None,
         censoring_summary: Optional[Dict[str, Any]] = None,
+        condition: Optional[str] = None,
     ):
         """Initialize report generator.
         
@@ -777,6 +778,7 @@ class ParticipantReportGenerator:
             desc: Description entity for filename (e.g., atlas name, method)
             label: Custom label entity for filename
             censoring_summary: Summary of temporal censoring applied
+            condition: Condition name for filename (when --conditions is used)
         """
         self.subject_id = subject_id
         self.session = session
@@ -787,6 +789,7 @@ class ParticipantReportGenerator:
         self.space = space
         self.desc = desc
         self.label = label
+        self.condition = condition
         self.connectivity_paths = connectivity_paths or []
         self._logger = logger or logging.getLogger(__name__)
         
@@ -1939,6 +1942,8 @@ class ParticipantReportGenerator:
         # Build report filename
         if self.subject_id.startswith('sub-'):
             filename = self.subject_id
+            if self.condition:
+                filename += f"_condition-{self.condition}"
             if self.label:
                 filename += f"_label-{self.label}"
             if self.desc:
@@ -1951,6 +1956,8 @@ class ParticipantReportGenerator:
                 filename_parts.append(f"ses-{self.session}")
             if self.task:
                 filename_parts.append(f"task-{self.task}")
+            if self.condition:
+                filename_parts.append(f"condition-{self.condition}")
             if self.label:
                 filename_parts.append(f"label-{self.label}")
             if self.desc:
