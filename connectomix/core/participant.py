@@ -902,7 +902,7 @@ def _compute_connectivity(
         file_entities['atlas'] = config.atlas
         
         output_path = _get_output_path(
-            output_dir, file_entities, config.atlas, "correlation", ".npy",
+            output_dir, file_entities, config.connectivity_kind, "correlation", ".npy",
             label=config.label, subfolder="connectivity_data"
         )
         
