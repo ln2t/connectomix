@@ -449,27 +449,27 @@ def _build_cli_command(
     str
         CLI command with generic path placeholders.
     """
-    parts = ["connectomix <rawdata> <derivatives> participant"]
+    parts = ["connectomix <rawdata_dir> <derivatives_dir> participant"]
     
     # Add participant label (check both 'subject' and 'sub' keys)
     subject = file_entities.get('subject') or file_entities.get('sub')
     if subject:
-        parts.append(f"-p {subject}")
+        parts.append(f"--participant-label {subject}")
     
     # Add task
     task = file_entities.get('task')
     if task:
-        parts.append(f"-t {task}")
+        parts.append(f"--task {task}")
     
     # Add session if present
     session = file_entities.get('session') or file_entities.get('ses')
     if session:
-        parts.append(f"-s {session}")
+        parts.append(f"--session {session}")
     
     # Add run if present
     run = file_entities.get('run')
     if run:
-        parts.append(f"-r {run}")
+        parts.append(f"--run {run}")
     
     # Add method
     parts.append(f"--method {config.method}")
