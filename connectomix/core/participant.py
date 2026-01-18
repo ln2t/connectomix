@@ -305,11 +305,19 @@ def run_participant_pipeline(
                     # Compute connectivity for each condition separately
                     for condition_name, condition_mask in censor.condition_masks.items():
                         n_vols = np.sum(condition_mask)
+                        
+                        # Warn if very few volumes, but still compute connectivity
+                        # (validation warnings are already issued in censoring.py)
                         if n_vols < config.temporal_censoring.min_volumes_retained:
                             logger.warning(
-                                f"Skipping condition '{condition_name}': only {n_vols} volumes "
-                                f"(minimum: {config.temporal_censoring.min_volumes_retained})"
+                                f"⚠️ Condition '{condition_name}' has only {n_vols} volumes "
+                                f"(recommended minimum: {config.temporal_censoring.min_volumes_retained}). "
+                                f"Connectivity will be computed but results may be unreliable."
                             )
+                        
+                        # Skip only if no volumes at all
+                        if n_vols == 0:
+                            logger.warning(f"Skipping condition '{condition_name}': no volumes to analyze")
                             continue
                         
                         logger.info(f"Computing connectivity for condition '{condition_name}' ({n_vols} volumes)")
