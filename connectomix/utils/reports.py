@@ -1417,11 +1417,15 @@ class ParticipantReportGenerator:
             n_bins = 100
             bins = np.linspace(clip_min, clip_max, n_bins + 1)
             
-            # Plot histograms with transparency
+            # Plot histograms with transparency, normalized to percentages
+            # Use weights to convert counts to percentages
+            weights_orig = np.ones(len(original_data)) / len(original_data) * 100
+            weights_den = np.ones(len(denoised_data)) / len(denoised_data) * 100
+            
             ax.hist(original_data, bins=bins, alpha=0.5, color='steelblue', 
-                   density=True, label='Before denoising (z-scored)', edgecolor='none')
+                   weights=weights_orig, label='Before denoising (z-scored)', edgecolor='none')
             ax.hist(denoised_data, bins=bins, alpha=0.5, color='coral', 
-                   density=True, label='After denoising', edgecolor='none')
+                   weights=weights_den, label='After denoising', edgecolor='none')
             
             # Add zero reference line
             ax.axvline(0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
@@ -1430,7 +1434,7 @@ class ParticipantReportGenerator:
             ax.set_xlim(clip_min, clip_max)
             
             ax.set_xlabel('Z-scored Intensity', fontsize=11)
-            ax.set_ylabel('Density', fontsize=11)
+            ax.set_ylabel('Percentage of voxels (%)', fontsize=11)
             ax.set_title('Distribution of Voxel Values Before and After Denoising (z-scored)', 
                         fontsize=12, fontweight='bold')
             ax.legend(loc='upper right', fontsize=9)
