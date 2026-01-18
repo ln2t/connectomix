@@ -917,6 +917,35 @@ class ParticipantReportGenerator:
             self._logger.warning(f"Could not save matrix to disk: {e}")
             return None
     
+    def _build_bids_base_filename(self) -> str:
+        """Build BIDS-compliant base filename from available entities.
+        
+        Returns:
+            Base filename with BIDS entities (e.g., 'sub-01_ses-1_task-rest')
+        """
+        if self.subject_id.startswith('sub-'):
+            # subject_id already contains BIDS formatting
+            parts = [self.subject_id]
+        else:
+            # Build from individual components
+            parts = [f"sub-{self.subject_id}"]
+            if self.session:
+                parts.append(f"ses-{self.session}")
+            if self.task:
+                parts.append(f"task-{self.task}")
+            if self.run:
+                parts.append(f"run-{self.run}")
+        
+        # Add optional entities
+        if self.space:
+            parts.append(f"space-{self.space}")
+        if self.censoring:
+            parts.append(f"censoring-{self.censoring}")
+        if self.condition:
+            parts.append(f"condition-{self.condition}")
+        
+        return "_".join(parts)
+    
     def set_command_line(self, command: str) -> None:
         """Store command line used to run analysis."""
         self.command_line = command
@@ -1175,14 +1204,19 @@ class ParticipantReportGenerator:
                 corr_fig_id = self._get_unique_figure_id()
                 corr_img_data = self._figure_to_base64(corr_fig)
                 
+                # Build BIDS-compliant filename
+                bids_base = self._build_bids_base_filename()
+                corr_fig_filename = f"{bids_base}_confounds-correlation.png"
+                corr_npy_filename = f"{bids_base}_confounds-correlation.npy"
+                
                 # Save figure to figures dir
-                self._save_figure_to_disk(corr_fig, 'confounds_correlation.png')
+                self._save_figure_to_disk(corr_fig, corr_fig_filename)
                 
                 # Save correlation matrix as .npy to connectivity_data dir
                 if corr_df is not None:
                     self._save_matrix_to_disk(
                         corr_df.values,
-                        'confounds_correlation.npy',
+                        corr_npy_filename,
                         labels=list(corr_df.columns),
                         description="Pearson correlation matrix between confound regressors"
                     )
@@ -1194,7 +1228,7 @@ class ParticipantReportGenerator:
                 <div class="figure-container">
                     <div class="figure-wrapper">
                         <img id="{corr_fig_id}" src="data:image/png;base64,{corr_img_data}">
-                        <button class="download-btn" onclick="downloadFigure('{corr_fig_id}', 'confounds_correlation.png')">
+                        <button class="download-btn" onclick="downloadFigure('{corr_fig_id}', '{corr_fig_filename}')">
                             ⬇️ Download
                         </button>
                     </div>
