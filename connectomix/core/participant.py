@@ -289,7 +289,7 @@ def run_participant_pipeline(
                         denoised_img=denoised_img,
                         func_path=func_path,
                         confounds_path=confounds_path,
-                        bids_dir=bids_dir,
+                        layout=layout,
                         config=config,
                         logger=logger,
                     )
@@ -503,7 +503,7 @@ def _apply_temporal_censoring(
     denoised_img: nib.Nifti1Image,
     func_path: Path,
     confounds_path: Path,
-    bids_dir: Path,
+    layout: "BIDSLayout",
     config: ParticipantConfig,
     logger: logging.Logger,
 ) -> Tuple[TemporalCensor, Dict]:
@@ -517,8 +517,8 @@ def _apply_temporal_censoring(
         Original functional file path (for finding events file).
     confounds_path : Path
         Path to confounds file.
-    bids_dir : Path
-        BIDS root directory.
+    layout : BIDSLayout
+        BIDS layout for finding events file.
     config : ParticipantConfig
         Configuration object.
     logger : Logger
@@ -571,9 +571,9 @@ def _apply_temporal_censoring(
     if config.temporal_censoring.condition_selection.enabled:
         cs = config.temporal_censoring.condition_selection
         
-        # Find events file
+        # Find events file using BIDSLayout
         if cs.events_file == "auto":
-            events_path = find_events_file(func_path, bids_dir, logger)
+            events_path = find_events_file(func_path, layout, logger)
             if events_path is None:
                 raise PreprocessingError(
                     f"Could not find events.tsv file for {func_path.name}. "

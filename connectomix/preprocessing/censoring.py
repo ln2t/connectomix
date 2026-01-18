@@ -605,14 +605,17 @@ def load_events_file(
 
 def find_events_file(
     func_path: Path,
-    bids_dir: Path,
+    layout: "BIDSLayout",
     logger: Optional[logging.Logger] = None,
 ) -> Optional[Path]:
-    """Find BIDS events file matching a functional file.
+    """Find BIDS events file matching a functional file using BIDSLayout.
+    
+    Uses BIDSLayout to properly query for events.tsv in the raw BIDS dataset,
+    matching the subject, session, task, and run entities from the functional file.
     
     Args:
-        func_path: Path to functional file.
-        bids_dir: Path to BIDS root directory.
+        func_path: Path to functional file (from fMRIPrep derivatives).
+        layout: BIDSLayout object with access to raw BIDS data.
         logger: Optional logger.
         
     Returns:
@@ -631,30 +634,50 @@ def find_events_file(
             key, value = part.split('-', 1)
             entities[key] = value
     
-    # Build events filename
-    # Events file is in raw BIDS: sub-XX/func/sub-XX_task-YY_events.tsv
     if 'sub' not in entities or 'task' not in entities:
         _logger.warning("Cannot find events file: missing sub or task entity")
         return None
     
-    events_name_parts = [f"sub-{entities['sub']}"]
+    # Build query for BIDSLayout
+    query = {
+        'subject': entities['sub'],
+        'task': entities['task'].replace('_bold.nii.gz', '').replace('_bold.nii', ''),
+        'suffix': 'events',
+        'extension': '.tsv',
+    }
+    
+    # Add session if present
     if 'ses' in entities:
-        events_name_parts.append(f"ses-{entities['ses']}")
-    events_name_parts.append(f"task-{entities['task']}")
-    events_name_parts.append("events.tsv")
+        query['session'] = entities['ses']
     
-    events_name = "_".join(events_name_parts)
+    # Add run if present
+    if 'run' in entities:
+        query['run'] = entities['run']
     
-    # Look for events file
-    sub_dir = bids_dir / f"sub-{entities['sub']}"
-    if 'ses' in entities:
-        sub_dir = sub_dir / f"ses-{entities['ses']}"
+    _logger.debug(f"Querying BIDSLayout for events file: {query}")
     
-    events_path = sub_dir / "func" / events_name
-    
-    if events_path.exists():
-        _logger.debug(f"Found events file: {events_path}")
-        return events_path
-    
-    _logger.debug(f"Events file not found: {events_path}")
-    return None
+    try:
+        # Query the layout - this will search in raw BIDS directory
+        events_files = layout.get(**query)
+        
+        if events_files:
+            events_path = Path(events_files[0].path)
+            _logger.debug(f"Found events file via BIDSLayout: {events_path}")
+            return events_path
+        else:
+            _logger.debug(f"No events file found matching query: {query}")
+            
+            # Try without run entity (sometimes events are shared across runs)
+            if 'run' in query:
+                query_no_run = {k: v for k, v in query.items() if k != 'run'}
+                events_files = layout.get(**query_no_run)
+                if events_files:
+                    events_path = Path(events_files[0].path)
+                    _logger.debug(f"Found events file (ignoring run): {events_path}")
+                    return events_path
+            
+            return None
+            
+    except Exception as e:
+        _logger.warning(f"Error querying BIDSLayout for events: {e}")
+        return None
