@@ -1854,6 +1854,30 @@ class ParticipantReportGenerator:
                 </div>
                 '''
                 
+                # Create and add connectome glass brain plot
+                connectome_fig = self._create_connectome_plot(matrix, connectivity_type)
+                if connectome_fig is not None:
+                    connectome_fig_id = self._get_unique_figure_id()
+                    connectome_img_data = self._figure_to_base64(connectome_fig, dpi=150)
+                    connectome_filename = f"connectome_{name}.png"
+                    self._save_figure_to_disk(connectome_fig, connectome_filename, dpi=150)
+                    plt.close(connectome_fig)
+                    
+                    html += f'''
+                <div class="figure-container">
+                    <div class="figure-wrapper">
+                        <img id="{connectome_fig_id}" src="data:image/png;base64,{connectome_img_data}">
+                        <button class="download-btn" onclick="downloadFigure('{connectome_fig_id}', '{connectome_filename}')">
+                            ⬇️ Download
+                        </button>
+                    </div>
+                    <div class="figure-caption">
+                        Figure: {display_name} connectome visualization (glass brain, axial view).
+                        Shows the strongest 20% of connections between brain regions.
+                    </div>
+                </div>
+                '''
+                
                 # Create and add histogram
                 hist_fig = self._create_connectivity_histogram(matrix, name, connectivity_type)
                 if hist_fig is not None:
@@ -2012,6 +2036,80 @@ class ParticipantReportGenerator:
             
         except Exception as e:
             logger.warning(f"Could not create connectivity histogram: {e}")
+            return None
+    
+    def _create_connectome_plot(
+        self,
+        matrix: np.ndarray,
+        connectivity_type: Optional[str] = None
+    ) -> Optional[plt.Figure]:
+        """Create connectome glass brain plot using nilearn.
+        
+        Args:
+            matrix: Connectivity matrix (N x N).
+            connectivity_type: Type of connectivity measure.
+            
+        Returns:
+            Matplotlib figure with glass brain plot, or None if failed.
+        """
+        try:
+            from nilearn import plotting
+            from ..data.atlases import get_atlas_coords
+            
+            # Get atlas coordinates
+            if hasattr(self.config, 'atlas') and self.config.atlas:
+                try:
+                    coords = get_atlas_coords(self.config.atlas)
+                except Exception as e:
+                    logger.warning(f"Could not get atlas coordinates: {e}")
+                    return None
+            else:
+                logger.warning("No atlas specified, cannot create connectome plot")
+                return None
+            
+            # Ensure coords and matrix dimensions match
+            if len(coords) != matrix.shape[0]:
+                logger.warning(
+                    f"Coordinate count ({len(coords)}) does not match matrix size ({matrix.shape[0]})"
+                )
+                return None
+            
+            # Build labels
+            type_labels = {
+                'correlation': 'Pearson Correlation',
+                'covariance': 'Covariance',
+                'partial correlation': 'Partial Correlation',
+                'precision': 'Precision'
+            }
+            measure_label = type_labels.get(connectivity_type, 'Connectivity')
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            # For connectome plot, we threshold edges to show only the strongest
+            # Use 80th percentile to show top 20% of connections
+            plotting.plot_connectome(
+                matrix,
+                coords,
+                node_color='steelblue',
+                node_size=30,
+                edge_threshold="80%",  # Show top 20% of edges
+                edge_vmin=np.percentile(matrix, 5),
+                edge_vmax=np.percentile(matrix, 95),
+                display_mode='z',  # Axial view
+                colorbar=True,
+                axes=ax,
+                title=f'{measure_label} Connectome (axial view, top 20% edges)'
+            )
+            
+            plt.tight_layout()
+            return fig
+            
+        except ImportError as e:
+            logger.warning(f"Could not import required libraries for connectome plot: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Could not create connectome plot: {e}")
             return None
     
     def _build_qa_section(self) -> str:
