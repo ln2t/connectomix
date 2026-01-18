@@ -409,31 +409,61 @@ class TemporalCensor:
     def validate(self) -> None:
         """Check if enough volumes remain after censoring.
         
+        When condition selection is active, validates that each condition
+        has sufficient volumes. Otherwise validates the global mask.
+        
         Raises:
             PreprocessingError: If too few volumes remain.
         """
-        n_retained = np.sum(self.mask)
-        fraction_retained = n_retained / self.n_volumes
-        
-        if n_retained < self.config.min_volumes_retained:
-            raise PreprocessingError(
-                f"Too few volumes after censoring: {n_retained} volumes remaining "
-                f"(minimum required: {self.config.min_volumes_retained}). "
-                f"Consider relaxing censoring parameters."
-            )
-        
-        if fraction_retained < self.config.min_fraction_retained:
-            raise PreprocessingError(
-                f"Too few volumes after censoring: {fraction_retained:.1%} remaining "
-                f"(minimum required: {self.config.min_fraction_retained:.0%}). "
-                f"Consider relaxing censoring parameters."
-            )
-        
-        if fraction_retained < self.config.warn_fraction_retained:
-            self._logger.warning(
-                f"⚠️ Only {fraction_retained:.1%} of volumes retained after censoring. "
-                f"Interpret results with caution."
-            )
+        # When condition selection is active, validate each condition
+        if self.condition_masks:
+            for cond_name, cond_mask in self.condition_masks.items():
+                n_retained = np.sum(cond_mask)
+                fraction_retained = n_retained / self.n_volumes
+                
+                if n_retained < self.config.min_volumes_retained:
+                    raise PreprocessingError(
+                        f"Too few volumes for condition '{cond_name}': {n_retained} volumes "
+                        f"(minimum required: {self.config.min_volumes_retained}). "
+                        f"Consider relaxing censoring parameters or excluding this condition."
+                    )
+                
+                if fraction_retained < self.config.min_fraction_retained:
+                    raise PreprocessingError(
+                        f"Too few volumes for condition '{cond_name}': {fraction_retained:.1%} "
+                        f"(minimum required: {self.config.min_fraction_retained:.0%}). "
+                        f"Consider relaxing censoring parameters."
+                    )
+                
+                if fraction_retained < self.config.warn_fraction_retained:
+                    self._logger.warning(
+                        f"⚠️ Only {fraction_retained:.1%} of volumes retained for condition "
+                        f"'{cond_name}'. Interpret results with caution."
+                    )
+        else:
+            # Validate global mask
+            n_retained = np.sum(self.mask)
+            fraction_retained = n_retained / self.n_volumes
+            
+            if n_retained < self.config.min_volumes_retained:
+                raise PreprocessingError(
+                    f"Too few volumes after censoring: {n_retained} volumes remaining "
+                    f"(minimum required: {self.config.min_volumes_retained}). "
+                    f"Consider relaxing censoring parameters."
+                )
+            
+            if fraction_retained < self.config.min_fraction_retained:
+                raise PreprocessingError(
+                    f"Too few volumes after censoring: {fraction_retained:.1%} remaining "
+                    f"(minimum required: {self.config.min_fraction_retained:.0%}). "
+                    f"Consider relaxing censoring parameters."
+                )
+            
+            if fraction_retained < self.config.warn_fraction_retained:
+                self._logger.warning(
+                    f"⚠️ Only {fraction_retained:.1%} of volumes retained after censoring. "
+                    f"Interpret results with caution."
+                )
     
     def apply_to_image(
         self,
@@ -517,23 +547,45 @@ class TemporalCensor:
         Returns:
             Dictionary with censoring summary statistics.
         """
-        n_retained = np.sum(self.mask)
-        n_censored = self.n_volumes - n_retained
+        n_global_retained = np.sum(self.mask)
+        n_global_censored = self.n_volumes - n_global_retained
         
-        # Count by reason
+        # Count by reason (for global censoring: motion, initial drop, etc.)
         reason_counts = {}
         for reasons in self.censoring_log.values():
             for reason in reasons:
                 reason_counts[reason] = reason_counts.get(reason, 0) + 1
         
+        # When condition selection is active, report condition-specific stats as "retained"
+        # because those are the volumes actually used for connectivity analysis
+        if self.condition_masks:
+            # Calculate total volumes used across all conditions
+            # (union of all condition masks - volumes used at least once)
+            combined_mask = np.zeros(self.n_volumes, dtype=bool)
+            for mask in self.condition_masks.values():
+                combined_mask |= mask
+            n_retained = int(np.sum(combined_mask))
+            n_censored = self.n_volumes - n_retained
+            fraction_retained = n_retained / self.n_volumes
+        else:
+            n_retained = int(n_global_retained)
+            n_censored = int(n_global_censored)
+            fraction_retained = float(n_global_retained / self.n_volumes)
+        
         summary = {
             'enabled': self.config.enabled,
             'n_original': self.n_volumes,
-            'n_retained': int(n_retained),
-            'n_censored': int(n_censored),
-            'fraction_retained': float(n_retained / self.n_volumes),
+            'n_retained': n_retained,
+            'n_censored': n_censored,
+            'fraction_retained': fraction_retained,
             'reason_counts': reason_counts,
             'mask': self.mask.tolist(),
+            # Also include global censoring stats separately
+            'global_censoring': {
+                'n_retained': int(n_global_retained),
+                'n_censored': int(n_global_censored),
+                'fraction_retained': float(n_global_retained / self.n_volumes),
+            },
         }
         
         # Add condition info if applicable

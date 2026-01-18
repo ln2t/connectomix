@@ -1260,13 +1260,27 @@ class ParticipantReportGenerator:
             status_class = "badge-success"
             status_text = "Good Retention"
         
+        # Check if this is condition-based censoring
+        conditions = summary.get('conditions', {})
+        has_conditions = len(conditions) > 0
+        
+        # Description text varies based on censoring type
+        if has_conditions:
+            description = '''Temporal censoring was applied to select specific task conditions. 
+            Connectivity was computed separately for each condition using only the timepoints 
+            belonging to that condition.'''
+            retained_label = "Volumes Used (union of conditions)"
+        else:
+            description = '''Temporal censoring removes specific timepoints (volumes) from the fMRI data 
+            before connectivity analysis. This is useful for excluding high-motion frames 
+            or initial equilibration volumes.'''
+            retained_label = "Retained Volumes"
+        
         html = f'''
         <div class="section" id="censoring">
             <h2>⏱️ Temporal Censoring</h2>
             
-            <p>Temporal censoring removes specific timepoints (volumes) from the fMRI data 
-            before connectivity analysis. This is useful for excluding high-motion frames, 
-            initial equilibration volumes, or selecting specific task conditions.</p>
+            <p>{description}</p>
             
             <div class="metrics-grid">
                 <div class="metric-card">
@@ -1275,11 +1289,11 @@ class ParticipantReportGenerator:
                 </div>
                 <div class="metric-card">
                     <div class="metric-value">{n_retained}</div>
-                    <div class="metric-label">Retained Volumes</div>
+                    <div class="metric-label">{retained_label}</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-value">{n_censored}</div>
-                    <div class="metric-label">Censored Volumes</div>
+                    <div class="metric-label">Excluded Volumes</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-value">{fraction:.1%}</div>
@@ -1288,7 +1302,7 @@ class ParticipantReportGenerator:
             </div>
         '''
         
-        # Censoring reasons breakdown
+        # Censoring reasons breakdown (only if there are reasons from global censoring)
         if reason_counts:
             html += '''
             <h3>Censoring Breakdown</h3>
