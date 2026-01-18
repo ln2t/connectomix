@@ -1284,7 +1284,7 @@ class ParticipantReportGenerator:
                         Figure: Histogram of all voxel intensity values across all timepoints, before (blue) 
                         and after (coral) denoising. <strong>Note:</strong> For visualization purposes, 
                         the before-denoising data has been z-scored to allow comparison on the same scale 
-                        (raw BOLD units are typically ~1000s). After denoising, confound regression, 
+                        (raw BOLD values are typically ~1000). After denoising, confound regression, 
                         bandpass filtering, and standardization are applied, which changes the distribution shape.
                         <br><br>
                         <strong>Statistics (z-scored):</strong> Before: μ={orig_stats['mean']:.2f}, σ={orig_stats['std']:.2f}. 
