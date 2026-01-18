@@ -758,6 +758,7 @@ class ParticipantReportGenerator:
         label: Optional[str] = None,
         censoring_summary: Optional[Dict[str, Any]] = None,
         condition: Optional[str] = None,
+        censoring: Optional[str] = None,
     ):
         """Initialize report generator.
         
@@ -779,6 +780,7 @@ class ParticipantReportGenerator:
             label: Custom label entity for filename
             censoring_summary: Summary of temporal censoring applied
             condition: Condition name for filename (when --conditions is used)
+            censoring: Censoring method entity for filename (e.g., 'fd05')
         """
         self.subject_id = subject_id
         self.session = session
@@ -790,6 +792,7 @@ class ParticipantReportGenerator:
         self.desc = desc
         self.label = label
         self.condition = condition
+        self.censoring = censoring
         self.connectivity_paths = connectivity_paths or []
         self._logger = logger or logging.getLogger(__name__)
         
@@ -2022,6 +2025,8 @@ class ParticipantReportGenerator:
         # Build report filename
         if self.subject_id.startswith('sub-'):
             filename = self.subject_id
+            if self.censoring:
+                filename += f"_censoring-{self.censoring}"
             if self.condition:
                 filename += f"_condition-{self.condition}"
             if self.label:
@@ -2036,6 +2041,8 @@ class ParticipantReportGenerator:
                 filename_parts.append(f"ses-{self.session}")
             if self.task:
                 filename_parts.append(f"task-{self.task}")
+            if self.censoring:
+                filename_parts.append(f"censoring-{self.censoring}")
             if self.condition:
                 filename_parts.append(f"condition-{self.condition}")
             if self.label:

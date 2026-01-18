@@ -293,6 +293,11 @@ def run_participant_pipeline(
                         config=config,
                         logger=logger,
                     )
+                    
+                    # Add censoring entity to filenames if motion censoring is used
+                    censoring_entity = censor.get_censoring_entity()
+                    if censoring_entity:
+                        file_entities['censoring'] = censoring_entity
                 
                 # --- Compute connectivity ---
                 # If condition selection is enabled, compute connectivity for each condition
@@ -362,6 +367,9 @@ def run_participant_pipeline(
                         # Multiple conditions - join with "+"
                         condition_for_report = '+'.join(sorted(condition_names))
                 
+                # Get censoring entity from file_entities (set earlier if FD threshold used)
+                censoring_for_report = file_entities.get('censoring')
+                
                 _generate_participant_report(
                     file_entities=file_entities,
                     config=config,
@@ -372,6 +380,7 @@ def run_participant_pipeline(
                     logger=logger,
                     censoring_summary=censoring_summary,
                     condition=condition_for_report,
+                    censoring=censoring_for_report,
                 )
         
         # === Summary ===
@@ -394,6 +403,7 @@ def _generate_participant_report(
     logger: logging.Logger,
     censoring_summary: Optional[Dict] = None,
     condition: Optional[str] = None,
+    censoring: Optional[str] = None,
 ) -> Optional[Path]:
     """Generate HTML report for a participant analysis.
     
@@ -417,6 +427,8 @@ def _generate_participant_report(
         Summary of temporal censoring applied.
     condition : str or None
         Condition name for output filename (when --conditions is used).
+    censoring : str or None
+        Censoring method entity for output filename (e.g., 'fd05').
     
     Returns
     -------
@@ -500,6 +512,7 @@ def _generate_participant_report(
             label=config.label,
             censoring_summary=censoring_summary,
             condition=condition,
+            censoring=censoring,
         )
         
         # Generate report
@@ -722,7 +735,7 @@ def _get_output_path(
     # Build filename
     parts = []
     
-    entity_order = ['sub', 'ses', 'task', 'run', 'space', 'condition', 'method', 'atlas', 'seed', 'roi']
+    entity_order = ['sub', 'ses', 'task', 'run', 'space', 'censoring', 'condition', 'method', 'atlas', 'seed', 'roi']
     for key in entity_order:
         if key in entities and entities[key]:
             parts.append(f"{key}-{entities[key]}")
