@@ -2054,17 +2054,42 @@ class ParticipantReportGenerator:
         """
         try:
             from nilearn import plotting
-            from ..data.atlases import get_atlas_coords
+            from nilearn.plotting import find_parcellation_cut_coords
             
-            # Get atlas coordinates
-            if hasattr(self.config, 'atlas') and self.config.atlas:
-                try:
-                    coords = get_atlas_coords(self.config.atlas)
-                except Exception as e:
-                    logger.warning(f"Could not get atlas coordinates: {e}")
-                    return None
-            else:
+            # Get atlas coordinates - need to load the atlas first
+            if not hasattr(self.config, 'atlas') or not self.config.atlas:
                 logger.warning("No atlas specified, cannot create connectome plot")
+                return None
+            
+            atlas_name = self.config.atlas
+            
+            # Load atlas based on naming convention (same logic as participant.py)
+            try:
+                if atlas_name.startswith("schaefer2018"):
+                    from nilearn.datasets import fetch_atlas_schaefer_2018
+                    if "n" in atlas_name:
+                        n_rois = int(atlas_name.split("n")[1])
+                    else:
+                        n_rois = 100
+                    atlas = fetch_atlas_schaefer_2018(n_rois=n_rois, resolution_mm=2)
+                    atlas_img = atlas['maps']
+                elif atlas_name == "aal":
+                    from nilearn.datasets import fetch_atlas_aal
+                    atlas = fetch_atlas_aal()
+                    atlas_img = atlas['maps']
+                elif atlas_name == "harvardoxford":
+                    from nilearn.datasets import fetch_atlas_harvard_oxford
+                    atlas = fetch_atlas_harvard_oxford('cort-maxprob-thr25-2mm')
+                    atlas_img = atlas['maps']
+                else:
+                    logger.warning(f"Unknown atlas for connectome plot: {atlas_name}")
+                    return None
+                
+                # Get coordinates from atlas
+                coords = find_parcellation_cut_coords(atlas_img)
+                
+            except Exception as e:
+                logger.warning(f"Could not load atlas for connectome plot: {e}")
                 return None
             
             # Ensure coords and matrix dimensions match
@@ -2102,7 +2127,7 @@ class ParticipantReportGenerator:
                 title=f'{measure_label} Connectome (axial view, top 20% edges)'
             )
             
-            plt.tight_layout()
+            # Note: skip tight_layout as nilearn's axes are not compatible
             return fig
             
         except ImportError as e:
