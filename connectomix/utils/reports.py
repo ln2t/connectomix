@@ -1483,7 +1483,8 @@ class ParticipantReportGenerator:
                     </button>
                 </div>
                 <div class="figure-caption">
-                    Figure: Temporal censoring mask. Green = retained volumes, Red = censored volumes.
+                    Figure: Temporal censoring masks showing which volumes are used for connectivity analysis.
+                    See legend for color coding.
                 </div>
             </div>
             '''
@@ -1529,7 +1530,7 @@ class ParticipantReportGenerator:
                 
                 ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])
                 ax.set_yticks([])
-                ax.set_ylabel('Global\\n(motion)', fontsize=9, rotation=0, ha='right', va='center')
+                ax.set_ylabel('Global\n(motion)', fontsize=9, rotation=0, ha='right', va='center')
                 
                 global_retained = global_censoring.get('n_retained', int(np.sum(global_mask)))
                 global_frac = global_censoring.get('fraction_retained', global_retained/n_volumes)
@@ -1538,42 +1539,51 @@ class ParticipantReportGenerator:
                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
                 ax.set_title('Temporal Censoring Masks', fontsize=12, fontweight='bold')
                 
-                # Calculate combined mask (union of all conditions)
+                # Calculate combined mask (intersection of condition with global)
                 combined_mask = np.zeros(n_volumes, dtype=bool)
                 
                 # Rows 1 to N: Plot each condition
                 for idx, (cond_name, cond_info) in enumerate(sorted(conditions.items())):
                     ax = axes[idx + 1]  # Offset by 1 for global row
-                    n_vols = cond_info.get('n_volumes', 0)
-                    cond_frac = cond_info.get('fraction', 0)
                     
-                    # Get the actual mask data
+                    # Get the actual mask data (this is the raw condition timing)
                     cond_mask_data = cond_info.get('mask', None)
                     if cond_mask_data is not None:
                         cond_mask = np.array(cond_mask_data, dtype=bool)
                     else:
                         # Fallback: create approximate mask
+                        n_vols = cond_info.get('n_volumes', 0)
                         cond_mask = np.zeros(n_volumes, dtype=bool)
                         cond_mask[:n_vols] = True
                     
-                    # Create colors: green for in-condition, light gray for out-of-condition
+                    # The effective mask is the intersection of condition AND global
+                    effective_mask = cond_mask & global_mask
+                    n_effective = int(np.sum(effective_mask))
+                    effective_frac = n_effective / n_volumes
+                    
+                    # Create colors showing:
+                    # - Green: in condition AND passed global (actually used)
+                    # - Orange: in condition BUT failed global (would be used but censored)
+                    # - Light gray: not in condition
                     colors = np.zeros((1, n_volumes, 3))
-                    colors[0, cond_mask, :] = [0.2, 0.8, 0.2]   # Green for in-condition
-                    colors[0, ~cond_mask, :] = [0.85, 0.85, 0.85]  # Light gray for out-of-condition
+                    colors[0, :, :] = [0.85, 0.85, 0.85]  # Default: light gray (not in condition)
+                    colors[0, cond_mask & ~global_mask, :] = [1.0, 0.6, 0.2]  # Orange: in condition but censored
+                    colors[0, effective_mask, :] = [0.2, 0.8, 0.2]  # Green: actually used
                     
                     ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])
                     ax.set_yticks([])
                     ax.set_ylabel(f'{cond_name}', fontsize=9, rotation=0, ha='right', va='center')
-                    ax.text(n_volumes * 0.98, 0.5, f'{n_vols}/{n_volumes} ({cond_frac:.1%})',
+                    ax.text(n_volumes * 0.98, 0.5, f'{n_effective}/{n_volumes} ({effective_frac:.1%})',
                            ha='right', va='center', fontsize=8,
                            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
                     
-                    combined_mask |= cond_mask
+                    # Combined is union of effective masks (what's actually used)
+                    combined_mask |= effective_mask
                 
-                # Last row: Show combined/union mask
+                # Last row: Show combined/union mask (what's actually used across all conditions)
                 ax = axes[-1]
                 colors = np.zeros((1, n_volumes, 3))
-                colors[0, combined_mask, :] = [0.2, 0.6, 0.9]   # Blue for union
+                colors[0, combined_mask, :] = [0.2, 0.6, 0.9]   # Blue for actually used
                 colors[0, ~combined_mask, :] = [0.9, 0.2, 0.2]  # Red for excluded
                 
                 ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])
@@ -1591,14 +1601,15 @@ class ParticipantReportGenerator:
                 # Add legend
                 from matplotlib.patches import Patch
                 legend_elements = [
-                    Patch(facecolor=[0.3, 0.7, 0.9], label='Passed global (motion OK)'),
-                    Patch(facecolor=[0.5, 0.5, 0.5], label='Globally censored (motion)'),
-                    Patch(facecolor=[0.2, 0.8, 0.2], label='In condition'),
-                    Patch(facecolor=[0.85, 0.85, 0.85], label='Out of condition'),
-                    Patch(facecolor=[0.2, 0.6, 0.9], label='Used (union)'),
+                    Patch(facecolor=[0.3, 0.7, 0.9], label='Passed motion check'),
+                    Patch(facecolor=[0.5, 0.5, 0.5], label='Failed motion check'),
+                    Patch(facecolor=[0.2, 0.8, 0.2], label='Used (in condition + passed motion)'),
+                    Patch(facecolor=[1.0, 0.6, 0.2], label='In condition but censored (motion)'),
+                    Patch(facecolor=[0.85, 0.85, 0.85], label='Not in condition'),
+                    Patch(facecolor=[0.2, 0.6, 0.9], label='Combined (any condition used)'),
                     Patch(facecolor=[0.9, 0.2, 0.2], label='Excluded'),
                 ]
-                fig.legend(handles=legend_elements, loc='upper right', fontsize=8, 
+                fig.legend(handles=legend_elements, loc='upper right', fontsize=7, 
                           bbox_to_anchor=(0.99, 0.99), ncol=2)
                 
             else:
