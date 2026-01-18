@@ -1694,28 +1694,69 @@ class ParticipantReportGenerator:
             if matrix_files:
                 data_file_path = str(matrix_files[0])
         
-        # Correlation method explanation
-        correlation_explanation = """
-            <div class="info-box">
-                <h4>📐 Correlation Method</h4>
-                <p>The connectivity matrix displays <strong>Pearson correlation coefficients</strong> 
-                between the time series of each pair of regions. For each pair of regions (i, j), 
-                the correlation r<sub>ij</sub> is computed as:</p>
-                <p style="text-align: center; font-family: monospace; margin: 10px 0;">
-                    r<sub>ij</sub> = Σ[(x<sub>i</sub> - μ<sub>i</sub>)(x<sub>j</sub> - μ<sub>j</sub>)] / (σ<sub>i</sub> × σ<sub>j</sub> × n)
-                </p>
-                <p>where x<sub>i</sub> and x<sub>j</sub> are the time series, μ and σ are their means 
-                and standard deviations, and n is the number of time points. Values range from -1 
-                (perfect anti-correlation) to +1 (perfect correlation). The diagonal is set to zero 
-                as self-correlations are not meaningful for connectivity analysis.</p>
-            </div>
-        """
+        # Explanations for each connectivity measure type
+        connectivity_explanations = {
+            'correlation': """
+                <div class="info-box">
+                    <h4>📐 Pearson Correlation</h4>
+                    <p>The <strong>Pearson correlation coefficient</strong> measures the linear relationship 
+                    between the time series of each pair of regions. For regions i and j:</p>
+                    <p style="text-align: center; font-family: monospace; margin: 10px 0;">
+                        r<sub>ij</sub> = Σ[(x<sub>i</sub> - μ<sub>i</sub>)(x<sub>j</sub> - μ<sub>j</sub>)] / (σ<sub>i</sub> × σ<sub>j</sub> × n)
+                    </p>
+                    <p>where x<sub>i</sub> and x<sub>j</sub> are the time series, μ and σ are their means 
+                    and standard deviations, and n is the number of time points. Values range from -1 
+                    (perfect anti-correlation) to +1 (perfect correlation). The diagonal is set to zero.</p>
+                    <p><strong>Use case:</strong> Standard measure for functional connectivity, captures total (direct + indirect) relationships.</p>
+                </div>
+            """,
+            'covariance': """
+                <div class="info-box">
+                    <h4>📐 Covariance</h4>
+                    <p>The <strong>covariance</strong> measures how two time series vary together, 
+                    without normalizing by variance. For regions i and j:</p>
+                    <p style="text-align: center; font-family: monospace; margin: 10px 0;">
+                        cov<sub>ij</sub> = Σ[(x<sub>i</sub> - μ<sub>i</sub>)(x<sub>j</sub> - μ<sub>j</sub>)] / (n - 1)
+                    </p>
+                    <p>Unlike correlation, covariance preserves information about signal amplitude. 
+                    Regions with higher BOLD signal variance will have larger covariance values.</p>
+                    <p><strong>Use case:</strong> When signal amplitude differences between regions are meaningful, 
+                    or as input for other analyses (e.g., structural equation modeling).</p>
+                </div>
+            """,
+            'partial correlation': """
+                <div class="info-box">
+                    <h4>📐 Partial Correlation</h4>
+                    <p>The <strong>partial correlation</strong> measures the relationship between two regions 
+                    after removing the linear effects of all other regions. For regions i and j:</p>
+                    <p style="text-align: center; font-family: monospace; margin: 10px 0;">
+                        r<sub>ij|rest</sub> = -P<sub>ij</sub> / √(P<sub>ii</sub> × P<sub>jj</sub>)
+                    </p>
+                    <p>where P is the precision matrix (inverse covariance). This reveals <em>direct</em> 
+                    connections by controlling for indirect paths through other regions. Values range from -1 to +1.</p>
+                    <p><strong>Use case:</strong> Identifying direct functional connections, reducing spurious 
+                    correlations caused by common inputs or indirect pathways.</p>
+                </div>
+            """,
+            'precision': """
+                <div class="info-box">
+                    <h4>📐 Precision (Inverse Covariance)</h4>
+                    <p>The <strong>precision matrix</strong> is the inverse of the covariance matrix:</p>
+                    <p style="text-align: center; font-family: monospace; margin: 10px 0;">
+                        P = Σ<sup>-1</sup>
+                    </p>
+                    <p>Non-zero off-diagonal elements P<sub>ij</sub> indicate <em>conditional dependence</em> 
+                    between regions i and j given all other regions. Zero elements indicate conditional 
+                    independence. The precision matrix is related to partial correlations but not normalized.</p>
+                    <p><strong>Use case:</strong> Sparse network estimation, Gaussian graphical models, 
+                    identifying direct statistical dependencies. Often regularized (e.g., graphical LASSO) for stability.</p>
+                </div>
+            """
+        }
         
-        html = f'''
+        html = '''
         <div class="section" id="connectivity">
             <h2>🔗 Connectivity Results</h2>
-            
-            {correlation_explanation}
         '''
         
         for i, (matrix, labels, name) in enumerate(self.connectivity_matrices):
@@ -1746,8 +1787,25 @@ class ParticipantReportGenerator:
                 elif data_file_path:
                     current_data_file = data_file_path
                 
+                # Determine the connectivity type from the name and show appropriate explanation
+                connectivity_type = None
+                name_lower = name.lower()
+                if 'partial' in name_lower or 'partial-correlation' in name_lower:
+                    connectivity_type = 'partial correlation'
+                elif 'precision' in name_lower:
+                    connectivity_type = 'precision'
+                elif 'covariance' in name_lower:
+                    connectivity_type = 'covariance'
+                elif 'correlation' in name_lower or i == 0:
+                    # Default to correlation for first matrix or if 'correlation' in name
+                    connectivity_type = 'correlation'
+                
+                explanation_html = connectivity_explanations.get(connectivity_type, '')
+                
                 html += f'''
                 <h3>{name}</h3>
+                
+                {explanation_html}
                 
                 <div class="metrics-grid">
                     <div class="metric-card">
