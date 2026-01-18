@@ -104,7 +104,7 @@ def compute_connectivity_matrix(
         time_series: Time series array of shape (n_timepoints, n_regions)
         kind: Type of connectivity measure:
             - 'correlation': Pearson correlation (normalized covariance)
-            - 'covariance': Sample covariance
+            - 'covariance': Sample covariance (NOT standardized)
             - 'partial correlation': Correlation controlling for other regions
             - 'precision': Inverse covariance (sparse direct connections)
     
@@ -135,7 +135,14 @@ def compute_connectivity_matrix(
         )
     
     # Use nilearn's ConnectivityMeasure for robust computation
-    conn_measure = ConnectivityMeasure(kind=kind, standardize='zscore_sample')
+    # For covariance, do NOT standardize (otherwise cov == corr)
+    # For correlation-based measures, standardize for numerical stability
+    if kind == 'covariance':
+        standardize = False
+    else:
+        standardize = 'zscore_sample'
+    
+    conn_measure = ConnectivityMeasure(kind=kind, standardize=standardize)
     
     # ConnectivityMeasure expects list of subjects, each with shape (n_samples, n_features)
     connectivity = conn_measure.fit_transform([time_series])[0]
