@@ -236,7 +236,7 @@ def run_participant_pipeline(
                 if not is_consistent:
                     resampled_path = _get_output_path(
                         output_dir, file_entities, "resampled", "bold", ".nii.gz",
-                        label=config.label
+                        label=config.label, subfolder="func"
                     )
                     
                     func_img = resample_to_reference(
@@ -262,7 +262,7 @@ def run_participant_pipeline(
                 # --- Denoise ---
                 denoised_path = _get_output_path(
                     output_dir, file_entities, "denoised", "bold", ".nii.gz",
-                    label=config.label
+                    label=config.label, subfolder="func"
                 )
                 
                 denoise_image(
@@ -694,13 +694,28 @@ def _get_output_path(
     suffix: str,
     extension: str,
     label: Optional[str] = None,
+    subfolder: Optional[str] = None,
 ) -> Path:
-    """Build output path with BIDS naming."""
+    """Build output path with BIDS naming.
+    
+    Args:
+        output_dir: Base output directory
+        entities: BIDS entities dict
+        desc: Description for desc- entity
+        suffix: BIDS suffix (e.g., bold, correlation)
+        extension: File extension (e.g., .nii.gz, .npy)
+        label: Optional custom label
+        subfolder: Optional subfolder within subject dir (e.g., 'func', 'connectivity_data')
+    """
     # Start with subject directory
     sub_dir = output_dir / f"sub-{entities.get('sub', 'unknown')}"
     
     if entities.get('ses'):
         sub_dir = sub_dir / f"ses-{entities['ses']}"
+    
+    # Add subfolder if specified
+    if subfolder:
+        sub_dir = sub_dir / subfolder
     
     sub_dir.mkdir(parents=True, exist_ok=True)
     
@@ -811,7 +826,7 @@ def _compute_connectivity(
             
             output_path = _get_output_path(
                 output_dir, file_entities, name, "effectSize", ".nii.gz",
-                label=config.label
+                label=config.label, subfolder="connectivity_data"
             )
             
             compute_seed_to_voxel(
@@ -834,7 +849,7 @@ def _compute_connectivity(
             
             output_path = _get_output_path(
                 output_dir, file_entities, roi_name, "effectSize", ".nii.gz",
-                label=config.label
+                label=config.label, subfolder="connectivity_data"
             )
             
             compute_roi_to_voxel(
@@ -849,7 +864,7 @@ def _compute_connectivity(
     elif method == "seedToSeed":
         output_path = _get_output_path(
             output_dir, file_entities, "seeds", "correlation", ".npy",
-            label=config.label
+            label=config.label, subfolder="connectivity_data"
         )
         
         compute_seed_to_seed(
@@ -867,7 +882,7 @@ def _compute_connectivity(
         
         output_path = _get_output_path(
             output_dir, file_entities, config.atlas, "correlation", ".npy",
-            label=config.label
+            label=config.label, subfolder="connectivity_data"
         )
         
         compute_roi_to_roi(

@@ -225,9 +225,11 @@ connectomix /data/bids /data/output participant -t faces \
 **Example output:**
 ```
 sub-01/
-├── sub-01_task-faces_condition-face_desc-schaefer_correlation.npy
-├── sub-01_task-faces_condition-house_desc-schaefer_correlation.npy
-└── sub-01_task-faces_condition-baseline_desc-schaefer_correlation.npy
+├── connectivity_data/
+│   ├── sub-01_task-faces_condition-face_desc-schaefer_correlation.npy
+│   ├── sub-01_task-faces_condition-house_desc-schaefer_correlation.npy
+│   └── sub-01_task-faces_condition-baseline_desc-schaefer_correlation.npy
+└── sub-01_task-faces_condition-face+house+baseline_desc-schaefer_report.html
 ```
 
 **events.tsv format:**
@@ -428,10 +430,15 @@ output_dir/
 │   ├── figures/                      # Report figures
 │   │   ├── connectivity_matrix.png
 │   │   ├── confounds_timeseries.png
+│   │   ├── confounds_correlation.png
+│   │   ├── confounds_correlation.tsv
 │   │   └── temporal_censoring.png
-│   ├── sub-01_task-rest_desc-denoised_bold.nii.gz
-│   ├── sub-01_task-rest_desc-schaefer_correlation.npy
-│   ├── sub-01_task-rest_desc-schaefer_correlation.json
+│   ├── func/                         # Denoised functional data
+│   │   ├── sub-01_task-rest_desc-denoised_bold.nii.gz
+│   │   └── sub-01_task-rest_desc-denoised_bold.json
+│   ├── connectivity_data/            # Connectivity matrices
+│   │   ├── sub-01_task-rest_desc-schaefer_correlation.npy
+│   │   └── sub-01_task-rest_desc-schaefer_correlation.json
 │   └── sub-01_task-rest_desc-schaefer_report.html
 ├── sub-02/
 │   └── ...
