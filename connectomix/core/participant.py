@@ -429,6 +429,90 @@ def run_participant_pipeline(
     return outputs
 
 
+def _build_cli_command(
+    config: ParticipantConfig,
+    file_entities: Dict[str, str],
+) -> str:
+    """Build a generic CLI command from the configuration for reproducibility.
+    
+    Paths are replaced with placeholders to avoid exposing user-specific paths.
+    
+    Parameters
+    ----------
+    config : ParticipantConfig
+        Configuration object.
+    file_entities : dict
+        BIDS entities for the current file.
+    
+    Returns
+    -------
+    str
+        CLI command with generic path placeholders.
+    """
+    parts = ["connectomix", "<rawdata>", "<derivatives>", "participant"]
+    
+    # Add participant label
+    if 'subject' in file_entities:
+        parts.append(f"-p {file_entities['subject']}")
+    
+    # Add task
+    if 'task' in file_entities:
+        parts.append(f"-t {file_entities['task']}")
+    
+    # Add session if present
+    if 'session' in file_entities:
+        parts.append(f"-s {file_entities['session']}")
+    
+    # Add run if present
+    if 'run' in file_entities:
+        parts.append(f"-r {file_entities['run']}")
+    
+    # Add method
+    parts.append(f"--method {config.method}")
+    
+    # Add atlas for ROI methods
+    if config.method in ["roiToRoi", "seedToSeed"] and config.atlas:
+        parts.append(f"--atlas {config.atlas}")
+    
+    # Add denoising options
+    if config.confounds:
+        # Show abbreviated confounds list
+        if len(config.confounds) <= 3:
+            confounds_str = ",".join(config.confounds)
+        else:
+            confounds_str = f"{config.confounds[0]},...,{config.confounds[-1]}"
+        parts.append(f"--confounds '{confounds_str}'")
+    
+    if config.high_pass:
+        parts.append(f"--high-pass {config.high_pass}")
+    
+    if config.low_pass:
+        parts.append(f"--low-pass {config.low_pass}")
+    
+    # Add temporal censoring options if enabled
+    if config.temporal_censoring.enabled:
+        tc = config.temporal_censoring
+        
+        if tc.drop_initial_volumes > 0:
+            parts.append(f"--drop-initial {tc.drop_initial_volumes}")
+        
+        if tc.motion_censoring.enabled and tc.motion_censoring.fd_threshold:
+            parts.append(f"--fd-threshold {tc.motion_censoring.fd_threshold}")
+            extend = tc.motion_censoring.extend_before or tc.motion_censoring.extend_after
+            if extend > 0:
+                parts.append(f"--fd-extend {extend}")
+        
+        if tc.condition_selection.enabled and tc.condition_selection.conditions:
+            conditions_str = " ".join(tc.condition_selection.conditions)
+            parts.append(f"--conditions {conditions_str}")
+    
+    # Add label if set
+    if config.label:
+        parts.append(f"--label {config.label}")
+    
+    return " \\\n    ".join(parts)
+
+
 def _generate_participant_report(
     file_entities: Dict[str, str],
     config: ParticipantConfig,
@@ -569,6 +653,10 @@ def _generate_participant_report(
         # Add denoising histogram data if available
         if denoising_histogram_data is not None:
             report.add_denoising_histogram_data(denoising_histogram_data)
+        
+        # Build and set the command line for reproducibility
+        cli_command = _build_cli_command(config, file_entities)
+        report.set_command_line(cli_command)
         
         # Add all connectivity matrices to the report
         if connectivity_matrices and roi_names:
