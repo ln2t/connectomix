@@ -367,7 +367,8 @@ def create_parser() -> argparse.ArgumentParser:
         help="Enable condition-based censoring for task fMRI. "
              "Specify one or more condition names from the events.tsv file. "
              "A separate connectivity matrix will be computed for each condition. "
-             "Example: --conditions face house scrambled",
+             "Use 'baseline' to select inter-trial intervals (timepoints not in any task). "
+             "Example: --conditions face house  OR  --conditions baseline",
     )
     
     censoring.add_argument(
@@ -383,7 +384,7 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="include_baseline",
         help="When using --conditions, also compute connectivity for baseline "
-             "(timepoints not in any condition).",
+             "(timepoints not in any condition). Equivalent to adding 'baseline' to --conditions.",
     )
     
     censoring.add_argument(

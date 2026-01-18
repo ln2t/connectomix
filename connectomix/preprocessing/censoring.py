@@ -273,25 +273,52 @@ class TemporalCensor:
         all_conditions = events_df[condition_col].unique().tolist()
         self._logger.info(f"Found conditions in events file: {all_conditions}")
         
-        # Determine which conditions to process
+        # Check if user requested "baseline" (special keyword for inter-trial intervals)
+        baseline_requested = False
         if cs.conditions:
-            # User specified conditions
-            conditions_to_process = cs.conditions
-            # Validate
+            # Check for special "baseline" keyword (case-insensitive)
+            baseline_keywords = {'baseline', 'rest', 'iti', 'inter-trial'}
+            requested_lower = {c.lower() for c in cs.conditions}
+            baseline_requested = bool(requested_lower & baseline_keywords)
+            
+            # Filter out baseline keywords from conditions to process
+            conditions_to_process = [c for c in cs.conditions if c.lower() not in baseline_keywords]
+            
+            # Validate remaining conditions exist in events file
             for cond in conditions_to_process:
                 if cond not in all_conditions:
                     raise PreprocessingError(
                         f"Condition '{cond}' not found in events file. "
-                        f"Available conditions: {all_conditions}"
+                        f"Available conditions: {all_conditions}\n"
+                        f"Tip: Use 'baseline' to select inter-trial intervals."
                     )
         else:
             # Process all conditions
             conditions_to_process = all_conditions
         
+        # Also check include_baseline flag
+        baseline_requested = baseline_requested or cs.include_baseline
+        
         # Create volume times (center of each volume)
         volume_times = np.arange(self.n_volumes) * self.tr + self.tr / 2
         
-        # Create mask for each condition
+        # First, compute mask for ALL events (needed for baseline calculation)
+        all_events_mask = np.zeros(self.n_volumes, dtype=bool)
+        for _, event in events_df.iterrows():
+            onset = event['onset']
+            duration = event['duration']
+            
+            # Apply transition buffer for baseline calculation too
+            buffered_onset = onset + cs.transition_buffer
+            buffered_end = onset + duration - cs.transition_buffer
+            
+            if buffered_end <= buffered_onset:
+                continue
+            
+            in_event = (volume_times >= buffered_onset) & (volume_times < buffered_end)
+            all_events_mask |= in_event
+        
+        # Create mask for each requested condition
         self.condition_masks = {}
         
         for condition in conditions_to_process:
@@ -328,19 +355,15 @@ class TemporalCensor:
                 f"({100 * n_volumes_cond / self.n_volumes:.1f}%)"
             )
         
-        # Optionally include baseline (time not in any condition)
-        if cs.include_baseline:
-            # Baseline = not in any condition
-            any_condition = np.zeros(self.n_volumes, dtype=bool)
-            for _, cond_mask in self.condition_masks.items():
-                any_condition |= cond_mask
-            
-            baseline_mask = ~any_condition & self.mask
+        # Add baseline if requested (via --conditions baseline or --include-baseline)
+        if baseline_requested:
+            # Baseline = not in any condition from events file
+            baseline_mask = ~all_events_mask & self.mask
             self.condition_masks['baseline'] = baseline_mask
             
             n_baseline = np.sum(baseline_mask)
             self._logger.info(
-                f"Condition 'baseline': {n_baseline} volumes "
+                f"Condition 'baseline' (inter-trial intervals): {n_baseline} volumes "
                 f"({100 * n_baseline / self.n_volumes:.1f}%)"
             )
         

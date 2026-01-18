@@ -194,7 +194,16 @@ Compute connectivity for specific experimental conditions:
 connectomix /data/bids /data/output participant -t faces \
   --conditions face house scrambled
 
-# Include baseline (inter-trial intervals)
+# Compute connectivity for BASELINE only (inter-trial intervals)
+# Use when you want to exclude task periods and keep only rest/ITI
+connectomix /data/bids /data/output participant -t gas \
+  --conditions baseline
+
+# Compute connectivity for both task conditions AND baseline
+connectomix /data/bids /data/output participant -t faces \
+  --conditions face house baseline
+
+# Legacy: --include-baseline flag (equivalent to adding 'baseline' to --conditions)
 connectomix /data/bids /data/output participant -t faces \
   --conditions face house --include-baseline
 
@@ -202,6 +211,9 @@ connectomix /data/bids /data/output participant -t faces \
 connectomix /data/bids /data/output participant -t faces \
   --conditions face house --transition-buffer 2.0
 ```
+
+**Special condition keywords:**
+- `baseline`, `rest`, `iti`, `inter-trial`: Select timepoints NOT covered by any event in events.tsv
 
 **How it works:**
 1. Reads the `events.tsv` file for your task (automatically found in BIDS structure)
@@ -215,7 +227,7 @@ connectomix /data/bids /data/output participant -t faces \
 sub-01/
 ├── sub-01_task-faces_condition-face_desc-schaefer_correlation.npy
 ├── sub-01_task-faces_condition-house_desc-schaefer_correlation.npy
-└── sub-01_task-faces_condition-scrambled_desc-schaefer_correlation.npy
+└── sub-01_task-faces_condition-baseline_desc-schaefer_correlation.npy
 ```
 
 **events.tsv format:**
@@ -262,9 +274,9 @@ connectomix /data/bids /data/output participant -t faces \
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `--conditions COND [...]` | Condition names from events.tsv | (disabled) |
+| `--conditions COND [...]` | Condition names from events.tsv (use 'baseline' for inter-trial intervals) | (disabled) |
 | `--events-file FILE` | Path to events.tsv | auto-detect |
-| `--include-baseline` | Include inter-trial intervals | false |
+| `--include-baseline` | Include inter-trial intervals (same as adding 'baseline' to --conditions) | false |
 | `--transition-buffer SEC` | Exclude N seconds around transitions | 0 |
 | `--fd-threshold MM` | Remove volumes with FD > threshold | (disabled) |
 | `--fd-extend N` | Also remove ±N volumes around high-FD | 0 |
