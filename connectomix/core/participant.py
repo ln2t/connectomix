@@ -81,7 +81,7 @@ def run_participant_pipeline(
         ...     subject=["01", "02"],
         ...     tasks=["rest"],
         ...     method="roiToRoi",
-        ...     atlas="schaefer2018_100"
+        ...     atlas="schaefer2018n100"
         ... )
         >>> outputs = run_participant_pipeline(
         ...     Path("/data/bids"),
@@ -770,9 +770,9 @@ def _load_standard_atlas(
     if atlas_name.startswith("schaefer2018"):
         from nilearn.datasets import fetch_atlas_schaefer_2018
         
-        # Extract number of parcels
-        if "_" in atlas_name:
-            n_rois = int(atlas_name.split("_")[1])
+        # Extract number of parcels (format: schaefer2018n100 or schaefer2018n200)
+        if "n" in atlas_name:
+            n_rois = int(atlas_name.split("n")[1])
         else:
             n_rois = 100
         
@@ -810,7 +810,7 @@ def _load_standard_atlas(
     else:
         raise ConnectomixError(
             f"Unknown atlas: {atlas_name}\n"
-            f"Available atlases: schaefer2018_100, schaefer2018_200, aal, harvardoxford"
+            f"Available atlases: schaefer2018n100, schaefer2018n200, aal, harvardoxford"
         )
     
     # Final sanity check: remove any 'Background' entries

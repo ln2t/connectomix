@@ -157,7 +157,7 @@ Whole-brain parcellation-based connectivity matrix using a standard atlas.
 
 ```yaml
 method: "roiToRoi"
-atlas: "schaefer2018_100"
+atlas: "schaefer2018n100"
 connectivity_kind: "correlation"  # or "covariance"
 ```
 
@@ -167,8 +167,8 @@ connectivity_kind: "correlation"  # or "covariance"
 
 | Name | Regions | Description |
 |------|---------|-------------|
-| `schaefer2018_100` | 100 | Schaefer 7-network 100 parcels |
-| `schaefer2018_200` | 200 | Schaefer 7-network 200 parcels |
+| `schaefer2018n100` | 100 | Schaefer 7-network 100 parcels |
+| `schaefer2018n200` | 200 | Schaefer 7-network 200 parcels |
 | `aal` | 116 | Automated Anatomical Labeling |
 | `harvardoxford` | 96 | Harvard-Oxford cortical + subcortical |
 | `canica` | Custom | Data-driven ICA (computed from your data) |
@@ -319,7 +319,7 @@ spaces: ["MNI152NLin2009cAsym"]
 
 # Analysis method
 method: "roiToRoi"
-atlas: "schaefer2018_100"
+atlas: "schaefer2018n100"
 connectivity_kind: "correlation"
 
 # Denoising
@@ -540,7 +540,7 @@ Reduce `n_permutations` (e.g., 5000) or increase `n_jobs` for parallelization.
 | `low_pass` | float | 0.08 | Low-pass cutoff (Hz) |
 | `seeds_file` | path | null | Seeds TSV file |
 | `radius` | float | 5.0 | Seed sphere radius (mm) |
-| `atlas` | string | "schaefer2018_100" | Atlas name |
+| `atlas` | string | "schaefer2018n100" | Atlas name |
 | `connectivity_kind` | string | "correlation" | Connectivity measure |
 
 ### Temporal Censoring Parameters

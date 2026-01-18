@@ -138,7 +138,7 @@ class ParticipantConfig:
     
     # Method-specific parameters - ROI-based
     roi_masks: Optional[List[Path]] = None
-    atlas: str = "schaefer2018_100"
+    atlas: str = "schaefer2018n100"
     
     # Connectivity computation
     connectivity_kind: str = "correlation"

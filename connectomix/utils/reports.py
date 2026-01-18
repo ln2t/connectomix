@@ -16,7 +16,7 @@ Example:
     ...     config=config,
     ...     output_dir=Path("/data/output")
     ... )
-    >>> report.add_connectivity_matrix(matrix, labels, "schaefer2018_100")
+    >>> report.add_connectivity_matrix(matrix, labels, "schaefer2018n100")
     >>> report.add_denoising_plot(confounds_df, ["trans_x", "rot_y"])
     >>> report.generate()
 """
