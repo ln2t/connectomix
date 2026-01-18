@@ -1423,12 +1423,6 @@ class ParticipantReportGenerator:
             ax.hist(denoised_data, bins=bins, alpha=0.5, color='coral', 
                    density=True, label='After denoising', edgecolor='none')
             
-            # Add vertical lines for means
-            ax.axvline(original_stats['mean'], color='steelblue', linestyle='--', 
-                      linewidth=2, label=f"Original mean: {original_stats['mean']:.2f}")
-            ax.axvline(denoised_stats['mean'], color='coral', linestyle='--', 
-                      linewidth=2, label=f"Denoised mean: {denoised_stats['mean']:.2f}")
-            
             # Add zero reference line
             ax.axvline(0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
             
@@ -1440,14 +1434,6 @@ class ParticipantReportGenerator:
             ax.set_title('Distribution of Voxel Values Before and After Denoising (z-scored)', 
                         fontsize=12, fontweight='bold')
             ax.legend(loc='upper right', fontsize=9)
-            
-            # Add compact statistics as text box
-            stats_text = (
-                f"N={original_stats['n_values']:,}"
-            )
-            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=8,
-                   verticalalignment='top', fontfamily='monospace',
-                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7, pad=0.3))
             
             plt.tight_layout()
             return fig
