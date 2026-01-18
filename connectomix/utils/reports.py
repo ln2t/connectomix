@@ -1409,27 +1409,17 @@ class ParticipantReportGenerator:
             # Create figure
             fig, ax = plt.subplots(figsize=(10, 5))
             
-            # Compute common bin edges for both histograms to allow comparison
-            # Use the range that covers both distributions
-            all_min = min(original_stats['min'], denoised_stats['min'])
-            all_max = max(original_stats['max'], denoised_stats['max'])
+            # For visualization, clip to ±3 std to focus on the main distribution
+            # Both distributions are z-scored so they have similar scales
+            clip_min = -3.5
+            clip_max = 3.5
             
-            # For visualization, clip extreme outliers (beyond 5 std from mean)
-            # This prevents outliers from compressing the main distribution
-            orig_clip_min = original_stats['mean'] - 5 * original_stats['std']
-            orig_clip_max = original_stats['mean'] + 5 * original_stats['std']
-            den_clip_min = denoised_stats['mean'] - 5 * denoised_stats['std']
-            den_clip_max = denoised_stats['mean'] + 5 * denoised_stats['std']
-            
-            clip_min = min(orig_clip_min, den_clip_min)
-            clip_max = max(orig_clip_max, den_clip_max)
-            
-            n_bins = 80
+            n_bins = 100
             bins = np.linspace(clip_min, clip_max, n_bins + 1)
             
             # Plot histograms with transparency
             ax.hist(original_data, bins=bins, alpha=0.5, color='steelblue', 
-                   density=True, label='Before denoising', edgecolor='none')
+                   density=True, label='Before denoising (z-scored)', edgecolor='none')
             ax.hist(denoised_data, bins=bins, alpha=0.5, color='coral', 
                    density=True, label='After denoising', edgecolor='none')
             
@@ -1442,21 +1432,22 @@ class ParticipantReportGenerator:
             # Add zero reference line
             ax.axvline(0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
             
-            ax.set_xlabel('Voxel Intensity', fontsize=11)
+            # Set x-axis limits explicitly
+            ax.set_xlim(clip_min, clip_max)
+            
+            ax.set_xlabel('Z-scored Intensity', fontsize=11)
             ax.set_ylabel('Density', fontsize=11)
-            ax.set_title('Distribution of Voxel Values Before and After Denoising', 
+            ax.set_title('Distribution of Voxel Values Before and After Denoising (z-scored)', 
                         fontsize=12, fontweight='bold')
             ax.legend(loc='upper right', fontsize=9)
             
-            # Add statistics as text box
+            # Add compact statistics as text box
             stats_text = (
-                f"Before: μ={original_stats['mean']:.2f}, σ={original_stats['std']:.2f}\n"
-                f"After:  μ={denoised_stats['mean']:.2f}, σ={denoised_stats['std']:.2f}\n"
-                f"N values: {original_stats['n_values']:,}"
+                f"N={original_stats['n_values']:,}"
             )
-            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=9,
+            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=8,
                    verticalalignment='top', fontfamily='monospace',
-                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7, pad=0.3))
             
             plt.tight_layout()
             return fig
