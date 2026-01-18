@@ -158,10 +158,23 @@ Whole-brain parcellation-based connectivity matrix using a standard atlas.
 ```yaml
 method: "roiToRoi"
 atlas: "schaefer2018n100"
-connectivity_kind: "correlation"  # or "covariance"
 ```
 
-**Output:** N×N correlation matrix where N = number of atlas regions.
+**Output:** Multiple connectivity matrices (N×N where N = number of atlas regions):
+- `*_desc-correlation_connectivity.npy` - Pearson correlation
+- `*_desc-covariance_connectivity.npy` - Sample covariance
+- `*_desc-partial-correlation_connectivity.npy` - Partial correlation (controlling for other regions)
+- `*_desc-precision_connectivity.npy` - Inverse covariance (sparse direct connections)
+- `*_timeseries.npy` - Raw ROI time series for reanalysis
+
+### Available Connectivity Measures
+
+| Measure | Description |
+|---------|-------------|
+| `correlation` | Pearson correlation between region time series (normalized) |
+| `covariance` | Sample covariance matrix |
+| `partial correlation` | Correlation controlling for effects of all other regions |
+| `precision` | Inverse covariance (sparse, reveals direct connections) |
 
 ### Available Atlases
 

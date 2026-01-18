@@ -1,7 +1,13 @@
 """Matrix operations for connectivity analysis."""
 
 import numpy as np
-from typing import Tuple
+from typing import Dict, List, Tuple
+
+from nilearn.connectome import ConnectivityMeasure
+
+
+# All supported connectivity kinds
+CONNECTIVITY_KINDS = ['correlation', 'covariance', 'partial correlation', 'precision']
 
 
 def sym_matrix_to_vec(matrix: np.ndarray) -> np.ndarray:
@@ -96,10 +102,14 @@ def compute_connectivity_matrix(
     
     Args:
         time_series: Time series array of shape (n_timepoints, n_regions)
-        kind: Type of connectivity measure ('correlation', 'covariance')
+        kind: Type of connectivity measure:
+            - 'correlation': Pearson correlation (normalized covariance)
+            - 'covariance': Sample covariance
+            - 'partial correlation': Correlation controlling for other regions
+            - 'precision': Inverse covariance (sparse direct connections)
     
     Returns:
-        Connectivity matrix of shape (n_regions, n_regions) with zeros on diagonal
+        Connectivity matrix of shape (n_regions, n_regions)
     
     Raises:
         ValueError: If time_series has wrong shape or kind is invalid
@@ -111,8 +121,6 @@ def compute_connectivity_matrix(
         (5, 5)
         >>> np.allclose(conn, conn.T)  # Symmetric
         True
-        >>> np.allclose(np.diag(conn), 0)  # Zero diagonal
-        True
     """
     if time_series.ndim != 2:
         raise ValueError(
@@ -120,22 +128,52 @@ def compute_connectivity_matrix(
             f"got shape {time_series.shape}"
         )
     
-    if kind == "correlation":
-        # Compute correlation matrix
-        conn = np.corrcoef(time_series.T)
-    elif kind == "covariance":
-        # Compute covariance matrix
-        conn = np.cov(time_series.T)
-    else:
+    if kind not in CONNECTIVITY_KINDS:
         raise ValueError(
             f"Unknown connectivity kind: '{kind}'. "
-            f"Supported: 'correlation', 'covariance'"
+            f"Supported: {CONNECTIVITY_KINDS}"
         )
     
-    # Set diagonal to zero
-    np.fill_diagonal(conn, 0)
+    # Use nilearn's ConnectivityMeasure for robust computation
+    conn_measure = ConnectivityMeasure(kind=kind, standardize='zscore_sample')
     
-    return conn
+    # ConnectivityMeasure expects list of subjects, each with shape (n_samples, n_features)
+    connectivity = conn_measure.fit_transform([time_series])[0]
+    
+    # Set diagonal to zero for correlation-like measures
+    if kind in ['correlation', 'partial correlation']:
+        np.fill_diagonal(connectivity, 0)
+    
+    return connectivity
+
+
+def compute_all_connectivity_matrices(
+    time_series: np.ndarray,
+    kinds: List[str] = None
+) -> Dict[str, np.ndarray]:
+    """Compute all connectivity matrices from time series.
+    
+    Args:
+        time_series: Time series array of shape (n_timepoints, n_regions)
+        kinds: List of connectivity kinds to compute. If None, computes all.
+    
+    Returns:
+        Dictionary mapping kind name to connectivity matrix
+    
+    Example:
+        >>> ts = np.random.randn(100, 5)
+        >>> matrices = compute_all_connectivity_matrices(ts)
+        >>> list(matrices.keys())
+        ['correlation', 'covariance', 'partial correlation', 'precision']
+    """
+    if kinds is None:
+        kinds = CONNECTIVITY_KINDS
+    
+    matrices = {}
+    for kind in kinds:
+        matrices[kind] = compute_connectivity_matrix(time_series, kind=kind)
+    
+    return matrices
 
 
 def fisher_z_transform(correlation_matrix: np.ndarray) -> np.ndarray:

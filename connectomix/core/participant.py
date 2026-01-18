@@ -32,10 +32,11 @@ from connectomix.preprocessing.censoring import (
 from connectomix.connectivity.seed_to_voxel import compute_seed_to_voxel
 from connectomix.connectivity.roi_to_voxel import compute_roi_to_voxel
 from connectomix.connectivity.seed_to_seed import compute_seed_to_seed
-from connectomix.connectivity.roi_to_roi import compute_roi_to_roi
+from connectomix.connectivity.roi_to_roi import compute_roi_to_roi, compute_roi_to_roi_all_measures
 from connectomix.utils.exceptions import BIDSError, ConnectomixError, PreprocessingError
 from connectomix.utils.logging import timer, log_section
 from connectomix.utils.reports import ParticipantReportGenerator
+from connectomix.utils.matrix import CONNECTIVITY_KINDS
 from connectomix.core.version import __version__
 
 
@@ -301,6 +302,9 @@ def run_participant_pipeline(
                 
                 # --- Compute connectivity ---
                 # If condition selection is enabled, compute connectivity for each condition
+                connectivity_matrices_for_report = {}  # Store all matrices for report
+                roi_names_for_report = None
+                
                 if censor and censor.condition_masks:
                     # Compute connectivity for each condition separately
                     for condition_name, condition_mask in censor.condition_masks.items():
@@ -329,7 +333,7 @@ def run_participant_pipeline(
                         condition_entities = dict(file_entities)
                         condition_entities['condition'] = condition_name
                         
-                        connectivity_paths_cond = _compute_connectivity(
+                        connectivity_paths_cond, conn_matrices, roi_names = _compute_connectivity(
                             denoised_img=condition_img,
                             method=config.method,
                             output_dir=output_dir,
@@ -343,13 +347,19 @@ def run_participant_pipeline(
                         )
                         outputs['connectivity'].extend(connectivity_paths_cond)
                         connectivity_paths.extend(connectivity_paths_cond)
+                        
+                        # Store matrices for report (per condition)
+                        if conn_matrices:
+                            for kind, matrix in conn_matrices.items():
+                                connectivity_matrices_for_report[f"{condition_name}_{kind}"] = matrix
+                            roi_names_for_report = roi_names
                 else:
                     # No condition selection - compute connectivity on full (possibly censored) data
                     if censor:
                         # Apply global censoring (motion, initial drop)
                         denoised_img = censor.apply_to_image(denoised_img)
                     
-                    connectivity_paths_single = _compute_connectivity(
+                    connectivity_paths_single, conn_matrices, roi_names = _compute_connectivity(
                         denoised_img=denoised_img,
                         method=config.method,
                         output_dir=output_dir,
@@ -363,6 +373,11 @@ def run_participant_pipeline(
                     )
                     outputs['connectivity'].extend(connectivity_paths_single)
                     connectivity_paths = connectivity_paths_single
+                    
+                    # Store matrices for report
+                    if conn_matrices:
+                        connectivity_matrices_for_report = conn_matrices
+                        roi_names_for_report = roi_names
                 
                 # --- Generate HTML Report ---
                 # Extract condition name(s) from censoring summary for report filename
@@ -389,6 +404,8 @@ def run_participant_pipeline(
                     censoring_summary=censoring_summary,
                     condition=condition_for_report,
                     censoring=censoring_for_report,
+                    connectivity_matrices=connectivity_matrices_for_report,
+                    roi_names=roi_names_for_report,
                 )
         
         # === Summary ===
@@ -412,6 +429,8 @@ def _generate_participant_report(
     censoring_summary: Optional[Dict] = None,
     condition: Optional[str] = None,
     censoring: Optional[str] = None,
+    connectivity_matrices: Optional[Dict[str, np.ndarray]] = None,
+    roi_names: Optional[List[str]] = None,
 ) -> Optional[Path]:
     """Generate HTML report for a participant analysis.
     
@@ -437,6 +456,10 @@ def _generate_participant_report(
         Condition name for output filename (when --conditions is used).
     censoring : str or None
         Censoring method entity for output filename (e.g., 'fd05').
+    connectivity_matrices : dict or None
+        Dictionary mapping connectivity kind to matrix (for roiToRoi method).
+    roi_names : list or None
+        List of ROI names for connectivity matrices.
     
     Returns
     -------
@@ -461,23 +484,26 @@ def _generate_participant_report(
             common = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z']
             selected_confounds = [c for c in common if c in confounds_df.columns]
         
-        # Load connectivity matrix for ROI-based methods
-        connectivity_matrix = None
-        roi_names = None
-        
-        if config.method in ["seedToSeed", "roiToRoi"]:
-            # Find matrix files
-            matrix_files = [p for p in connectivity_paths if p.suffix == '.npy']
-            if matrix_files:
-                connectivity_matrix = np.load(matrix_files[0])
-                
-                # Set ROI names
-                if config.method == "roiToRoi" and atlas_labels:
-                    roi_names = atlas_labels
-                elif config.method == "seedToSeed":
-                    # Load seeds file to get names
-                    if config.seeds_file:
-                        _, roi_names = load_seeds_file(Path(config.seeds_file))
+        # Use provided connectivity matrices, or load from file for backward compatibility
+        if connectivity_matrices is None:
+            connectivity_matrix = None
+            if config.method in ["seedToSeed", "roiToRoi"]:
+                # Find matrix files
+                matrix_files = [p for p in connectivity_paths if p.suffix == '.npy']
+                if matrix_files:
+                    connectivity_matrix = np.load(matrix_files[0])
+                    
+                    # Set ROI names from atlas labels
+                    if config.method == "roiToRoi" and atlas_labels:
+                        roi_names = atlas_labels
+                    elif config.method == "seedToSeed":
+                        # Load seeds file to get names
+                        if config.seeds_file:
+                            _, roi_names = load_seeds_file(Path(config.seeds_file))
+            
+            # Convert single matrix to dict format
+            if connectivity_matrix is not None:
+                connectivity_matrices = {'correlation': connectivity_matrix}
         
         # Build subject identifier
         subject_id = file_entities.get('sub', 'unknown')
@@ -505,6 +531,11 @@ def _generate_participant_report(
         else:
             desc = config.method
         
+        # Get the primary connectivity matrix for the old interface (use correlation)
+        primary_matrix = None
+        if connectivity_matrices:
+            primary_matrix = connectivity_matrices.get('correlation')
+        
         # Create report generator
         report = ParticipantReportGenerator(
             subject_id=subject_label,
@@ -512,7 +543,7 @@ def _generate_participant_report(
             output_dir=output_dir,
             confounds_df=confounds_df,
             selected_confounds=selected_confounds,
-            connectivity_matrix=connectivity_matrix,
+            connectivity_matrix=primary_matrix,
             roi_names=roi_names,
             connectivity_paths=connectivity_paths,
             logger=logger,
@@ -522,6 +553,14 @@ def _generate_participant_report(
             condition=condition,
             censoring=censoring,
         )
+        
+        # Add all connectivity matrices to the report
+        if connectivity_matrices and roi_names:
+            for kind, matrix in connectivity_matrices.items():
+                # Skip if this is already the primary matrix (correlation)
+                if kind == 'correlation':
+                    continue
+                report.add_connectivity_matrix(matrix, roi_names, f"{config.atlas}_{kind}")
         
         # Generate report
         report_path = report.generate()
@@ -832,9 +871,18 @@ def _compute_connectivity(
     atlas_img: Optional[nib.Nifti1Image],
     atlas_labels: Optional[List[str]],
     logger: logging.Logger,
-) -> List[Path]:
-    """Compute connectivity using the specified method."""
+) -> Tuple[List[Path], Optional[Dict[str, np.ndarray]], Optional[List[str]]]:
+    """Compute connectivity using the specified method.
+    
+    Returns:
+        Tuple of:
+            - output_paths: List of output file paths
+            - connectivity_matrices: Dict of connectivity matrices (for roiToRoi) or None
+            - roi_names: List of ROI names (for roiToRoi) or None
+    """
     output_paths = []
+    connectivity_matrices = None
+    roi_names = None
     
     # Add method to entities
     file_entities = dict(file_entities)
@@ -901,23 +949,41 @@ def _compute_connectivity(
     elif method == "roiToRoi":
         file_entities['atlas'] = config.atlas
         
-        output_path = _get_output_path(
-            output_dir, file_entities, config.connectivity_kind, "correlation", ".npy",
-            label=config.label, subfolder="connectivity_data"
-        )
+        # Build base filename for all outputs
+        base_parts = []
+        entity_order = ['sub', 'ses', 'task', 'run', 'space', 'censoring', 'condition', 'method', 'atlas']
+        for key in entity_order:
+            if key in file_entities and file_entities[key]:
+                base_parts.append(f"{key}-{file_entities[key]}")
+        if config.label:
+            base_parts.append(f"label-{config.label}")
+        base_filename = "_".join(base_parts)
         
-        compute_roi_to_roi(
+        # Determine output subdirectory
+        sub_dir = output_dir / f"sub-{file_entities.get('sub', 'unknown')}"
+        if file_entities.get('ses'):
+            sub_dir = sub_dir / f"ses-{file_entities['ses']}"
+        connectivity_data_dir = sub_dir / "connectivity_data"
+        
+        # Compute all connectivity measures and save timeseries
+        time_series, matrices, matrix_paths, ts_path, roi_names = compute_roi_to_roi_all_measures(
             func_img=denoised_img,
             atlas_img=atlas_img,
             atlas_name=config.atlas,
-            output_path=output_path,
+            output_dir=connectivity_data_dir,
+            base_filename=base_filename,
             logger=logger,
-            kind=config.connectivity_kind,
             roi_names=atlas_labels,
+            save_timeseries=True,
         )
-        output_paths.append(output_path)
+        
+        output_paths.extend(matrix_paths.values())
+        if ts_path:
+            output_paths.append(ts_path)
+        
+        connectivity_matrices = matrices
     
     else:
         raise ConnectomixError(f"Unknown method: {method}")
     
-    return output_paths
+    return output_paths, connectivity_matrices, roi_names
