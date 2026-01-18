@@ -415,11 +415,12 @@ def _generate_participant_report(
         # Load confounds for denoising plots
         confounds_df = pd.read_csv(confounds_path, sep='\t')
         
-        # Prepare confounds to plot (selected strategy components)
-        selected_confounds = []
-        for conf_name in config.confounds:
-            matching = [c for c in confounds_df.columns if conf_name in c]
-            selected_confounds.extend(matching[:6])  # Limit to 6 per type
+        # Use the same wildcard expansion as denoising to get exact confound names
+        from connectomix.io.readers import expand_confound_wildcards
+        selected_confounds = expand_confound_wildcards(
+            config.confounds, 
+            confounds_df.columns.tolist()
+        )
         
         if not selected_confounds:
             # Fall back to some common confounds
