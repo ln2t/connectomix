@@ -443,6 +443,40 @@ def create_parser() -> argparse.ArgumentParser:
              "Can also be specified in config file.",
     )
     
+    # =========================================================================
+    # OPTIONAL ARGUMENTS - Group Analysis
+    # =========================================================================
+    group_opts = parser.add_argument_group(
+        f'{Colors.BOLD}Group Analysis Options{Colors.END}',
+        "Options specific to group-level tangent space connectivity analysis."
+    )
+    
+    group_opts.add_argument(
+        "--participant-derivatives",
+        metavar="PATH",
+        dest="participant_derivatives",
+        type=Path,
+        help="Path to participant-level connectomix outputs. "
+             "Required for group analysis if not in default location.",
+    )
+    
+    group_opts.add_argument(
+        "--atlas",
+        metavar="ATLAS",
+        default="schaefer2018n100",
+        help="Atlas used in participant-level analysis (default: schaefer2018n100). "
+             "Must match the atlas used in participant-level outputs.",
+    )
+    
+    group_opts.add_argument(
+        "--method",
+        metavar="METHOD",
+        choices=["seedToVoxel", "roiToVoxel", "seedToSeed", "roiToRoi"],
+        default="roiToRoi",
+        help="Connectivity method used in participant-level analysis "
+             "(default: roiToRoi). Group tangent analysis requires roiToRoi.",
+    )
+    
     return parser
 
 

@@ -8,6 +8,12 @@ from connectomix.connectivity.seed_to_voxel import compute_seed_to_voxel
 from connectomix.connectivity.roi_to_voxel import compute_roi_to_voxel
 from connectomix.connectivity.seed_to_seed import compute_seed_to_seed
 from connectomix.connectivity.roi_to_roi import compute_roi_to_roi
+from connectomix.connectivity.group_connectivity import (
+    discover_participant_timeseries,
+    load_timeseries,
+    compute_tangent_connectivity,
+    compute_group_correlation_mean,
+)
 
 __all__ = [
     "extract_seeds_timeseries",
@@ -16,4 +22,9 @@ __all__ = [
     "compute_roi_to_voxel",
     "compute_seed_to_seed",
     "compute_roi_to_roi",
+    # Group-level
+    "discover_participant_timeseries",
+    "load_timeseries",
+    "compute_tangent_connectivity",
+    "compute_group_correlation_mean",
 ]

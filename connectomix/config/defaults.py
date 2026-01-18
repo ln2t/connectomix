@@ -213,14 +213,58 @@ class ParticipantConfig:
 
 @dataclass
 class GroupConfig:
-    """Configuration for group-level analysis.
+    """Configuration for group-level tangent space connectivity analysis.
     
-    Placeholder configuration - group analysis is under development.
+    The tangent space approach computes a group-level geometric mean of
+    covariance matrices and projects individual connectivity into a tangent
+    space centered on this mean. This provides:
+    - A group mean connectivity matrix
+    - Individual deviation matrices in tangent space
+    - Better statistical properties for group comparisons
+    
+    Attributes:
+        participant_derivatives: Path to participant-level connectomix outputs
+        subjects: List of subject IDs to include (None = all available)
+        tasks: List of tasks to include (None = all available)
+        sessions: List of sessions to include (None = all available)
+        atlas: Atlas used in participant-level analysis
+        method: Analysis method from participant level (must be roiToRoi)
+        vectorize: Whether to vectorize connectivity matrices for output
+        label: Custom label for output filenames
     """
     
+    # Input specification
+    participant_derivatives: Optional[Path] = None
+    
+    # BIDS entity filters
+    subjects: Optional[List[str]] = None
+    tasks: Optional[List[str]] = None
+    sessions: Optional[List[str]] = None
+    
+    # Analysis parameters (must match participant-level)
+    atlas: str = "schaefer2018n100"
+    method: str = "roiToRoi"
+    
+    # Output options
+    vectorize: bool = False
+    label: Optional[str] = None
+    
     def validate(self) -> None:
-        """Validate configuration parameters.
+        """Validate configuration parameters."""
+        from connectomix.config.validator import ConfigValidator
         
-        Currently a no-op as group analysis is under development.
-        """
-        pass
+        validator = ConfigValidator()
+        
+        # Method must be roiToRoi for tangent space analysis
+        if self.method != "roiToRoi":
+            validator.errors.append(
+                f"Group-level tangent space analysis requires method='roiToRoi', "
+                f"got '{self.method}'"
+            )
+        
+        # Atlas must be specified
+        if not self.atlas:
+            validator.errors.append("Atlas must be specified for group analysis")
+        
+        validator.raise_if_errors()
+

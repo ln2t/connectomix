@@ -15,6 +15,7 @@ from connectomix.utils.visualization import (
 )
 from connectomix.utils.reports import (
     ParticipantReportGenerator,
+    GroupReportGenerator,
     generate_participant_report,
 )
 
@@ -40,5 +41,6 @@ __all__ = [
     "close_all_figures",
     # Reports
     "ParticipantReportGenerator",
+    "GroupReportGenerator",
     "generate_participant_report",
 ]

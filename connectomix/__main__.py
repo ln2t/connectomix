@@ -8,6 +8,7 @@ from connectomix.cli import create_parser, parse_derivatives_arg
 from connectomix.utils.logging import setup_logging
 from connectomix.config.defaults import (
     ParticipantConfig,
+    GroupConfig,
     TemporalCensoringConfig,
     ConditionSelectionConfig,
     MotionCensoringConfig,
@@ -15,6 +16,7 @@ from connectomix.config.defaults import (
 from connectomix.config.loader import load_config_file
 from connectomix.config.strategies import get_denoising_strategy
 from connectomix.core.participant import run_participant_pipeline
+from connectomix.core.group import run_group_pipeline
 from connectomix.core.version import __version__
 
 
@@ -82,12 +84,35 @@ def main():
                 logger=logger,
             )
         else:  # group
-            # Group analysis is under development
-            from connectomix.core.group import run_group_pipeline
+            # Load or create group config
+            if args.config:
+                logger.info(f"Loading configuration from: {args.config}")
+                config_dict = load_config_file(args.config)
+                config = GroupConfig(**config_dict)
+            else:
+                logger.info("Using default configuration")
+                config = GroupConfig()
+            
+            # Override config with CLI arguments
+            if hasattr(args, 'participant_derivatives') and args.participant_derivatives:
+                config.participant_derivatives = args.participant_derivatives
+            if args.participant_label:
+                config.subjects = [args.participant_label]
+            if args.task:
+                config.tasks = [args.task]
+            if args.session:
+                config.sessions = [args.session]
+            if hasattr(args, 'atlas') and args.atlas:
+                config.atlas = args.atlas
+            if hasattr(args, 'method') and args.method:
+                config.method = args.method
+            if args.label:
+                config.label = args.label
+            
             run_group_pipeline(
                 bids_dir=args.bids_dir,
                 output_dir=args.output_dir,
-                config=None,
+                config=config,
                 derivatives=derivatives_dict,
                 logger=logger,
             )

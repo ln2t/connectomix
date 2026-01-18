@@ -2556,3 +2556,546 @@ def generate_participant_report(
     )
     
     return report.generate()
+
+
+# ============================================================================
+# Group Report Generator
+# ============================================================================
+
+class GroupReportGenerator:
+    """Generate HTML reports for group-level tangent space connectivity analysis.
+    
+    Creates comprehensive reports including:
+    - Group mean connectivity matrix visualization
+    - Individual subject deviation matrices
+    - Summary statistics across subjects
+    - Analysis parameters and reproducibility info
+    
+    Example:
+        >>> from connectomix.utils.reports import GroupReportGenerator
+        >>> report = GroupReportGenerator(
+        ...     results=tangent_results,
+        ...     config=group_config,
+        ...     output_dir=Path("/data/output/group")
+        ... )
+        >>> report.generate()
+    """
+    
+    def __init__(
+        self,
+        results: Dict[str, Any],
+        config: "GroupConfig",
+        output_dir: Path,
+        task: Optional[str] = None,
+        session: Optional[str] = None,
+        atlas_coords: Optional[np.ndarray] = None,
+        roi_labels: Optional[List[str]] = None,
+    ):
+        """Initialize group report generator.
+        
+        Args:
+            results: Dictionary from compute_tangent_connectivity() containing:
+                - group_mean: Group mean connectivity matrix
+                - tangent_matrices: Dict of subject tangent matrices
+                - subject_ids: List of subject IDs
+                - n_regions: Number of ROI regions
+                - n_subjects: Number of subjects
+            config: GroupConfig instance with analysis parameters.
+            output_dir: Directory to save report and figures.
+            task: Task name (optional).
+            session: Session name (optional).
+            atlas_coords: ROI coordinates for connectome plots (optional).
+            roi_labels: ROI labels for matrix annotations (optional).
+        """
+        self.results = results
+        self.config = config
+        self.output_dir = Path(output_dir)
+        self.task = task
+        self.session = session
+        self.atlas_coords = atlas_coords
+        self.roi_labels = roi_labels
+        
+        # Extract key values
+        self.group_mean = results['group_mean']
+        self.tangent_matrices = results['tangent_matrices']
+        self.subject_ids = results['subject_ids']
+        self.n_regions = results['n_regions']
+        self.n_subjects = results['n_subjects']
+        
+        # Create figures directory
+        self.figures_dir = self.output_dir / "figures"
+        self.figures_dir.mkdir(parents=True, exist_ok=True)
+        
+        self._logger = logger
+        self._figure_counter = 0
+        self.toc_items = []
+    
+    def _get_unique_figure_id(self) -> str:
+        """Generate unique figure ID."""
+        self._figure_counter += 1
+        return f"fig_group_{self._figure_counter}"
+    
+    def _figure_to_base64(self, fig: plt.Figure, dpi: int = 150) -> str:
+        """Convert matplotlib figure to base64 string."""
+        buf = BytesIO()
+        fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        buf.seek(0)
+        return base64.b64encode(buf.read()).decode('utf-8')
+    
+    def _save_figure_to_disk(self, fig: plt.Figure, filename: str, dpi: int = 150) -> Path:
+        """Save figure to disk."""
+        filepath = self.figures_dir / filename
+        fig.savefig(filepath, format='png', dpi=dpi, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        return filepath
+    
+    def _create_group_mean_plot(self) -> Optional[plt.Figure]:
+        """Create visualization of the group mean connectivity matrix."""
+        try:
+            n_regions = self.n_regions
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # Plot matrix
+            vmax = np.abs(self.group_mean).max()
+            im = ax.imshow(self.group_mean, cmap='RdBu_r', vmin=-vmax, vmax=vmax,
+                          aspect='equal')
+            
+            # Colorbar
+            cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+            cbar.set_label('Covariance', fontsize=11)
+            
+            # Labels
+            if n_regions <= 50 and self.roi_labels:
+                ax.set_xticks(range(n_regions))
+                ax.set_yticks(range(n_regions))
+                ax.set_xticklabels(self.roi_labels, rotation=90, fontsize=7)
+                ax.set_yticklabels(self.roi_labels, fontsize=7)
+            else:
+                ax.set_xlabel(f'Regions (n={n_regions})', fontsize=11)
+                ax.set_ylabel(f'Regions (n={n_regions})', fontsize=11)
+            
+            ax.set_title(f'Group Mean Connectivity\n(Geometric Mean, {self.n_subjects} subjects)',
+                        fontsize=13, fontweight='bold', pad=10)
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self._logger.warning(f"Could not create group mean plot: {e}")
+            return None
+    
+    def _create_tangent_deviation_plot(self) -> Optional[plt.Figure]:
+        """Create visualization of tangent deviations across subjects."""
+        try:
+            # Select first few subjects for visualization
+            max_subjects = min(4, self.n_subjects)
+            
+            fig, axes = plt.subplots(1, max_subjects, figsize=(4 * max_subjects, 4))
+            if max_subjects == 1:
+                axes = [axes]
+            
+            # Find common color scale
+            all_tangent = np.array(list(self.tangent_matrices.values()))
+            vmax = np.percentile(np.abs(all_tangent), 95)
+            
+            for i, (sub_id, tangent) in enumerate(list(self.tangent_matrices.items())[:max_subjects]):
+                ax = axes[i]
+                im = ax.imshow(tangent, cmap='RdBu_r', vmin=-vmax, vmax=vmax, aspect='equal')
+                ax.set_title(f'sub-{sub_id}', fontsize=11)
+                ax.set_xlabel('Regions')
+                if i == 0:
+                    ax.set_ylabel('Regions')
+            
+            # Add colorbar
+            cbar = fig.colorbar(im, ax=axes, shrink=0.8, pad=0.02)
+            cbar.set_label('Tangent Deviation', fontsize=10)
+            
+            fig.suptitle('Individual Tangent Space Deviations from Group Mean',
+                        fontsize=13, fontweight='bold')
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self._logger.warning(f"Could not create tangent deviation plot: {e}")
+            return None
+    
+    def _create_deviation_histogram(self) -> Optional[plt.Figure]:
+        """Create histogram of tangent deviations across all subjects."""
+        try:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            
+            # Collect all off-diagonal deviations
+            all_deviations = []
+            for sub_id, tangent in self.tangent_matrices.items():
+                upper_tri = tangent[np.triu_indices_from(tangent, k=1)]
+                all_deviations.extend(upper_tri)
+            
+            all_deviations = np.array(all_deviations)
+            
+            # Plot histogram
+            ax.hist(all_deviations, bins=50, density=True, alpha=0.7,
+                   color='steelblue', edgecolor='white')
+            ax.axvline(0, color='red', linestyle='--', linewidth=1.5, label='Zero')
+            ax.axvline(np.mean(all_deviations), color='orange', linestyle='-',
+                      linewidth=1.5, label=f'Mean: {np.mean(all_deviations):.3f}')
+            
+            ax.set_xlabel('Tangent Deviation Value', fontsize=11)
+            ax.set_ylabel('Density', fontsize=11)
+            ax.set_title('Distribution of Tangent Space Deviations\n(All subjects, all connections)',
+                        fontsize=12, fontweight='bold')
+            ax.legend(loc='upper right')
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self._logger.warning(f"Could not create deviation histogram: {e}")
+            return None
+    
+    def _create_subject_variance_plot(self) -> Optional[plt.Figure]:
+        """Create plot showing variance across subjects for each connection."""
+        try:
+            # Stack all tangent matrices
+            all_tangent = np.array([self.tangent_matrices[s] for s in self.subject_ids])
+            
+            # Compute variance across subjects for each connection
+            variance = np.var(all_tangent, axis=0)
+            
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            im = ax.imshow(variance, cmap='viridis', aspect='equal')
+            cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+            cbar.set_label('Variance Across Subjects', fontsize=11)
+            
+            ax.set_xlabel(f'Regions (n={self.n_regions})', fontsize=11)
+            ax.set_ylabel(f'Regions (n={self.n_regions})', fontsize=11)
+            ax.set_title(f'Inter-Subject Variability in Connectivity\n({self.n_subjects} subjects)',
+                        fontsize=13, fontweight='bold', pad=10)
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            self._logger.warning(f"Could not create subject variance plot: {e}")
+            return None
+    
+    def _build_summary_section(self) -> str:
+        """Build summary statistics section."""
+        self.toc_items.append(("summary", "Summary"))
+        
+        # Compute statistics on group mean
+        upper_tri = self.group_mean[np.triu_indices_from(self.group_mean, k=1)]
+        mean_conn = np.mean(upper_tri)
+        std_conn = np.std(upper_tri)
+        
+        return f'''
+        <section id="summary" class="section">
+            <h2>📊 Analysis Summary</h2>
+            
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <h3>Subjects</h3>
+                    <div class="stat-value">{self.n_subjects}</div>
+                    <div class="stat-label">Total Subjects</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Regions</h3>
+                    <div class="stat-value">{self.n_regions}</div>
+                    <div class="stat-label">ROI Regions</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Connections</h3>
+                    <div class="stat-value">{self.n_regions * (self.n_regions - 1) // 2:,}</div>
+                    <div class="stat-label">Unique Pairs</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Group Mean</h3>
+                    <div class="stat-value">{mean_conn:.3f}</div>
+                    <div class="stat-label">± {std_conn:.3f}</div>
+                </div>
+            </div>
+            
+            <div class="info-box">
+                <h4>📚 About Tangent Space Connectivity</h4>
+                <p>This analysis uses the <strong>tangent space</strong> approach from nilearn,
+                which provides a principled way to analyze group connectivity:</p>
+                <ul>
+                    <li><strong>Group Mean</strong>: The geometric mean of covariance matrices across
+                    all subjects, capturing shared connectivity patterns.</li>
+                    <li><strong>Tangent Vectors</strong>: Individual subject deviations from the group
+                    mean, projected into tangent space for proper statistical analysis.</li>
+                    <li><strong>Advantages</strong>: Better statistical properties (Euclidean space),
+                    captures both correlations and partial correlations information.</li>
+                </ul>
+                <p><em>Reference: Varoquaux et al., MICCAI 2010</em></p>
+            </div>
+            
+            <h3>Subjects Included</h3>
+            <div class="subjects-grid">
+                {''.join(f'<span class="subject-badge">sub-{s}</span>' for s in self.subject_ids)}
+            </div>
+        </section>
+        '''
+    
+    def _build_group_mean_section(self) -> str:
+        """Build group mean connectivity section."""
+        self.toc_items.append(("group-mean", "Group Mean Connectivity"))
+        
+        html = '''
+        <section id="group-mean" class="section">
+            <h2>🧠 Group Mean Connectivity</h2>
+            
+            <p>The group mean connectivity matrix represents the geometric mean of covariance
+            matrices across all subjects. This captures the common connectivity structure
+            shared by the group.</p>
+        '''
+        
+        # Add group mean plot
+        fig = self._create_group_mean_plot()
+        if fig is not None:
+            fig_id = self._get_unique_figure_id()
+            img_data = self._figure_to_base64(fig, dpi=150)
+            self._save_figure_to_disk(fig, "group_mean_connectivity.png", dpi=150)
+            plt.close(fig)
+            
+            html += f'''
+            <div class="figure-container">
+                <div class="figure-wrapper">
+                    <img id="{fig_id}" src="data:image/png;base64,{img_data}">
+                    <button class="download-btn" onclick="downloadFigure('{fig_id}', 'group_mean_connectivity.png')">
+                        ⬇️ Download
+                    </button>
+                </div>
+                <div class="figure-caption">
+                    Figure: Group mean connectivity matrix showing the geometric mean of covariance
+                    matrices across {self.n_subjects} subjects. Atlas: {self.config.atlas}.
+                </div>
+            </div>
+            '''
+        
+        html += '</section>'
+        return html
+    
+    def _build_tangent_section(self) -> str:
+        """Build tangent deviation visualization section."""
+        self.toc_items.append(("tangent", "Individual Deviations"))
+        
+        html = '''
+        <section id="tangent" class="section">
+            <h2>📈 Individual Tangent Space Deviations</h2>
+            
+            <p>Each subject's connectivity is represented as a deviation from the group mean
+            in tangent space. These matrices show how individual subjects differ from the
+            group pattern.</p>
+        '''
+        
+        # Add tangent deviation plot
+        fig = self._create_tangent_deviation_plot()
+        if fig is not None:
+            fig_id = self._get_unique_figure_id()
+            img_data = self._figure_to_base64(fig, dpi=150)
+            self._save_figure_to_disk(fig, "tangent_deviations.png", dpi=150)
+            plt.close(fig)
+            
+            html += f'''
+            <div class="figure-container">
+                <div class="figure-wrapper">
+                    <img id="{fig_id}" src="data:image/png;base64,{img_data}">
+                    <button class="download-btn" onclick="downloadFigure('{fig_id}', 'tangent_deviations.png')">
+                        ⬇️ Download
+                    </button>
+                </div>
+                <div class="figure-caption">
+                    Figure: Individual tangent space deviations from the group mean connectivity.
+                    Red indicates stronger than average connectivity, blue indicates weaker.
+                </div>
+            </div>
+            '''
+        
+        # Add deviation histogram
+        fig = self._create_deviation_histogram()
+        if fig is not None:
+            fig_id = self._get_unique_figure_id()
+            img_data = self._figure_to_base64(fig, dpi=150)
+            self._save_figure_to_disk(fig, "deviation_histogram.png", dpi=150)
+            plt.close(fig)
+            
+            html += f'''
+            <div class="figure-container">
+                <div class="figure-wrapper">
+                    <img id="{fig_id}" src="data:image/png;base64,{img_data}">
+                    <button class="download-btn" onclick="downloadFigure('{fig_id}', 'deviation_histogram.png')">
+                        ⬇️ Download
+                    </button>
+                </div>
+                <div class="figure-caption">
+                    Figure: Distribution of tangent space deviation values across all subjects
+                    and all connections. Centered around zero indicates well-balanced group.
+                </div>
+            </div>
+            '''
+        
+        # Add variance plot
+        fig = self._create_subject_variance_plot()
+        if fig is not None:
+            fig_id = self._get_unique_figure_id()
+            img_data = self._figure_to_base64(fig, dpi=150)
+            self._save_figure_to_disk(fig, "inter_subject_variance.png", dpi=150)
+            plt.close(fig)
+            
+            html += f'''
+            <div class="figure-container">
+                <div class="figure-wrapper">
+                    <img id="{fig_id}" src="data:image/png;base64,{img_data}">
+                    <button class="download-btn" onclick="downloadFigure('{fig_id}', 'inter_subject_variance.png')">
+                        ⬇️ Download
+                    </button>
+                </div>
+                <div class="figure-caption">
+                    Figure: Inter-subject variability showing which connections have the most
+                    variance across subjects. High variance connections may be of interest
+                    for individual differences research.
+                </div>
+            </div>
+            '''
+        
+        html += '</section>'
+        return html
+    
+    def _build_methods_section(self) -> str:
+        """Build methods and parameters section."""
+        self.toc_items.append(("methods", "Methods"))
+        
+        return f'''
+        <section id="methods" class="section">
+            <h2>⚙️ Analysis Parameters</h2>
+            
+            <table class="params-table">
+                <tr><th colspan="2">Group Analysis Configuration</th></tr>
+                <tr><td>Atlas</td><td><code>{self.config.atlas}</code></td></tr>
+                <tr><td>Method</td><td><code>{self.config.method}</code></td></tr>
+                <tr><td>Connectivity Measure</td><td><code>tangent</code></td></tr>
+                <tr><td>Task Filter</td><td><code>{self.task or 'None'}</code></td></tr>
+                <tr><td>Session Filter</td><td><code>{self.session or 'None'}</code></td></tr>
+                <tr><td>Subjects Included</td><td><code>{self.n_subjects}</code></td></tr>
+                <tr><td>ROI Regions</td><td><code>{self.n_regions}</code></td></tr>
+            </table>
+            
+            <h3>Software Versions</h3>
+            <table class="params-table">
+                <tr><td>Connectomix</td><td><code>{__version__}</code></td></tr>
+                <tr><td>Python</td><td><code>{sys.version.split()[0]}</code></td></tr>
+                <tr><td>NumPy</td><td><code>{np.__version__}</code></td></tr>
+            </table>
+        </section>
+        '''
+    
+    def generate(self) -> Path:
+        """Generate the complete HTML report.
+        
+        Returns:
+            Path to the generated HTML report file.
+        """
+        self._logger.info("Generating group analysis report...")
+        
+        # Build sections
+        summary = self._build_summary_section()
+        group_mean = self._build_group_mean_section()
+        tangent = self._build_tangent_section()
+        methods = self._build_methods_section()
+        
+        # Build TOC
+        toc_html = '<ul class="toc-list">'
+        for item_id, item_title in self.toc_items:
+            toc_html += f'<li><a href="#{item_id}">{item_title}</a></li>'
+        toc_html += '</ul>'
+        
+        # Build navigation
+        nav_html = f'''
+        <nav class="nav-bar">
+            <div class="nav-content">
+                <span class="nav-title">Connectomix Group Report</span>
+                <span class="nav-subtitle">
+                    Atlas: {self.config.atlas} | 
+                    {self.n_subjects} subjects | 
+                    {datetime.now().strftime("%Y-%m-%d")}
+                </span>
+            </div>
+        </nav>
+        '''
+        
+        # Assemble full HTML
+        html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connectomix Group Report - {self.config.atlas}</title>
+    {REPORT_CSS}
+    <style>
+        .subjects-grid {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }}
+        .subject-badge {{
+            background: var(--primary-color);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.9em;
+        }}
+    </style>
+</head>
+<body>
+    {nav_html}
+    <div class="container">
+        <header class="header">
+            <h1>🧠 Connectomix Group Analysis Report</h1>
+            <p class="header-subtitle">Tangent Space Connectivity Analysis</p>
+        </header>
+        
+        <nav class="toc">
+            <h3>📋 Contents</h3>
+            {toc_html}
+        </nav>
+        
+        {summary}
+        {group_mean}
+        {tangent}
+        {methods}
+        
+        <footer class="footer">
+            <p>Generated by Connectomix v{__version__} on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+        </footer>
+    </div>
+    
+    {REPORT_JS}
+</body>
+</html>
+'''
+        
+        # Determine output filename
+        filename_parts = []
+        if self.task:
+            filename_parts.append(f"task-{self.task}")
+        if self.session:
+            filename_parts.append(f"ses-{self.session}")
+        filename_parts.append(f"atlas-{self.config.atlas}")
+        if self.config.label:
+            filename_parts.append(f"label-{self.config.label}")
+        filename_parts.append("group_report.html")
+        
+        report_path = self.output_dir / "_".join(filename_parts)
+        
+        # Write report
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(html)
+        
+        self._logger.info(f"Saved group report: {report_path}")
+        self._logger.info(f"Figures saved to: {self.figures_dir}")
+        
+        return report_path
+
