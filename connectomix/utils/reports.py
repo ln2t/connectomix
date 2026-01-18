@@ -1760,7 +1760,20 @@ class ParticipantReportGenerator:
         '''
         
         for i, (matrix, labels, name) in enumerate(self.connectivity_matrices):
-            fig = self._create_connectivity_plot(matrix, labels, name)
+            # Determine the connectivity type from the name first
+            connectivity_type = None
+            name_lower = name.lower()
+            if 'partial' in name_lower or 'partial-correlation' in name_lower:
+                connectivity_type = 'partial correlation'
+            elif 'precision' in name_lower:
+                connectivity_type = 'precision'
+            elif 'covariance' in name_lower:
+                connectivity_type = 'covariance'
+            elif 'correlation' in name_lower or i == 0:
+                # Default to correlation for first matrix or if 'correlation' in name
+                connectivity_type = 'correlation'
+            
+            fig = self._create_connectivity_plot(matrix, labels, name, connectivity_type)
             if fig is not None:
                 fig_id = self._get_unique_figure_id()
                 img_data = self._figure_to_base64(fig, dpi=150)
@@ -1787,23 +1800,23 @@ class ParticipantReportGenerator:
                 elif data_file_path:
                     current_data_file = data_file_path
                 
-                # Determine the connectivity type from the name and show appropriate explanation
-                connectivity_type = None
-                name_lower = name.lower()
-                if 'partial' in name_lower or 'partial-correlation' in name_lower:
-                    connectivity_type = 'partial correlation'
-                elif 'precision' in name_lower:
-                    connectivity_type = 'precision'
-                elif 'covariance' in name_lower:
-                    connectivity_type = 'covariance'
-                elif 'correlation' in name_lower or i == 0:
-                    # Default to correlation for first matrix or if 'correlation' in name
-                    connectivity_type = 'correlation'
-                
+                # Get explanation for this connectivity type
                 explanation_html = connectivity_explanations.get(connectivity_type, '')
                 
+                # Create cleaner display name for the measure
+                type_display_names = {
+                    'correlation': 'Pearson Correlation',
+                    'covariance': 'Covariance',
+                    'partial correlation': 'Partial Correlation',
+                    'precision': 'Precision (Inverse Covariance)'
+                }
+                display_name = type_display_names.get(connectivity_type, name)
+                
+                # Create metric label based on type
+                metric_label = 'Value' if connectivity_type in ['covariance', 'precision'] else 'Correlation'
+                
                 html += f'''
-                <h3>{name}</h3>
+                <h3>{display_name}</h3>
                 
                 {explanation_html}
                 
@@ -1814,11 +1827,11 @@ class ParticipantReportGenerator:
                     </div>
                     <div class="metric-card">
                         <div class="metric-value">{mean_conn:.3f}</div>
-                        <div class="metric-label">Mean Correlation</div>
+                        <div class="metric-label">Mean {metric_label}</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-value">{std_conn:.3f}</div>
-                        <div class="metric-label">Std Correlation</div>
+                        <div class="metric-label">Std {metric_label}</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-value">[{min_conn:.2f}, {max_conn:.2f}]</div>
@@ -1834,9 +1847,33 @@ class ParticipantReportGenerator:
                         </button>
                     </div>
                     <div class="figure-caption">
-                        Figure: Pearson correlation matrix showing pairwise connectivity between 
-                        {matrix.shape[0]} regions from the {name} atlas.
+                        Figure: {display_name} matrix showing pairwise connectivity between 
+                        {matrix.shape[0]} regions.
                         <br><strong>Data file:</strong> <code>{current_data_file}</code>
+                    </div>
+                </div>
+                '''
+                
+                # Create and add histogram
+                hist_fig = self._create_connectivity_histogram(matrix, name, connectivity_type)
+                if hist_fig is not None:
+                    hist_fig_id = self._get_unique_figure_id()
+                    hist_img_data = self._figure_to_base64(hist_fig, dpi=150)
+                    hist_filename = f"histogram_{name}.png"
+                    self._save_figure_to_disk(hist_fig, hist_filename, dpi=150)
+                    plt.close(hist_fig)
+                    
+                    html += f'''
+                <div class="figure-container">
+                    <div class="figure-wrapper">
+                        <img id="{hist_fig_id}" src="data:image/png;base64,{hist_img_data}">
+                        <button class="download-btn" onclick="downloadFigure('{hist_fig_id}', '{hist_filename}')">
+                            ⬇️ Download
+                        </button>
+                    </div>
+                    <div class="figure-caption">
+                        Figure: Distribution of {display_name.lower()} values across all region pairs.
+                        Red dashed line indicates the mean, orange dotted line indicates the median.
                     </div>
                 </div>
                 '''
@@ -1848,11 +1885,28 @@ class ParticipantReportGenerator:
         self,
         matrix: np.ndarray,
         labels: List[str],
-        name: str
+        name: str,
+        connectivity_type: Optional[str] = None
     ) -> Optional[plt.Figure]:
-        """Create connectivity matrix plot using nilearn-style visualization."""
+        """Create connectivity matrix plot using nilearn-style visualization.
+        
+        Args:
+            matrix: Connectivity matrix
+            labels: ROI labels
+            name: Atlas/analysis name
+            connectivity_type: Type of connectivity measure (correlation, covariance, etc.)
+        """
         try:
             n_regions = matrix.shape[0]
+            
+            # Build a clearer title based on connectivity type
+            type_labels = {
+                'correlation': 'Pearson Correlation',
+                'covariance': 'Covariance',
+                'partial correlation': 'Partial Correlation',
+                'precision': 'Precision (Inverse Covariance)'
+            }
+            measure_label = type_labels.get(connectivity_type, 'Connectivity')
             
             # Determine figure size based on matrix size
             base_size = min(12, max(8, n_regions / 10))
@@ -1865,8 +1919,9 @@ class ParticipantReportGenerator:
             # Plot heatmap
             im = ax.imshow(matrix, cmap='RdBu_r', vmin=vmin, vmax=vmax, aspect='equal')
             
-            # Add colorbar
-            cbar = plt.colorbar(im, ax=ax, shrink=0.8, label='Correlation')
+            # Add colorbar with appropriate label
+            cbar_label = measure_label if connectivity_type != 'precision' else 'Precision'
+            cbar = plt.colorbar(im, ax=ax, shrink=0.8, label=cbar_label)
             cbar.ax.tick_params(labelsize=9)
             
             # Add labels for smaller matrices
@@ -1879,13 +1934,84 @@ class ParticipantReportGenerator:
                 ax.set_xlabel(f'Regions (n={n_regions})', fontsize=11)
                 ax.set_ylabel(f'Regions (n={n_regions})', fontsize=11)
             
-            ax.set_title(f'{name} Connectivity Matrix', fontsize=13, fontweight='bold', pad=10)
+            # Extract atlas name from the full name (remove connectivity type suffix)
+            atlas_display = name.split('_')[0] if '_' in name else name
+            ax.set_title(f'{measure_label} Matrix\n({atlas_display}, {n_regions} regions)', 
+                        fontsize=13, fontweight='bold', pad=10)
             
             plt.tight_layout()
             return fig
             
         except Exception as e:
             logger.warning(f"Could not create connectivity plot: {e}")
+            return None
+    
+    def _create_connectivity_histogram(
+        self,
+        matrix: np.ndarray,
+        name: str,
+        connectivity_type: Optional[str] = None
+    ) -> Optional[plt.Figure]:
+        """Create histogram of connectivity values.
+        
+        Args:
+            matrix: Connectivity matrix
+            name: Atlas/analysis name
+            connectivity_type: Type of connectivity measure
+        """
+        try:
+            n_regions = matrix.shape[0]
+            
+            # Extract upper triangle (excluding diagonal)
+            upper_tri = matrix[np.triu_indices_from(matrix, k=1)]
+            
+            # Build labels
+            type_labels = {
+                'correlation': 'Pearson Correlation',
+                'covariance': 'Covariance',
+                'partial correlation': 'Partial Correlation',
+                'precision': 'Precision'
+            }
+            measure_label = type_labels.get(connectivity_type, 'Connectivity')
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(8, 4))
+            
+            # Plot histogram
+            n_bins = min(50, len(upper_tri) // 20)
+            n_bins = max(20, n_bins)
+            
+            ax.hist(upper_tri, bins=n_bins, color='steelblue', edgecolor='white', 
+                   alpha=0.8, density=True)
+            
+            # Add vertical lines for mean and median
+            mean_val = np.mean(upper_tri)
+            median_val = np.median(upper_tri)
+            ax.axvline(mean_val, color='red', linestyle='--', linewidth=2, 
+                      label=f'Mean: {mean_val:.3f}')
+            ax.axvline(median_val, color='orange', linestyle=':', linewidth=2, 
+                      label=f'Median: {median_val:.3f}')
+            
+            # Add zero line for reference
+            ax.axvline(0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
+            
+            ax.set_xlabel(f'{measure_label} Value', fontsize=11)
+            ax.set_ylabel('Density', fontsize=11)
+            ax.set_title(f'Distribution of {measure_label} Values\n({len(upper_tri):,} unique pairs)', 
+                        fontsize=12, fontweight='bold')
+            ax.legend(loc='upper right', fontsize=9)
+            
+            # Add summary stats as text
+            stats_text = f'Std: {np.std(upper_tri):.3f}\nMin: {np.min(upper_tri):.3f}\nMax: {np.max(upper_tri):.3f}'
+            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=9,
+                   verticalalignment='top', fontfamily='monospace',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            logger.warning(f"Could not create connectivity histogram: {e}")
             return None
     
     def _build_qa_section(self) -> str:
