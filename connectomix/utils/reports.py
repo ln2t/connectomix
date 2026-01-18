@@ -1546,18 +1546,23 @@ class ParticipantReportGenerator:
                 for idx, (cond_name, cond_info) in enumerate(sorted(conditions.items())):
                     ax = axes[idx + 1]  # Offset by 1 for global row
                     
-                    # Get the actual mask data (this is the raw condition timing)
-                    cond_mask_data = cond_info.get('mask', None)
-                    if cond_mask_data is not None:
-                        cond_mask = np.array(cond_mask_data, dtype=bool)
-                    else:
-                        # Fallback: create approximate mask
-                        n_vols = cond_info.get('n_volumes', 0)
-                        cond_mask = np.zeros(n_volumes, dtype=bool)
-                        cond_mask[:n_vols] = True
+                    # Get the raw condition timing (before global mask intersection)
+                    raw_mask_data = cond_info.get('raw_mask', None)
+                    effective_mask_data = cond_info.get('mask', None)
                     
-                    # The effective mask is the intersection of condition AND global
-                    effective_mask = cond_mask & global_mask
+                    if raw_mask_data is not None:
+                        raw_cond_mask = np.array(raw_mask_data, dtype=bool)
+                    elif effective_mask_data is not None:
+                        # Fallback: use effective mask if raw not available
+                        raw_cond_mask = np.array(effective_mask_data, dtype=bool)
+                    else:
+                        # Last resort fallback
+                        n_vols = cond_info.get('n_volumes', 0)
+                        raw_cond_mask = np.zeros(n_volumes, dtype=bool)
+                        raw_cond_mask[:n_vols] = True
+                    
+                    # The effective mask is the intersection of raw condition AND global
+                    effective_mask = raw_cond_mask & global_mask
                     n_effective = int(np.sum(effective_mask))
                     effective_frac = n_effective / n_volumes
                     
@@ -1567,7 +1572,7 @@ class ParticipantReportGenerator:
                     # - Light gray: not in condition
                     colors = np.zeros((1, n_volumes, 3))
                     colors[0, :, :] = [0.85, 0.85, 0.85]  # Default: light gray (not in condition)
-                    colors[0, cond_mask & ~global_mask, :] = [1.0, 0.6, 0.2]  # Orange: in condition but censored
+                    colors[0, raw_cond_mask & ~global_mask, :] = [1.0, 0.6, 0.2]  # Orange: in condition but censored
                     colors[0, effective_mask, :] = [0.2, 0.8, 0.2]  # Green: actually used
                     
                     ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])

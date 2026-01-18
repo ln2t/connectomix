@@ -319,7 +319,8 @@ class TemporalCensor:
             all_events_mask |= in_event
         
         # Create mask for each requested condition
-        self.condition_masks = {}
+        self.condition_masks = {}  # Effective masks (condition & global)
+        self.raw_condition_masks = {}  # Raw condition timing (for visualization)
         
         for condition in conditions_to_process:
             # Start with all False
@@ -344,7 +345,10 @@ class TemporalCensor:
                 in_event = (volume_times >= buffered_onset) & (volume_times < buffered_end)
                 cond_mask |= in_event
             
-            # Also apply the global censoring mask
+            # Store raw condition timing (before applying global mask)
+            self.raw_condition_masks[condition] = cond_mask.copy()
+            
+            # Apply the global censoring mask to get effective mask
             cond_mask &= self.mask
             
             self.condition_masks[condition] = cond_mask
@@ -357,8 +361,12 @@ class TemporalCensor:
         
         # Add baseline if requested (via --conditions baseline or --include-baseline)
         if baseline_requested:
-            # Baseline = not in any condition from events file
-            baseline_mask = ~all_events_mask & self.mask
+            # Baseline = not in any condition from events file (raw timing)
+            raw_baseline_mask = ~all_events_mask
+            self.raw_condition_masks['baseline'] = raw_baseline_mask
+            
+            # Effective baseline = raw baseline & global mask
+            baseline_mask = raw_baseline_mask & self.mask
             self.condition_masks['baseline'] = baseline_mask
             
             n_baseline = np.sum(baseline_mask)
@@ -622,14 +630,15 @@ class TemporalCensor:
         
         # Add condition info if applicable
         if self.condition_masks:
-            summary['conditions'] = {
-                name: {
+            summary['conditions'] = {}
+            for name, mask in self.condition_masks.items():
+                raw_mask = self.raw_condition_masks.get(name, mask)
+                summary['conditions'][name] = {
                     'n_volumes': int(np.sum(mask)),
                     'fraction': float(np.sum(mask) / self.n_volumes),
-                    'mask': mask.tolist(),  # Include actual mask for visualization
+                    'mask': mask.tolist(),  # Effective mask (for connectivity)
+                    'raw_mask': raw_mask.tolist(),  # Raw timing (for visualization)
                 }
-                for name, mask in self.condition_masks.items()
-            }
         
         # Add any warnings that were generated during validation
         if hasattr(self, '_warnings') and self._warnings:
