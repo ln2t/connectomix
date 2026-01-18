@@ -594,6 +594,7 @@ class TemporalCensor:
                 name: {
                     'n_volumes': int(np.sum(mask)),
                     'fraction': float(np.sum(mask) / self.n_volumes),
+                    'mask': mask.tolist(),  # Include actual mask for visualization
                 }
                 for name, mask in self.condition_masks.items()
             }

@@ -1403,38 +1403,113 @@ class ParticipantReportGenerator:
         return html
     
     def _create_censoring_plot(self) -> Optional[plt.Figure]:
-        """Create temporal censoring visualization."""
+        """Create temporal censoring visualization.
+        
+        When condition selection is active, shows a multi-row plot with
+        each condition's mask. Otherwise shows the global censoring mask.
+        """
         if self.censoring_summary is None:
             return None
         
         try:
-            mask = self.censoring_summary.get('mask', [])
-            if not mask:
+            conditions = self.censoring_summary.get('conditions', {})
+            global_mask = np.array(self.censoring_summary.get('mask', []))
+            
+            if len(global_mask) == 0:
                 return None
             
-            mask = np.array(mask)
-            n_volumes = len(mask)
+            n_volumes = len(global_mask)
             
-            # Create figure
-            fig, ax = plt.subplots(figsize=(14, 2))
-            
-            # Create image representation of mask
-            # Green for retained, red for censored
-            colors = np.zeros((1, n_volumes, 3))
-            colors[0, mask, :] = [0.2, 0.8, 0.2]   # Green for retained
-            colors[0, ~mask, :] = [0.9, 0.2, 0.2]  # Red for censored
-            
-            ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])
-            ax.set_xlabel('Volume', fontsize=10)
-            ax.set_yticks([])
-            ax.set_xlim(0, n_volumes)
-            ax.set_title('Temporal Censoring Mask', fontsize=12, fontweight='bold')
-            
-            # Add text summary
-            n_retained = np.sum(mask)
-            ax.text(n_volumes * 0.98, 0.5, f'{n_retained}/{n_volumes} retained',
-                   ha='right', va='center', fontsize=9,
-                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            # If conditions exist, show condition-specific masks
+            if conditions:
+                # Create multi-row figure for conditions
+                n_rows = len(conditions) + 1  # +1 for combined/union mask
+                fig, axes = plt.subplots(n_rows, 1, figsize=(14, 1.5 * n_rows), 
+                                        sharex=True, squeeze=False)
+                axes = axes.flatten()
+                
+                # Calculate combined mask (union of all conditions)
+                combined_mask = np.zeros(n_volumes, dtype=bool)
+                
+                # Plot each condition
+                for idx, (cond_name, cond_info) in enumerate(sorted(conditions.items())):
+                    ax = axes[idx]
+                    n_vols = cond_info.get('n_volumes', 0)
+                    cond_frac = cond_info.get('fraction', 0)
+                    
+                    # Get the actual mask data
+                    cond_mask_data = cond_info.get('mask', None)
+                    if cond_mask_data is not None:
+                        cond_mask = np.array(cond_mask_data, dtype=bool)
+                    else:
+                        # Fallback: create approximate mask
+                        cond_mask = np.zeros(n_volumes, dtype=bool)
+                        cond_mask[:n_vols] = True
+                    
+                    # Create colors
+                    colors = np.zeros((1, n_volumes, 3))
+                    colors[0, cond_mask, :] = [0.2, 0.8, 0.2]   # Green for in-condition
+                    colors[0, ~cond_mask, :] = [0.9, 0.2, 0.2]  # Red for excluded
+                    
+                    ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])
+                    ax.set_yticks([])
+                    ax.set_ylabel(cond_name, fontsize=9, rotation=0, ha='right', va='center')
+                    ax.text(n_volumes * 0.98, 0.5, f'{n_vols}/{n_volumes} ({cond_frac:.1%})',
+                           ha='right', va='center', fontsize=8,
+                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                    
+                    combined_mask |= cond_mask
+                
+                # Show combined/union mask in last row
+                ax = axes[-1]
+                colors = np.zeros((1, n_volumes, 3))
+                colors[0, combined_mask, :] = [0.2, 0.6, 0.9]   # Blue for union
+                colors[0, ~combined_mask, :] = [0.9, 0.2, 0.2]  # Red for excluded
+                
+                ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])
+                ax.set_xlabel('Volume', fontsize=10)
+                ax.set_yticks([])
+                ax.set_ylabel('Combined', fontsize=9, rotation=0, ha='right', va='center')
+                
+                # Get actual combined stats from summary
+                total_retained = self.censoring_summary.get('n_retained', int(np.sum(combined_mask)))
+                frac_retained = self.censoring_summary.get('fraction_retained', total_retained/n_volumes)
+                ax.text(n_volumes * 0.98, 0.5, f'{total_retained}/{n_volumes} ({frac_retained:.1%})',
+                       ha='right', va='center', fontsize=8,
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                
+                axes[0].set_title('Condition-Based Temporal Censoring', fontsize=12, fontweight='bold')
+                
+                # Add legend
+                from matplotlib.patches import Patch
+                legend_elements = [
+                    Patch(facecolor=[0.2, 0.8, 0.2], label='In condition'),
+                    Patch(facecolor=[0.9, 0.2, 0.2], label='Excluded'),
+                    Patch(facecolor=[0.2, 0.6, 0.9], label='Union (used)'),
+                ]
+                fig.legend(handles=legend_elements, loc='upper right', fontsize=8, 
+                          bbox_to_anchor=(0.99, 0.99))
+                
+            else:
+                # Simple global mask plot
+                fig, ax = plt.subplots(figsize=(14, 2))
+                
+                # Create image representation of mask
+                colors = np.zeros((1, n_volumes, 3))
+                colors[0, global_mask, :] = [0.2, 0.8, 0.2]   # Green for retained
+                colors[0, ~global_mask, :] = [0.9, 0.2, 0.2]  # Red for censored
+                
+                ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])
+                ax.set_xlabel('Volume', fontsize=10)
+                ax.set_yticks([])
+                ax.set_xlim(0, n_volumes)
+                ax.set_title('Temporal Censoring Mask', fontsize=12, fontweight='bold')
+                
+                # Add text summary
+                n_retained = np.sum(global_mask)
+                ax.text(n_volumes * 0.98, 0.5, f'{n_retained}/{n_volumes} retained',
+                       ha='right', va='center', fontsize=9,
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
             
             plt.tight_layout()
             return fig
