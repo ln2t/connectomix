@@ -449,7 +449,7 @@ def _build_cli_command(
     str
         CLI command with generic path placeholders.
     """
-    parts = ["connectomix <rawdata_dir> <derivatives_dir> participant"]
+    parts = ["connectomix /path/to/rawdata /path/to/derivatives participant"]
     
     # Add participant label (check both 'subject' and 'sub' keys)
     subject = file_entities.get('subject') or file_entities.get('sub')
