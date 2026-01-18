@@ -1282,12 +1282,13 @@ class ParticipantReportGenerator:
                     </div>
                     <div class="figure-caption">
                         Figure: Histogram of all voxel intensity values across all timepoints, before (blue) 
-                        and after (coral) denoising. After denoising, the signal is standardized (z-scored) 
-                        and detrended, resulting in a distribution centered around zero with unit variance. 
-                        The before-denoising distribution shows the original fMRI signal intensity values.
+                        and after (coral) denoising. <strong>Note:</strong> For visualization purposes, 
+                        the before-denoising data has been z-scored to allow comparison on the same scale 
+                        (raw BOLD units are typically ~1000s). After denoising, confound regression, 
+                        bandpass filtering, and standardization are applied, which changes the distribution shape.
                         <br><br>
-                        <strong>Statistics:</strong> Before denoising: μ={orig_stats['mean']:.2f}, σ={orig_stats['std']:.2f}. 
-                        After denoising: μ={den_stats['mean']:.2f}, σ={den_stats['std']:.2f}.
+                        <strong>Statistics (z-scored):</strong> Before: μ={orig_stats['mean']:.2f}, σ={orig_stats['std']:.2f}. 
+                        After: μ={den_stats['mean']:.2f}, σ={den_stats['std']:.2f}.
                     </div>
                 </div>
                 '''

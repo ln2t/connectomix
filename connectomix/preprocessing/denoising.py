@@ -183,6 +183,9 @@ def compute_denoising_histogram_data(
 ) -> dict:
     """Compute histogram data for before/after denoising comparison.
     
+    The original (before denoising) data is z-scored for visualization purposes,
+    allowing meaningful comparison with the denoised data on the same scale.
+    
     Args:
         original_img: Original functional image (before denoising)
         denoised_img: Denoised functional image
@@ -192,9 +195,10 @@ def compute_denoising_histogram_data(
     
     Returns:
         Dictionary containing:
-            - 'original_data': Flattened original voxel values (subsampled)
+            - 'original_data': Flattened z-scored original voxel values (subsampled)
             - 'denoised_data': Flattened denoised voxel values (subsampled)
-            - 'original_stats': Dict with mean, std, min, max of original
+            - 'original_stats': Dict with mean, std, min, max of z-scored original,
+                                plus 'raw_mean' and 'raw_std' of original BOLD units
             - 'denoised_stats': Dict with mean, std, min, max of denoised
     """
     # Get data
@@ -223,13 +227,21 @@ def compute_denoising_histogram_data(
         original_masked = original_masked[::subsample]
         denoised_masked = denoised_masked[::subsample]
     
-    # Compute statistics
+    # Z-score the original data for visualization purposes
+    # This allows meaningful comparison with the denoised data (which is already z-scored)
+    original_mean = np.mean(original_masked)
+    original_std = np.std(original_masked)
+    original_zscored = (original_masked - original_mean) / (original_std + 1e-10)
+    
+    # Compute statistics (on z-scored original for consistency)
     original_stats = {
-        'mean': float(np.mean(original_masked)),
-        'std': float(np.std(original_masked)),
-        'min': float(np.min(original_masked)),
-        'max': float(np.max(original_masked)),
-        'n_values': len(original_masked)
+        'mean': float(np.mean(original_zscored)),
+        'std': float(np.std(original_zscored)),
+        'min': float(np.min(original_zscored)),
+        'max': float(np.max(original_zscored)),
+        'n_values': len(original_zscored),
+        'raw_mean': float(original_mean),
+        'raw_std': float(original_std)
     }
     
     denoised_stats = {
@@ -241,7 +253,7 @@ def compute_denoising_histogram_data(
     }
     
     return {
-        'original_data': original_masked,
+        'original_data': original_zscored,
         'denoised_data': denoised_masked,
         'original_stats': original_stats,
         'denoised_stats': denoised_stats
