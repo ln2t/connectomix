@@ -169,12 +169,48 @@ atlas: "schaefer2018n100"
 
 ### Available Connectivity Measures
 
-| Measure | Description |
-|---------|-------------|
-| `correlation` | Pearson correlation between region time series (normalized) |
-| `covariance` | Sample covariance matrix |
-| `partial correlation` | Correlation controlling for effects of all other regions |
-| `precision` | Inverse covariance (sparse, reveals direct connections) |
+For ROI-to-ROI analysis, Connectomix computes **four complementary connectivity measures** to characterize brain network interactions:
+
+| Measure | Values | Interpretation |
+|---------|--------|----------------|
+| **Correlation** | -1 to +1 | Normalized covariance; strength & direction of linear relationship |
+| **Covariance** | Unbounded | Raw joint variability; retains variance magnitude information |
+| **Partial Correlation** | -1 to +1 | Correlation controlling for all other regions; reveals direct connections |
+| **Precision** | Unbounded | Inverse covariance; sparse matrix revealing direct statistical dependencies |
+
+#### Pearson Correlation
+
+The most commonly used measure. Pearson correlation normalizes the covariance by the standard deviations, yielding values between -1 and +1 that indicate the strength and direction of the linear relationship between two regions.
+
+**Use when:** You want easily interpretable values; comparing connectivity across subjects with different signal variances.
+
+**Formula:** $\rho_{ij} = \frac{\text{Cov}(X_i, X_j)}{\sigma_i \sigma_j}$
+
+#### Covariance
+
+The sample covariance measures how two variables vary together, retaining information about the magnitude of variance. Unlike correlation, covariance is not normalized and can take any real value.
+
+**Use when:** Variance magnitude is meaningful for your analysis; you want to preserve amplitude information.
+
+**Formula:** $\text{Cov}(X_i, X_j) = \frac{1}{n-1}\sum_{t=1}^{n}(x_i^t - \bar{x}_i)(x_j^t - \bar{x}_j)$
+
+#### Partial Correlation
+
+Partial correlation measures the relationship between two regions while controlling for the influence of all other regions. This reveals direct connections by removing indirect effects mediated through other areas.
+
+**Use when:** You want to identify direct functional connections; distinguishing direct from indirect relationships.
+
+**Formula:** $\rho_{ij|Z} = -\frac{\Theta_{ij}}{\sqrt{\Theta_{ii}\Theta_{jj}}}$ where $\Theta$ is the precision matrix
+
+#### Precision (Inverse Covariance)
+
+The precision matrix is the inverse of the covariance matrix. It encodes conditional dependencies: if $\Theta_{ij} = 0$, regions i and j are conditionally independent given all other regions. This provides a sparse representation of direct statistical relationships.
+
+**Use when:** You want sparse networks; identifying direct statistical dependencies; graph-theoretical analyses.
+
+**Formula:** $\Theta = \Sigma^{-1}$
+
+> **Tip:** Correlation and partial correlation are normalized (-1 to +1) and easier to interpret. Covariance and precision preserve variance information but require careful interpretation across subjects.
 
 ### Available Atlases
 
