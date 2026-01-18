@@ -292,7 +292,7 @@ The HTML report includes a **Temporal Censoring** section showing:
 - Condition-specific volume counts
 - Visual censoring mask
 
-**Important:** If too few volumes remain after censoring (<30% or <50 volumes), Connectomix will raise an error. Adjust your thresholds accordingly.
+**Important:** If too few volumes remain after censoring (<30% or <50 volumes), Connectomix will issue a prominent warning in the report and logs. Results with very few volumes should be interpreted with caution as connectivity estimates become unreliable.
 
 ---
 

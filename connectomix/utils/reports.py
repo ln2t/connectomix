@@ -1341,9 +1341,30 @@ class ParticipantReportGenerator:
             or initial equilibration volumes.'''
             retained_label = "Retained Volumes"
         
+        # Check for warnings in the summary
+        warnings = summary.get('warnings', [])
+        warning_html = ""
+        if warnings:
+            warning_items = "".join(f"<li>{w}</li>" for w in warnings)
+            warning_html = f'''
+            <div class="warning-banner" style="background-color: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                <h3 style="color: #92400e; margin-top: 0;">⚠️ DATA QUALITY WARNING</h3>
+                <p style="color: #92400e; font-weight: bold;">The following issues were detected during temporal censoring:</p>
+                <ul style="color: #92400e; margin-bottom: 0;">
+                    {warning_items}
+                </ul>
+                <p style="color: #92400e; margin-bottom: 0; margin-top: 12px;">
+                    <strong>Recommendation:</strong> Results from analyses with very few volumes may be unreliable. 
+                    Consider relaxing censoring parameters, excluding problematic conditions, or interpreting these results with extreme caution.
+                </p>
+            </div>
+            '''
+        
         html = f'''
         <div class="section" id="censoring">
             <h2>⏱️ Temporal Censoring</h2>
+            
+            {warning_html}
             
             <p>{description}</p>
             

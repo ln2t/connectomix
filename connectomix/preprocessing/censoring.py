@@ -438,6 +438,9 @@ class TemporalCensor:
         Raises:
             PreprocessingError: If too few volumes remain.
         """
+        # Track warnings for reporting
+        self._warnings: List[str] = []
+        
         # When condition selection is active, validate each condition
         if self.condition_masks:
             for cond_name, cond_mask in self.condition_masks.items():
@@ -445,20 +448,23 @@ class TemporalCensor:
                 fraction_retained = n_retained / self.n_volumes
                 
                 if n_retained < self.config.min_volumes_retained:
-                    raise PreprocessingError(
-                        f"Too few volumes for condition '{cond_name}': {n_retained} volumes "
-                        f"(minimum required: {self.config.min_volumes_retained}). "
-                        f"Consider relaxing censoring parameters or excluding this condition."
+                    warning_msg = (
+                        f"⚠️ LOW VOLUME COUNT for condition '{cond_name}': only {n_retained} volumes "
+                        f"(recommended minimum: {self.config.min_volumes_retained}). "
+                        f"Results may be unreliable."
                     )
+                    self._warnings.append(warning_msg)
+                    self._logger.warning(warning_msg)
                 
                 if fraction_retained < self.config.min_fraction_retained:
-                    raise PreprocessingError(
-                        f"Too few volumes for condition '{cond_name}': {fraction_retained:.1%} "
-                        f"(minimum required: {self.config.min_fraction_retained:.0%}). "
-                        f"Consider relaxing censoring parameters."
+                    warning_msg = (
+                        f"⚠️ LOW RETENTION RATE for condition '{cond_name}': {fraction_retained:.1%} "
+                        f"(recommended minimum: {self.config.min_fraction_retained:.0%}). "
+                        f"Results may be unreliable."
                     )
-                
-                if fraction_retained < self.config.warn_fraction_retained:
+                    self._warnings.append(warning_msg)
+                    self._logger.warning(warning_msg)
+                elif fraction_retained < self.config.warn_fraction_retained:
                     self._logger.warning(
                         f"⚠️ Only {fraction_retained:.1%} of volumes retained for condition "
                         f"'{cond_name}'. Interpret results with caution."
@@ -469,20 +475,23 @@ class TemporalCensor:
             fraction_retained = n_retained / self.n_volumes
             
             if n_retained < self.config.min_volumes_retained:
-                raise PreprocessingError(
-                    f"Too few volumes after censoring: {n_retained} volumes remaining "
-                    f"(minimum required: {self.config.min_volumes_retained}). "
-                    f"Consider relaxing censoring parameters."
+                warning_msg = (
+                    f"⚠️ LOW VOLUME COUNT after censoring: only {n_retained} volumes remaining "
+                    f"(recommended minimum: {self.config.min_volumes_retained}). "
+                    f"Results may be unreliable."
                 )
+                self._warnings.append(warning_msg)
+                self._logger.warning(warning_msg)
             
             if fraction_retained < self.config.min_fraction_retained:
-                raise PreprocessingError(
-                    f"Too few volumes after censoring: {fraction_retained:.1%} remaining "
-                    f"(minimum required: {self.config.min_fraction_retained:.0%}). "
-                    f"Consider relaxing censoring parameters."
+                warning_msg = (
+                    f"⚠️ LOW RETENTION RATE after censoring: {fraction_retained:.1%} remaining "
+                    f"(recommended minimum: {self.config.min_fraction_retained:.0%}). "
+                    f"Results may be unreliable."
                 )
-            
-            if fraction_retained < self.config.warn_fraction_retained:
+                self._warnings.append(warning_msg)
+                self._logger.warning(warning_msg)
+            elif fraction_retained < self.config.warn_fraction_retained:
                 self._logger.warning(
                     f"⚠️ Only {fraction_retained:.1%} of volumes retained after censoring. "
                     f"Interpret results with caution."
@@ -621,6 +630,10 @@ class TemporalCensor:
                 }
                 for name, mask in self.condition_masks.items()
             }
+        
+        # Add any warnings that were generated during validation
+        if hasattr(self, '_warnings') and self._warnings:
+            summary['warnings'] = self._warnings
         
         return summary
     
