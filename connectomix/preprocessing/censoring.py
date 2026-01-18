@@ -610,8 +610,14 @@ def find_events_file(
 ) -> Optional[Path]:
     """Find BIDS events file matching a functional file using BIDSLayout.
     
-    Uses BIDSLayout to properly query for events.tsv in the raw BIDS dataset,
-    matching the subject, session, task, and run entities from the functional file.
+    Uses BIDSLayout to properly query for events.tsv in the raw BIDS dataset.
+    BIDS allows two types of events files:
+    
+    1. Subject-specific: sub-01_task-rest_events.tsv (in sub-01/func/)
+    2. Dataset-wide: task-rest_events.tsv (in root, shared by all subjects)
+    
+    This function first queries without subject filter. If multiple matches
+    are found, it narrows down by adding subject (and session/run if needed).
     
     Args:
         func_path: Path to functional file (from fMRIPrep derivatives).
@@ -638,46 +644,76 @@ def find_events_file(
         _logger.warning("Cannot find events file: missing sub or task entity")
         return None
     
-    # Build query for BIDSLayout
-    query = {
-        'subject': entities['sub'],
-        'task': entities['task'].replace('_bold.nii.gz', '').replace('_bold.nii', ''),
+    # Clean up task name (remove any suffix contamination)
+    task_name = entities['task'].replace('_bold.nii.gz', '').replace('_bold.nii', '')
+    
+    # Build base query WITHOUT subject (to find dataset-wide events files)
+    base_query = {
+        'task': task_name,
         'suffix': 'events',
         'extension': '.tsv',
     }
     
     # Add session if present
     if 'ses' in entities:
-        query['session'] = entities['ses']
+        base_query['session'] = entities['ses']
     
     # Add run if present
     if 'run' in entities:
-        query['run'] = entities['run']
+        base_query['run'] = entities['run']
     
-    _logger.debug(f"Querying BIDSLayout for events file: {query}")
+    _logger.debug(f"Querying BIDSLayout for events file (without subject): {base_query}")
     
     try:
-        # Query the layout - this will search in raw BIDS directory
-        events_files = layout.get(**query)
+        # First query WITHOUT subject - catches dataset-wide events files
+        events_files = layout.get(**base_query)
         
-        if events_files:
+        if len(events_files) == 1:
+            # Single match - use it (likely dataset-wide events file)
             events_path = Path(events_files[0].path)
-            _logger.debug(f"Found events file via BIDSLayout: {events_path}")
+            _logger.debug(f"Found single events file: {events_path}")
             return events_path
-        else:
-            _logger.debug(f"No events file found matching query: {query}")
+        
+        elif len(events_files) > 1:
+            # Multiple matches - narrow down by subject
+            query_with_subject = {**base_query, 'subject': entities['sub']}
+            _logger.debug(f"Multiple events files found, narrowing by subject: {query_with_subject}")
             
-            # Try without run entity (sometimes events are shared across runs)
-            if 'run' in query:
-                query_no_run = {k: v for k, v in query.items() if k != 'run'}
+            events_files = layout.get(**query_with_subject)
+            
+            if events_files:
+                events_path = Path(events_files[0].path)
+                _logger.debug(f"Found subject-specific events file: {events_path}")
+                return events_path
+        
+        # No matches - try without run entity (events may be shared across runs)
+        if 'run' in base_query:
+            query_no_run = {k: v for k, v in base_query.items() if k != 'run'}
+            _logger.debug(f"No events file found, trying without run: {query_no_run}")
+            
+            events_files = layout.get(**query_no_run)
+            
+            if len(events_files) == 1:
+                events_path = Path(events_files[0].path)
+                _logger.debug(f"Found events file (ignoring run): {events_path}")
+                return events_path
+            
+            elif len(events_files) > 1:
+                # Multiple - narrow by subject
+                query_no_run['subject'] = entities['sub']
                 events_files = layout.get(**query_no_run)
+                
                 if events_files:
                     events_path = Path(events_files[0].path)
-                    _logger.debug(f"Found events file (ignoring run): {events_path}")
+                    _logger.debug(f"Found subject-specific events file (ignoring run): {events_path}")
                     return events_path
+        
+        _logger.debug(f"No events file found for task '{task_name}'")
+        return None
             
-            return None
-            
+    except Exception as e:
+        _logger.warning(f"Error querying BIDSLayout for events: {e}")
+        return None
     except Exception as e:
         _logger.warning(f"Error querying BIDSLayout for events: {e}")
         return None
