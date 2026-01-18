@@ -10,12 +10,13 @@ from typing import Dict, List, Optional, Tuple
 
 import nibabel as nib
 import numpy as np
+import pandas as pd
 
 from connectomix.config.defaults import ParticipantConfig
 from connectomix.config.loader import save_config
 from connectomix.io.bids import create_bids_layout, build_bids_path, query_participant_files
 from connectomix.io.paths import create_dataset_description
-from connectomix.io.readers import load_seeds_file
+from connectomix.io.readers import load_seeds_file, get_repetition_time
 from connectomix.preprocessing.resampling import (
     check_geometric_consistency,
     resample_to_reference,
@@ -23,12 +24,18 @@ from connectomix.preprocessing.resampling import (
 )
 from connectomix.preprocessing.denoising import denoise_image
 from connectomix.preprocessing.canica import run_canica_atlas
+from connectomix.preprocessing.censoring import (
+    TemporalCensor,
+    load_events_file,
+    find_events_file,
+)
 from connectomix.connectivity.seed_to_voxel import compute_seed_to_voxel
 from connectomix.connectivity.roi_to_voxel import compute_roi_to_voxel
 from connectomix.connectivity.seed_to_seed import compute_seed_to_seed
 from connectomix.connectivity.roi_to_roi import compute_roi_to_roi
-from connectomix.utils.exceptions import BIDSError, ConnectomixError
+from connectomix.utils.exceptions import BIDSError, ConnectomixError, PreprocessingError
 from connectomix.utils.logging import timer, log_section
+from connectomix.utils.reports import ParticipantReportGenerator
 from connectomix.core.version import __version__
 
 
@@ -221,11 +228,15 @@ def run_participant_pipeline(
             # Extract entities from filename
             file_entities = _extract_entities_from_path(func_path)
             
+            # Track all connectivity outputs for this file
+            connectivity_paths = []
+            
             with timer(logger, f"  Subject {file_entities.get('sub', 'unknown')}"):
                 # --- Resample if needed ---
                 if not is_consistent:
                     resampled_path = _get_output_path(
-                        output_dir, file_entities, "resampled", "bold", ".nii.gz"
+                        output_dir, file_entities, "resampled", "bold", ".nii.gz",
+                        label=config.label
                     )
                     
                     func_img = resample_to_reference(
@@ -250,7 +261,8 @@ def run_participant_pipeline(
                 
                 # --- Denoise ---
                 denoised_path = _get_output_path(
-                    output_dir, file_entities, "denoised", "bold", ".nii.gz"
+                    output_dir, file_entities, "denoised", "bold", ".nii.gz",
+                    label=config.label
                 )
                 
                 denoise_image(
@@ -268,20 +280,88 @@ def run_participant_pipeline(
                 # Load denoised image for connectivity
                 denoised_img = nib.load(denoised_path)
                 
+                # --- Apply temporal censoring if enabled ---
+                censor = None
+                censoring_summary = None
+                
+                if config.temporal_censoring.enabled:
+                    censor, censoring_summary = _apply_temporal_censoring(
+                        denoised_img=denoised_img,
+                        func_path=func_path,
+                        confounds_path=confounds_path,
+                        bids_dir=bids_dir,
+                        config=config,
+                        logger=logger,
+                    )
+                
                 # --- Compute connectivity ---
-                connectivity_paths = _compute_connectivity(
-                    denoised_img=denoised_img,
-                    method=config.method,
-                    output_dir=output_dir,
+                # If condition selection is enabled, compute connectivity for each condition
+                if censor and censor.condition_masks:
+                    # Compute connectivity for each condition separately
+                    for condition_name, condition_mask in censor.condition_masks.items():
+                        n_vols = np.sum(condition_mask)
+                        if n_vols < config.temporal_censoring.min_volumes_retained:
+                            logger.warning(
+                                f"Skipping condition '{condition_name}': only {n_vols} volumes "
+                                f"(minimum: {config.temporal_censoring.min_volumes_retained})"
+                            )
+                            continue
+                        
+                        logger.info(f"Computing connectivity for condition '{condition_name}' ({n_vols} volumes)")
+                        
+                        # Apply censoring to get condition-specific image
+                        condition_img = censor.apply_to_image(denoised_img, condition=condition_name)
+                        
+                        # Add condition to entities for output naming
+                        condition_entities = dict(file_entities)
+                        condition_entities['condition'] = condition_name
+                        
+                        connectivity_paths_cond = _compute_connectivity(
+                            denoised_img=condition_img,
+                            method=config.method,
+                            output_dir=output_dir,
+                            file_entities=condition_entities,
+                            config=config,
+                            seeds_coords=seeds_coords,
+                            seeds_names=seeds_names,
+                            atlas_img=atlas_img,
+                            atlas_labels=atlas_labels,
+                            logger=logger,
+                        )
+                        outputs['connectivity'].extend(connectivity_paths_cond)
+                        connectivity_paths.extend(connectivity_paths_cond)
+                else:
+                    # No condition selection - compute connectivity on full (possibly censored) data
+                    if censor:
+                        # Apply global censoring (motion, initial drop)
+                        denoised_img = censor.apply_to_image(denoised_img)
+                    
+                    connectivity_paths_single = _compute_connectivity(
+                        denoised_img=denoised_img,
+                        method=config.method,
+                        output_dir=output_dir,
+                        file_entities=file_entities,
+                        config=config,
+                        seeds_coords=seeds_coords,
+                        seeds_names=seeds_names,
+                        atlas_img=atlas_img,
+                        atlas_labels=atlas_labels,
+                        logger=logger,
+                    )
+                    outputs['connectivity'].extend(connectivity_paths_single)
+                    connectivity_paths = connectivity_paths_single
+                
+                # --- Generate HTML Report ---
+                _generate_participant_report(
                     file_entities=file_entities,
                     config=config,
-                    seeds_coords=seeds_coords,
-                    seeds_names=seeds_names,
-                    atlas_img=atlas_img,
+                    output_dir=output_dir,
+                    confounds_path=confounds_path,
+                    connectivity_paths=connectivity_paths,
                     atlas_labels=atlas_labels,
                     logger=logger,
+                    censoring_summary=censoring_summary,
                 )
-                outputs['connectivity'].extend(connectivity_paths)
         
         # === Summary ===
         log_section(logger, "Summary")
@@ -291,6 +371,240 @@ def run_participant_pipeline(
         logger.info(f"Outputs saved to: {output_dir}")
     
     return outputs
+
+
+def _generate_participant_report(
+    file_entities: Dict[str, str],
+    config: ParticipantConfig,
+    output_dir: Path,
+    confounds_path: Path,
+    connectivity_paths: List[Path],
+    atlas_labels: Optional[List[str]],
+    logger: logging.Logger,
+    censoring_summary: Optional[Dict] = None,
+) -> Optional[Path]:
+    """Generate HTML report for a participant analysis.
+    
+    Parameters
+    ----------
+    file_entities : dict
+        BIDS entities for the file.
+    config : ParticipantConfig
+        Configuration object.
+    output_dir : Path
+        Output directory.
+    confounds_path : Path
+        Path to confounds file.
+    connectivity_paths : list
+        List of connectivity output paths.
+    atlas_labels : list or None
+        Atlas labels for ROI-based methods.
+    logger : Logger
+        Logger instance.
+    censoring_summary : dict or None
+        Summary of temporal censoring applied.
+    
+    Returns
+    -------
+    Path or None
+        Path to generated report, or None if generation failed.
+    """
+    try:
+        log_section(logger, "Generating HTML Report")
+        
+        # Load confounds for denoising plots
+        confounds_df = pd.read_csv(confounds_path, sep='\t')
+        
+        # Prepare confounds to plot (selected strategy components)
+        selected_confounds = []
+        for conf_name in config.confounds:
+            matching = [c for c in confounds_df.columns if conf_name in c]
+            selected_confounds.extend(matching[:6])  # Limit to 6 per type
+        
+        if not selected_confounds:
+            # Fall back to some common confounds
+            common = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z']
+            selected_confounds = [c for c in common if c in confounds_df.columns]
+        
+        # Load connectivity matrix for ROI-based methods
+        connectivity_matrix = None
+        roi_names = None
+        
+        if config.method in ["seedToSeed", "roiToRoi"]:
+            # Find matrix files
+            matrix_files = [p for p in connectivity_paths if p.suffix == '.npy']
+            if matrix_files:
+                connectivity_matrix = np.load(matrix_files[0])
+                
+                # Set ROI names
+                if config.method == "roiToRoi" and atlas_labels:
+                    roi_names = atlas_labels
+                elif config.method == "seedToSeed":
+                    # Load seeds file to get names
+                    if config.seeds_file:
+                        _, roi_names = load_seeds_file(Path(config.seeds_file))
+        
+        # Build subject identifier
+        subject_id = file_entities.get('sub', 'unknown')
+        session = file_entities.get('ses', '')
+        task = file_entities.get('task', '')
+        run = file_entities.get('run', '')
+        
+        subject_label = f"sub-{subject_id}"
+        if session:
+            subject_label += f"_ses-{session}"
+        if task:
+            subject_label += f"_task-{task}"
+        if run:
+            subject_label += f"_run-{run}"
+        
+        # Build desc entity based on method and atlas/seeds
+        if config.method in ["roiToRoi", "roiToVoxel"]:
+            desc = config.atlas if config.atlas else config.method
+        elif config.method in ["seedToSeed", "seedToVoxel"]:
+            # Use seeds file name without extension
+            if config.seeds_file:
+                desc = Path(config.seeds_file).stem
+            else:
+                desc = config.method
+        else:
+            desc = config.method
+        
+        # Create report generator
+        report = ParticipantReportGenerator(
+            subject_id=subject_label,
+            config=config,
+            output_dir=output_dir,
+            confounds_df=confounds_df,
+            selected_confounds=selected_confounds,
+            connectivity_matrix=connectivity_matrix,
+            roi_names=roi_names,
+            connectivity_paths=connectivity_paths,
+            logger=logger,
+            desc=desc,
+            label=config.label,
+            censoring_summary=censoring_summary,
+        )
+        
+        # Generate report
+        report_path = report.generate()
+        
+        logger.info(f"HTML report generated: {report_path}")
+        
+        return report_path
+        
+    except Exception as e:
+        logger.warning(f"Failed to generate HTML report: {e}")
+        logger.debug("Report generation error details:", exc_info=True)
+        return None
+
+
+def _apply_temporal_censoring(
+    denoised_img: nib.Nifti1Image,
+    func_path: Path,
+    confounds_path: Path,
+    bids_dir: Path,
+    config: ParticipantConfig,
+    logger: logging.Logger,
+) -> Tuple[TemporalCensor, Dict]:
+    """Apply temporal censoring to functional data.
+    
+    Parameters
+    ----------
+    denoised_img : Nifti1Image
+        Denoised functional image.
+    func_path : Path
+        Original functional file path (for finding events file).
+    confounds_path : Path
+        Path to confounds file.
+    bids_dir : Path
+        BIDS root directory.
+    config : ParticipantConfig
+        Configuration object.
+    logger : Logger
+        Logger instance.
+    
+    Returns
+    -------
+    censor : TemporalCensor
+        Configured temporal censor object.
+    summary : dict
+        Censoring summary for reporting.
+    """
+    log_section(logger, "Temporal Censoring")
+    
+    # Get data dimensions
+    n_volumes = denoised_img.shape[-1]
+    
+    # Get TR
+    json_path = func_path.with_suffix('').with_suffix('.json')
+    if json_path.exists():
+        tr = get_repetition_time(json_path)
+    else:
+        # Try to get TR from NIfTI header
+        if len(denoised_img.header.get_zooms()) > 3:
+            tr = float(denoised_img.header.get_zooms()[3])
+        else:
+            tr = 2.0  # Default assumption
+            logger.warning(f"Could not determine TR, assuming {tr}s")
+    
+    logger.info(f"Functional data: {n_volumes} volumes, TR={tr}s")
+    
+    # Create temporal censor
+    censor = TemporalCensor(
+        config=config.temporal_censoring,
+        n_volumes=n_volumes,
+        tr=tr,
+        logger=logger,
+    )
+    
+    # Apply initial drop
+    if config.temporal_censoring.drop_initial_volumes > 0:
+        censor.apply_initial_drop()
+    
+    # Apply motion censoring
+    if config.temporal_censoring.motion_censoring.enabled:
+        confounds_df = pd.read_csv(confounds_path, sep='\t')
+        censor.apply_motion_censoring(confounds_df)
+    
+    # Apply condition selection
+    if config.temporal_censoring.condition_selection.enabled:
+        cs = config.temporal_censoring.condition_selection
+        
+        # Find events file
+        if cs.events_file == "auto":
+            events_path = find_events_file(func_path, bids_dir, logger)
+            if events_path is None:
+                raise PreprocessingError(
+                    f"Could not find events.tsv file for {func_path.name}. "
+                    f"Please specify --events-file or place events.tsv in BIDS structure."
+                )
+        else:
+            events_path = Path(cs.events_file)
+        
+        # Load events
+        events_df = load_events_file(events_path, logger)
+        logger.info(f"Loaded events file: {events_path.name}")
+        
+        # Apply condition selection
+        censor.apply_condition_selection(events_df)
+    
+    # Apply custom mask if provided
+    if config.temporal_censoring.custom_mask_file:
+        censor.apply_custom_mask(config.temporal_censoring.custom_mask_file)
+    
+    # Validate enough volumes remain
+    censor.validate()
+    
+    # Get summary for reporting
+    summary = censor.get_summary()
+    
+    logger.info(
+        f"Censoring result: {summary['n_retained']}/{summary['n_original']} volumes retained "
+        f"({summary['fraction_retained']:.1%})"
+    )
+    
+    return censor, summary
 
 
 def _build_entity_filter(config: ParticipantConfig) -> Dict[str, any]:
@@ -363,6 +677,7 @@ def _get_output_path(
     desc: str,
     suffix: str,
     extension: str,
+    label: Optional[str] = None,
 ) -> Path:
     """Build output path with BIDS naming."""
     # Start with subject directory
@@ -376,10 +691,14 @@ def _get_output_path(
     # Build filename
     parts = []
     
-    entity_order = ['sub', 'ses', 'task', 'run', 'space']
+    entity_order = ['sub', 'ses', 'task', 'run', 'space', 'condition']
     for key in entity_order:
         if key in entities:
             parts.append(f"{key}-{entities[key]}")
+    
+    # Add custom label if provided
+    if label:
+        parts.append(f"label-{label}")
     
     parts.append(f"desc-{desc}")
     parts.append(suffix)
@@ -475,7 +794,8 @@ def _compute_connectivity(
             file_entities['seed'] = name
             
             output_path = _get_output_path(
-                output_dir, file_entities, name, "effectSize", ".nii.gz"
+                output_dir, file_entities, name, "effectSize", ".nii.gz",
+                label=config.label
             )
             
             compute_seed_to_voxel(
@@ -497,7 +817,8 @@ def _compute_connectivity(
             file_entities['roi'] = roi_name
             
             output_path = _get_output_path(
-                output_dir, file_entities, roi_name, "effectSize", ".nii.gz"
+                output_dir, file_entities, roi_name, "effectSize", ".nii.gz",
+                label=config.label
             )
             
             compute_roi_to_voxel(
@@ -511,7 +832,8 @@ def _compute_connectivity(
     
     elif method == "seedToSeed":
         output_path = _get_output_path(
-            output_dir, file_entities, "seeds", "correlation", ".npy"
+            output_dir, file_entities, "seeds", "correlation", ".npy",
+            label=config.label
         )
         
         compute_seed_to_seed(
@@ -528,7 +850,8 @@ def _compute_connectivity(
         file_entities['atlas'] = config.atlas
         
         output_path = _get_output_path(
-            output_dir, file_entities, config.atlas, "correlation", ".npy"
+            output_dir, file_entities, config.atlas, "correlation", ".npy",
+            label=config.label
         )
         
         compute_roi_to_roi(

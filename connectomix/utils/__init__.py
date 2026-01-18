@@ -14,9 +14,8 @@ from connectomix.utils.visualization import (
     close_all_figures,
 )
 from connectomix.utils.reports import (
-    HTMLReportGenerator,
+    ParticipantReportGenerator,
     generate_participant_report,
-    generate_group_report,
 )
 
 __all__ = [
@@ -40,7 +39,6 @@ __all__ = [
     "plot_qc_metrics",
     "close_all_figures",
     # Reports
-    "HTMLReportGenerator",
+    "ParticipantReportGenerator",
     "generate_participant_report",
-    "generate_group_report",
 ]

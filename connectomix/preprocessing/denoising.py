@@ -44,15 +44,23 @@ def denoise_image(
     """
     # Skip if exists and not overwriting
     if output_path.exists() and not overwrite:
-        logger.info(f"Denoised file exists, skipping: {output_path.name}")
+        # Validate that existing file matches current parameters
+        _validate_existing_denoised_file(
+            output_path=output_path,
+            confound_names=confound_names,
+            high_pass=high_pass,
+            low_pass=low_pass,
+            logger=logger,
+        )
+        logger.info(f"Denoised file exists with matching parameters, skipping: {output_path.name}")
         return output_path
     
     logger.info(f"Denoising {img_path.name}")
     
     try:
-        # Load confounds
-        confounds = load_confounds(confounds_path, confound_names)
-        logger.debug(f"  Loaded {len(confound_names)} confound(s)")
+        # Load confounds (supports wildcards like 'c_comp_cor_*')
+        confounds, expanded_names = load_confounds(confounds_path, confound_names)
+        logger.debug(f"  Loaded {len(expanded_names)} confound(s): {expanded_names[:5]}{'...' if len(expanded_names) > 5 else ''}")
         
         # Get TR if not provided
         if t_r is None:
@@ -164,3 +172,97 @@ def compute_denoising_quality_metrics(
     )
     
     return metrics
+
+
+def _validate_existing_denoised_file(
+    output_path: Path,
+    confound_names: List[str],
+    high_pass: float,
+    low_pass: float,
+    logger: logging.Logger,
+) -> None:
+    """Validate that existing denoised file matches current parameters.
+    
+    When a denoised file already exists and overwrite is False, this function
+    checks that the existing file was created with the same denoising parameters
+    as the current configuration. This prevents accidentally reusing a denoised
+    file that was created with different parameters.
+    
+    Args:
+        output_path: Path to existing denoised file
+        confound_names: List of confound column names to regress out
+        high_pass: High-pass filter cutoff in Hz
+        low_pass: Low-pass filter cutoff in Hz
+        logger: Logger instance
+    
+    Raises:
+        PreprocessingError: If parameters don't match or JSON sidecar is missing
+    """
+    sidecar_path = output_path.with_suffix('').with_suffix('.json')
+    
+    if not sidecar_path.exists():
+        raise PreprocessingError(
+            f"Cannot validate existing denoised file '{output_path.name}': "
+            f"JSON sidecar not found at '{sidecar_path.name}'. "
+            f"The existing denoised file may have been created with unknown parameters. "
+            f"Either delete the existing file or set --overwrite-denoised to reprocess."
+        )
+    
+    try:
+        with sidecar_path.open('r') as f:
+            existing_params = json.load(f)
+    except json.JSONDecodeError as e:
+        raise PreprocessingError(
+            f"Cannot validate existing denoised file '{output_path.name}': "
+            f"JSON sidecar is corrupted ({e}). "
+            f"Delete the existing file or set --overwrite-denoised to reprocess."
+        )
+    
+    # Build expected parameters
+    expected_params = {
+        'Confounds': sorted(confound_names),
+        'HighPass_Hz': high_pass,
+        'LowPass_Hz': low_pass,
+    }
+    
+    # Normalize existing confounds for comparison
+    existing_confounds = sorted(existing_params.get('Confounds', []))
+    existing_high_pass = existing_params.get('HighPass_Hz')
+    existing_low_pass = existing_params.get('LowPass_Hz')
+    
+    # Check for mismatches
+    mismatches = []
+    
+    if existing_confounds != expected_params['Confounds']:
+        mismatches.append(
+            f"  - Confounds: existing={existing_confounds}, requested={expected_params['Confounds']}"
+        )
+    
+    if existing_high_pass != expected_params['HighPass_Hz']:
+        mismatches.append(
+            f"  - HighPass_Hz: existing={existing_high_pass}, requested={expected_params['HighPass_Hz']}"
+        )
+    
+    if existing_low_pass != expected_params['LowPass_Hz']:
+        mismatches.append(
+            f"  - LowPass_Hz: existing={existing_low_pass}, requested={expected_params['LowPass_Hz']}"
+        )
+    
+    if mismatches:
+        mismatch_details = "\n".join(mismatches)
+        raise PreprocessingError(
+            f"Existing denoised file '{output_path.name}' was created with different parameters!\n"
+            f"\n"
+            f"Parameter mismatches:\n"
+            f"{mismatch_details}\n"
+            f"\n"
+            f"This can lead to incorrect results if the pipeline uses data that was "
+            f"denoised differently than intended.\n"
+            f"\n"
+            f"To resolve this, either:\n"
+            f"  1. Delete the existing denoised file and its JSON sidecar to reprocess with new parameters\n"
+            f"  2. Set --overwrite-denoised to force reprocessing\n"
+            f"  3. Adjust your configuration to match the existing denoised file's parameters"
+        )
+    
+    logger.debug(f"  Validated existing denoised file parameters match current configuration")

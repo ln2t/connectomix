@@ -1,8 +1,83 @@
 """Default configuration dataclasses for Connectomix."""
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pathlib import Path
+
+
+@dataclass
+class MotionCensoringConfig:
+    """Configuration for motion-based censoring.
+    
+    Attributes:
+        enabled: Whether motion censoring is enabled.
+        fd_threshold: Framewise displacement threshold in mm.
+        fd_column: Column name for FD in confounds file.
+        extend_before: Also censor N volumes before high-motion.
+        extend_after: Also censor N volumes after high-motion.
+    """
+    enabled: bool = False
+    fd_threshold: float = 0.5
+    fd_column: str = "framewise_displacement"
+    extend_before: int = 0
+    extend_after: int = 0
+
+
+@dataclass
+class ConditionSelectionConfig:
+    """Configuration for condition-based censoring (task fMRI).
+    
+    When enabled, separate connectivity matrices are computed for each
+    condition, using only timepoints belonging to that condition.
+    
+    Attributes:
+        enabled: Whether condition selection is enabled.
+        events_file: Path to events TSV file, or "auto" to find from BIDS.
+        conditions: List of condition names to include (empty = all).
+        include_baseline: Include timepoints not in any condition.
+        transition_buffer: Seconds to exclude around condition boundaries.
+    """
+    enabled: bool = False
+    events_file: Optional[str] = "auto"
+    conditions: List[str] = field(default_factory=list)
+    include_baseline: bool = False
+    transition_buffer: float = 0.0
+
+
+@dataclass
+class TemporalCensoringConfig:
+    """Configuration for temporal censoring.
+    
+    Temporal censoring removes specific timepoints (volumes) from fMRI data
+    before connectivity analysis. This is useful for:
+    
+    - **Dummy scan removal**: Discard initial volumes during scanner equilibration.
+    - **Motion scrubbing**: Remove high-motion timepoints (based on FD).
+    - **Condition selection**: For task fMRI, analyze only specific conditions.
+    
+    By default, temporal censoring is disabled. Enable specific features
+    by setting the appropriate sub-configurations.
+    
+    Attributes:
+        enabled: Master switch for temporal censoring.
+        stage: When to apply censoring ("before_denoising" or "after_denoising").
+        drop_initial_volumes: Number of initial volumes to drop.
+        motion_censoring: Motion-based censoring configuration.
+        condition_selection: Condition-based censoring configuration.
+        custom_mask_file: Path to custom censoring mask TSV.
+        min_volumes_retained: Minimum number of volumes required.
+        min_fraction_retained: Minimum fraction of volumes required.
+        warn_fraction_retained: Warn if retention falls below this.
+    """
+    enabled: bool = False
+    stage: str = "before_denoising"
+    drop_initial_volumes: int = 0
+    motion_censoring: MotionCensoringConfig = field(default_factory=MotionCensoringConfig)
+    condition_selection: ConditionSelectionConfig = field(default_factory=ConditionSelectionConfig)
+    custom_mask_file: Optional[Path] = None
+    min_volumes_retained: int = 50
+    min_fraction_retained: float = 0.3
+    warn_fraction_retained: float = 0.5
 
 
 @dataclass
@@ -39,6 +114,9 @@ class ParticipantConfig:
     runs: Optional[List[str]] = None
     spaces: Optional[List[str]] = None
     
+    # Custom label for output filenames
+    label: Optional[str] = None
+    
     # Preprocessing/denoising
     confounds: List[str] = field(default_factory=lambda: [
         "csf", "white_matter",
@@ -69,6 +147,9 @@ class ParticipantConfig:
     n_components: int = 20
     canica_threshold: float = 1.0
     canica_min_region_size: int = 50
+    
+    # Temporal censoring configuration
+    temporal_censoring: TemporalCensoringConfig = field(default_factory=TemporalCensoringConfig)
     
     def validate(self) -> None:
         """Validate configuration parameters.
@@ -134,110 +215,12 @@ class ParticipantConfig:
 class GroupConfig:
     """Configuration for group-level analysis.
     
-    Attributes:
-        subject: List of subject IDs to include in analysis
-        task: Task name (must be single value)
-        session: Session ID (must be single value)
-        run: Run ID (must be single value)
-        space: Space name (must be single value)
-        method: Analysis method (must match participant-level)
-        smoothing: Spatial smoothing FWHM in mm
-        analysis_name: Custom name for this analysis
-        covariates: List of covariate column names from participants.tsv
-        add_intercept: Add intercept to design matrix
-        paired_tests: Perform paired tests (NOT YET IMPLEMENTED)
-        contrast: String expression defining the contrast
-        uncorrected_alpha: Significance level for uncorrected thresholding
-        cluster_forming_alpha: Alpha for cluster-forming threshold
-        fdr_alpha: False Discovery Rate alpha
-        fwe_alpha: Family-Wise Error rate alpha
-        two_sided_test: Perform two-sided vs one-sided test
-        thresholding_strategies: List of thresholding strategies to apply
-        n_permutations: Number of permutations for FWE correction
-        n_jobs: Number of parallel jobs
+    Placeholder configuration - group analysis is under development.
     """
-    
-    # BIDS entity filters
-    subject: Optional[List[str]] = None
-    task: Optional[str] = None
-    session: Optional[str] = None
-    run: Optional[str] = None
-    space: Optional[str] = None
-    
-    # Method
-    method: str = "roiToRoi"
-    smoothing: float = 8.0
-    
-    # Analysis naming
-    analysis_name: str = "default"
-    
-    # Design matrix
-    covariates: List[str] = field(default_factory=list)
-    add_intercept: bool = True
-    paired_tests: bool = False  # NOT YET IMPLEMENTED
-    
-    # Contrast
-    contrast: str = "intercept"
-    
-    # Statistical thresholding
-    uncorrected_alpha: float = 0.001
-    cluster_forming_alpha: float = 0.01
-    fdr_alpha: float = 0.05
-    fwe_alpha: float = 0.05
-    two_sided_test: bool = True
-    thresholding_strategies: List[str] = field(default_factory=lambda: [
-        "uncorrected", "fdr", "fwe"
-    ])
-    
-    # Computational
-    n_permutations: int = 10000
-    n_jobs: int = 1
     
     def validate(self) -> None:
         """Validate configuration parameters.
         
-        Raises:
-            ValueError: If configuration is invalid
+        Currently a no-op as group analysis is under development.
         """
-        from connectomix.config.validator import ConfigValidator
-        
-        validator = ConfigValidator()
-        
-        # Validate method
-        validator.validate_choice(
-            self.method,
-            ["seedToVoxel", "roiToVoxel", "seedToSeed", "roiToRoi"],
-            "method"
-        )
-        
-        # Validate alpha values
-        validator.validate_alpha(self.uncorrected_alpha, "uncorrected_alpha")
-        validator.validate_alpha(self.cluster_forming_alpha, "cluster_forming_alpha")
-        validator.validate_alpha(self.fdr_alpha, "fdr_alpha")
-        validator.validate_alpha(self.fwe_alpha, "fwe_alpha")
-        
-        # Validate positive values
-        validator.validate_positive(self.smoothing, "smoothing")
-        validator.validate_positive(self.n_permutations, "n_permutations")
-        validator.validate_positive(self.n_jobs, "n_jobs")
-        
-        # Validate thresholding strategies
-        for strategy in self.thresholding_strategies:
-            validator.validate_choice(
-                strategy,
-                ["uncorrected", "fdr", "fwe"],
-                "thresholding_strategy"
-            )
-        
-        # Validate contrast is provided
-        if not self.contrast:
-            validator.errors.append("contrast must be specified for group-level analysis")
-        
-        # Warn about paired tests
-        if self.paired_tests:
-            validator.errors.append(
-                "paired_tests=True is not yet implemented. Use paired_tests=False."
-            )
-        
-        # Raise if any errors
-        validator.raise_if_errors()
+        pass

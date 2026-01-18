@@ -172,6 +172,12 @@ def create_parser() -> argparse.ArgumentParser:
       {Colors.CYAN}csfwm_24p{Colors.END}      CSF + WM + 24 motion params (6 + deriv + squares)
       {Colors.CYAN}compcor_6p{Colors.END}     6 aCompCor components + 6 motion params
     
+    {Colors.BOLD}WILDCARD SUPPORT:{Colors.END}
+      Confound names support wildcards: {Colors.CYAN}*{Colors.END} matches any chars, {Colors.CYAN}?{Colors.END} matches one char
+      
+      {Colors.YELLOW}# Example: Select all aCompCor components{Colors.END}
+      confounds: ["a_comp_cor_*", "trans_*", "rot_*"]
+    
     {Colors.BOLD}{Colors.GREEN}═══════════════════════════════════════════════════════════════════════════════{Colors.END}
     {Colors.BOLD}OUTPUT STRUCTURE{Colors.END}
     {Colors.GREEN}═══════════════════════════════════════════════════════════════════════════════{Colors.END}
@@ -335,6 +341,88 @@ def create_parser() -> argparse.ArgumentParser:
         help="Process only data in this template space "
              "(e.g., 'MNI152NLin2009cAsym', 'MNI152NLin6Asym'). "
              "Must match fMRIPrep output space.",
+    )
+    
+    filters.add_argument(
+        "--label",
+        metavar="STRING",
+        help="Add a custom label to ALL output filenames as a BIDS-style entity "
+             "(e.g., --label myanalysis will add 'label-myanalysis' to filenames). "
+             "Useful for distinguishing different analysis runs.",
+    )
+    
+    # =========================================================================
+    # OPTIONAL ARGUMENTS - Temporal Censoring
+    # =========================================================================
+    censoring = parser.add_argument_group(
+        f'{Colors.BOLD}Temporal Censoring Options{Colors.END}',
+        "Remove specific timepoints (volumes) before connectivity analysis. "
+        "Disabled by default. Enable with --conditions or --fd-threshold."
+    )
+    
+    censoring.add_argument(
+        "--conditions",
+        metavar="COND",
+        nargs="+",
+        help="Enable condition-based censoring for task fMRI. "
+             "Specify one or more condition names from the events.tsv file. "
+             "A separate connectivity matrix will be computed for each condition. "
+             "Example: --conditions face house scrambled",
+    )
+    
+    censoring.add_argument(
+        "--events-file",
+        metavar="FILE",
+        dest="events_file",
+        help="Path to events.tsv file (default: auto-detect from BIDS). "
+             "Only used with --conditions.",
+    )
+    
+    censoring.add_argument(
+        "--include-baseline",
+        action="store_true",
+        dest="include_baseline",
+        help="When using --conditions, also compute connectivity for baseline "
+             "(timepoints not in any condition).",
+    )
+    
+    censoring.add_argument(
+        "--transition-buffer",
+        metavar="SEC",
+        type=float,
+        dest="transition_buffer",
+        default=0.0,
+        help="Seconds to exclude around condition boundaries (default: 0). "
+             "Accounts for hemodynamic response lag.",
+    )
+    
+    censoring.add_argument(
+        "--fd-threshold",
+        metavar="MM",
+        type=float,
+        dest="fd_threshold",
+        help="Enable motion censoring. Remove volumes with framewise displacement "
+             "above this threshold (in mm). Typical values: 0.2-0.5mm. "
+             "Uses 'framewise_displacement' column from fMRIPrep confounds.",
+    )
+    
+    censoring.add_argument(
+        "--fd-extend",
+        metavar="N",
+        type=int,
+        dest="fd_extend",
+        default=0,
+        help="Number of volumes to also censor before AND after high-motion volumes "
+             "(default: 0). Example: --fd-extend 1 censors ±1 volume around high-FD.",
+    )
+    
+    censoring.add_argument(
+        "--drop-initial",
+        metavar="N",
+        type=int,
+        dest="drop_initial",
+        default=0,
+        help="Number of initial volumes to drop (dummy scans). Default: 0.",
     )
     
     # =========================================================================
