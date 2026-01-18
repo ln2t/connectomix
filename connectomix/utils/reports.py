@@ -813,6 +813,7 @@ class ParticipantReportGenerator:
         # Denoising info
         self.confounds_used: List[str] = selected_confounds or []
         self.confounds_df: Optional[pd.DataFrame] = confounds_df
+        self.denoising_histogram_data: Optional[Dict[str, Any]] = None
         
         # Connectivity results
         self.connectivity_matrices: List[Tuple[np.ndarray, List[str], str]] = []
@@ -986,6 +987,21 @@ class ParticipantReportGenerator:
         """
         self.confounds_df = confounds_df
         self.confounds_used = confounds_used
+    
+    def add_denoising_histogram_data(
+        self,
+        histogram_data: Dict[str, Any]
+    ) -> None:
+        """Add denoising histogram data for before/after comparison.
+        
+        Args:
+            histogram_data: Dictionary from compute_denoising_histogram_data containing:
+                - 'original_data': Flattened original voxel values
+                - 'denoised_data': Flattened denoised voxel values
+                - 'original_stats': Dict with mean, std, min, max
+                - 'denoised_stats': Dict with mean, std, min, max
+        """
+        self.denoising_histogram_data = histogram_data
     
     def _build_header(self) -> str:
         """Build report header section."""
@@ -1239,6 +1255,43 @@ class ParticipantReportGenerator:
                 </div>
                 '''
         
+        # Add denoising histogram if available
+        if self.denoising_histogram_data is not None:
+            hist_fig = self._create_denoising_histogram_plot()
+            if hist_fig is not None:
+                hist_fig_id = self._get_unique_figure_id()
+                hist_img_data = self._figure_to_base64(hist_fig, dpi=150)
+                
+                bids_base = self._build_bids_base_filename()
+                hist_filename = f"{bids_base}_denoising-histogram.png"
+                self._save_figure_to_disk(hist_fig, hist_filename, dpi=150)
+                plt.close(hist_fig)
+                
+                # Get stats for caption
+                orig_stats = self.denoising_histogram_data['original_stats']
+                den_stats = self.denoising_histogram_data['denoised_stats']
+                
+                html += f'''
+                <h3>Denoising Effect on Signal Distribution</h3>
+                <div class="figure-container">
+                    <div class="figure-wrapper">
+                        <img id="{hist_fig_id}" src="data:image/png;base64,{hist_img_data}">
+                        <button class="download-btn" onclick="downloadFigure('{hist_fig_id}', '{hist_filename}')">
+                            ⬇️ Download
+                        </button>
+                    </div>
+                    <div class="figure-caption">
+                        Figure: Histogram of all voxel intensity values across all timepoints, before (blue) 
+                        and after (coral) denoising. After denoising, the signal is standardized (z-scored) 
+                        and detrended, resulting in a distribution centered around zero with unit variance. 
+                        The before-denoising distribution shows the original fMRI signal intensity values.
+                        <br><br>
+                        <strong>Statistics:</strong> Before denoising: μ={orig_stats['mean']:.2f}, σ={orig_stats['std']:.2f}. 
+                        After denoising: μ={den_stats['mean']:.2f}, σ={den_stats['std']:.2f}.
+                    </div>
+                </div>
+                '''
+        
         html += "</div>"
         return html
     
@@ -1336,6 +1389,80 @@ class ParticipantReportGenerator:
         except Exception as e:
             logger.warning(f"Could not create confounds correlation plot: {e}")
             return None, None
+    
+    def _create_denoising_histogram_plot(self) -> Optional[plt.Figure]:
+        """Create histogram comparing voxel values before and after denoising.
+        
+        Returns:
+            Matplotlib figure with overlaid histograms, or None if data not available.
+        """
+        if self.denoising_histogram_data is None:
+            return None
+        
+        try:
+            original_data = self.denoising_histogram_data['original_data']
+            denoised_data = self.denoising_histogram_data['denoised_data']
+            original_stats = self.denoising_histogram_data['original_stats']
+            denoised_stats = self.denoising_histogram_data['denoised_stats']
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(10, 5))
+            
+            # Compute common bin edges for both histograms to allow comparison
+            # Use the range that covers both distributions
+            all_min = min(original_stats['min'], denoised_stats['min'])
+            all_max = max(original_stats['max'], denoised_stats['max'])
+            
+            # For visualization, clip extreme outliers (beyond 5 std from mean)
+            # This prevents outliers from compressing the main distribution
+            orig_clip_min = original_stats['mean'] - 5 * original_stats['std']
+            orig_clip_max = original_stats['mean'] + 5 * original_stats['std']
+            den_clip_min = denoised_stats['mean'] - 5 * denoised_stats['std']
+            den_clip_max = denoised_stats['mean'] + 5 * denoised_stats['std']
+            
+            clip_min = min(orig_clip_min, den_clip_min)
+            clip_max = max(orig_clip_max, den_clip_max)
+            
+            n_bins = 80
+            bins = np.linspace(clip_min, clip_max, n_bins + 1)
+            
+            # Plot histograms with transparency
+            ax.hist(original_data, bins=bins, alpha=0.5, color='steelblue', 
+                   density=True, label='Before denoising', edgecolor='none')
+            ax.hist(denoised_data, bins=bins, alpha=0.5, color='coral', 
+                   density=True, label='After denoising', edgecolor='none')
+            
+            # Add vertical lines for means
+            ax.axvline(original_stats['mean'], color='steelblue', linestyle='--', 
+                      linewidth=2, label=f"Original mean: {original_stats['mean']:.2f}")
+            ax.axvline(denoised_stats['mean'], color='coral', linestyle='--', 
+                      linewidth=2, label=f"Denoised mean: {denoised_stats['mean']:.2f}")
+            
+            # Add zero reference line
+            ax.axvline(0, color='gray', linestyle='-', linewidth=1, alpha=0.5)
+            
+            ax.set_xlabel('Voxel Intensity', fontsize=11)
+            ax.set_ylabel('Density', fontsize=11)
+            ax.set_title('Distribution of Voxel Values Before and After Denoising', 
+                        fontsize=12, fontweight='bold')
+            ax.legend(loc='upper right', fontsize=9)
+            
+            # Add statistics as text box
+            stats_text = (
+                f"Before: μ={original_stats['mean']:.2f}, σ={original_stats['std']:.2f}\n"
+                f"After:  μ={denoised_stats['mean']:.2f}, σ={denoised_stats['std']:.2f}\n"
+                f"N values: {original_stats['n_values']:,}"
+            )
+            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=9,
+                   verticalalignment='top', fontfamily='monospace',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+            
+            plt.tight_layout()
+            return fig
+            
+        except Exception as e:
+            logger.warning(f"Could not create denoising histogram plot: {e}")
+            return None
     
     def _build_censoring_section(self) -> str:
         """Build temporal censoring section."""

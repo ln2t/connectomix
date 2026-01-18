@@ -174,6 +174,80 @@ def compute_denoising_quality_metrics(
     return metrics
 
 
+def compute_denoising_histogram_data(
+    original_img: nib.Nifti1Image,
+    denoised_img: nib.Nifti1Image,
+    mask_img: Optional[nib.Nifti1Image] = None,
+    n_bins: int = 100,
+    subsample: int = 10
+) -> dict:
+    """Compute histogram data for before/after denoising comparison.
+    
+    Args:
+        original_img: Original functional image (before denoising)
+        denoised_img: Denoised functional image
+        mask_img: Optional brain mask to restrict analysis to brain voxels
+        n_bins: Number of histogram bins
+        subsample: Subsample factor to reduce memory usage (e.g., 10 = use every 10th value)
+    
+    Returns:
+        Dictionary containing:
+            - 'original_data': Flattened original voxel values (subsampled)
+            - 'denoised_data': Flattened denoised voxel values (subsampled)
+            - 'original_stats': Dict with mean, std, min, max of original
+            - 'denoised_stats': Dict with mean, std, min, max of denoised
+    """
+    # Get data
+    original_data = original_img.get_fdata()
+    denoised_data = denoised_img.get_fdata()
+    
+    # Apply mask if provided, otherwise create a simple non-zero mask from original
+    if mask_img is not None:
+        mask_data = mask_img.get_fdata().astype(bool)
+    else:
+        # Use voxels that have non-zero variance over time (brain voxels)
+        temporal_std = np.std(original_data, axis=-1)
+        mask_data = temporal_std > 0
+    
+    # Flatten: for each voxel in mask, get all timepoints
+    # Shape: (n_voxels_in_mask, n_timepoints) -> flatten to 1D
+    original_masked = original_data[mask_data].flatten()
+    denoised_masked = denoised_data[mask_data].flatten()
+    
+    # Remove NaN values
+    original_masked = original_masked[~np.isnan(original_masked)]
+    denoised_masked = denoised_masked[~np.isnan(denoised_masked)]
+    
+    # Subsample to reduce memory usage (can be millions of values)
+    if subsample > 1 and len(original_masked) > 100000:
+        original_masked = original_masked[::subsample]
+        denoised_masked = denoised_masked[::subsample]
+    
+    # Compute statistics
+    original_stats = {
+        'mean': float(np.mean(original_masked)),
+        'std': float(np.std(original_masked)),
+        'min': float(np.min(original_masked)),
+        'max': float(np.max(original_masked)),
+        'n_values': len(original_masked)
+    }
+    
+    denoised_stats = {
+        'mean': float(np.mean(denoised_masked)),
+        'std': float(np.std(denoised_masked)),
+        'min': float(np.min(denoised_masked)),
+        'max': float(np.max(denoised_masked)),
+        'n_values': len(denoised_masked)
+    }
+    
+    return {
+        'original_data': original_masked,
+        'denoised_data': denoised_masked,
+        'original_stats': original_stats,
+        'denoised_stats': denoised_stats
+    }
+
+
 def _validate_existing_denoised_file(
     output_path: Path,
     confound_names: List[str],

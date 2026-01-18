@@ -260,6 +260,9 @@ def run_participant_pipeline(
                     func_img = nib.load(func_path)
                     input_for_denoise = func_path
                 
+                # Load the input image for denoising (for histogram comparison)
+                input_img_for_histogram = nib.load(input_for_denoise)
+                
                 # --- Denoise ---
                 denoised_path = _get_output_path(
                     output_dir, file_entities, "denoised", "bold", ".nii.gz",
@@ -280,6 +283,13 @@ def run_participant_pipeline(
                 
                 # Load denoised image for connectivity
                 denoised_img = nib.load(denoised_path)
+                
+                # Compute denoising histogram data for QA report
+                from connectomix.preprocessing.denoising import compute_denoising_histogram_data
+                denoising_histogram_data = compute_denoising_histogram_data(
+                    original_img=input_img_for_histogram,
+                    denoised_img=denoised_img,
+                )
                 
                 # --- Apply temporal censoring if enabled ---
                 censor = None
@@ -406,6 +416,7 @@ def run_participant_pipeline(
                     censoring=censoring_for_report,
                     connectivity_matrices=connectivity_matrices_for_report,
                     roi_names=roi_names_for_report,
+                    denoising_histogram_data=denoising_histogram_data,
                 )
         
         # === Summary ===
@@ -431,6 +442,7 @@ def _generate_participant_report(
     censoring: Optional[str] = None,
     connectivity_matrices: Optional[Dict[str, np.ndarray]] = None,
     roi_names: Optional[List[str]] = None,
+    denoising_histogram_data: Optional[Dict] = None,
 ) -> Optional[Path]:
     """Generate HTML report for a participant analysis.
     
@@ -553,6 +565,10 @@ def _generate_participant_report(
             condition=condition,
             censoring=censoring,
         )
+        
+        # Add denoising histogram data if available
+        if denoising_histogram_data is not None:
+            report.add_denoising_histogram_data(denoising_histogram_data)
         
         # Add all connectivity matrices to the report
         if connectivity_matrices and roi_names:
