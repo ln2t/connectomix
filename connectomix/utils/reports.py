@@ -863,6 +863,29 @@ class ParticipantReportGenerator:
             self._logger.warning(f"Could not save figure to disk: {e}")
             return None
     
+    def _save_data_to_disk(self, df: pd.DataFrame, filename: str) -> Optional[Path]:
+        """Save DataFrame to the figures directory as TSV.
+        
+        Args:
+            df: DataFrame to save
+            filename: Filename for the saved data (without path)
+            
+        Returns:
+            Path to saved file, or None if figures_dir not set
+        """
+        if self.figures_dir is None:
+            return None
+        
+        try:
+            self.figures_dir.mkdir(parents=True, exist_ok=True)
+            data_path = self.figures_dir / filename
+            df.to_csv(data_path, sep='\t', index=True)
+            self._logger.debug(f"  Saved data: {data_path}")
+            return data_path
+        except Exception as e:
+            self._logger.warning(f"Could not save data to disk: {e}")
+            return None
+    
     def set_command_line(self, command: str) -> None:
         """Store command line used to run analysis."""
         self.command_line = command
@@ -1116,13 +1139,15 @@ class ParticipantReportGenerator:
                 '''
             
             # Add confounds correlation matrix
-            corr_fig = self._create_confounds_correlation_plot()
+            corr_fig, corr_df = self._create_confounds_correlation_plot()
             if corr_fig is not None:
                 corr_fig_id = self._get_unique_figure_id()
                 corr_img_data = self._figure_to_base64(corr_fig)
                 
-                # Save figure to disk
+                # Save figure and correlation data to disk
                 self._save_figure_to_disk(corr_fig, 'confounds_correlation.png')
+                if corr_df is not None:
+                    self._save_data_to_disk(corr_df, 'confounds_correlation.tsv')
                 
                 plt.close(corr_fig)
                 
@@ -1185,13 +1210,17 @@ class ParticipantReportGenerator:
             logger.warning(f"Could not create confounds plot: {e}")
             return None
     
-    def _create_confounds_correlation_plot(self) -> Optional[plt.Figure]:
-        """Create correlation matrix plot between confounds."""
+    def _create_confounds_correlation_plot(self) -> Tuple[Optional[plt.Figure], Optional[pd.DataFrame]]:
+        """Create correlation matrix plot between confounds.
+        
+        Returns:
+            Tuple of (figure, correlation_dataframe)
+        """
         try:
             # Select confounds that exist in the dataframe
             available = [c for c in self.confounds_used if c in self.confounds_df.columns]
             if len(available) < 2:
-                return None
+                return None, None
             
             # Limit to first 20 confounds for readability
             available = available[:20]
@@ -1199,9 +1228,10 @@ class ParticipantReportGenerator:
             # Extract data and compute correlation matrix
             confounds_data = self.confounds_df[available].dropna()
             if len(confounds_data) < 10:  # Need enough data points
-                return None
+                return None, None
             
-            corr_matrix = confounds_data.corr().values
+            corr_df = confounds_data.corr()
+            corr_matrix = corr_df.values
             
             # Determine figure size based on number of confounds
             n_conf = len(available)
@@ -1229,11 +1259,11 @@ class ParticipantReportGenerator:
             ax.set_title('Confound Inter-Correlation Matrix', fontsize=12, fontweight='bold', pad=10)
             
             plt.tight_layout()
-            return fig
+            return fig, corr_df
             
         except Exception as e:
             logger.warning(f"Could not create confounds correlation plot: {e}")
-            return None
+            return None, None
     
     def _build_censoring_section(self) -> str:
         """Build temporal censoring section."""
