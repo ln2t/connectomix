@@ -692,9 +692,9 @@ def _get_output_path(
     # Build filename
     parts = []
     
-    entity_order = ['sub', 'ses', 'task', 'run', 'space', 'condition']
+    entity_order = ['sub', 'ses', 'task', 'run', 'space', 'condition', 'method', 'atlas', 'seed', 'roi']
     for key in entity_order:
-        if key in entities:
+        if key in entities and entities[key]:
             parts.append(f"{key}-{entities[key]}")
     
     # Add custom label if provided
