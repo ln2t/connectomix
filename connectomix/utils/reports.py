@@ -795,6 +795,8 @@ class ParticipantReportGenerator:
         
         # Figures directory for saving plots
         self.figures_dir: Optional[Path] = None
+        # Connectivity data directory for saving matrices
+        self.connectivity_data_dir: Optional[Path] = None
         
         # Storage for report content
         self.sections: List[str] = []
@@ -866,27 +868,50 @@ class ParticipantReportGenerator:
             self._logger.warning(f"Could not save figure to disk: {e}")
             return None
     
-    def _save_data_to_disk(self, df: pd.DataFrame, filename: str) -> Optional[Path]:
-        """Save DataFrame to the figures directory as TSV.
+    def _save_matrix_to_disk(
+        self, 
+        matrix: np.ndarray, 
+        filename: str,
+        labels: Optional[List[str]] = None,
+        description: str = "Correlation matrix"
+    ) -> Optional[Path]:
+        """Save numpy matrix to the connectivity_data directory with JSON sidecar.
         
         Args:
-            df: DataFrame to save
-            filename: Filename for the saved data (without path)
+            matrix: Numpy array to save
+            filename: Filename for the saved data (without path, should end in .npy)
+            labels: Optional list of labels for rows/columns
+            description: Description for the JSON sidecar
             
         Returns:
-            Path to saved file, or None if figures_dir not set
+            Path to saved file, or None if connectivity_data_dir not set
         """
-        if self.figures_dir is None:
+        if self.connectivity_data_dir is None:
             return None
         
         try:
-            self.figures_dir.mkdir(parents=True, exist_ok=True)
-            data_path = self.figures_dir / filename
-            df.to_csv(data_path, sep='\t', index=True)
-            self._logger.debug(f"  Saved data: {data_path}")
+            self.connectivity_data_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save numpy array
+            data_path = self.connectivity_data_dir / filename
+            np.save(data_path, matrix)
+            self._logger.debug(f"  Saved matrix: {data_path}")
+            
+            # Save JSON sidecar with metadata
+            json_path = data_path.with_suffix('.json')
+            sidecar = {
+                "Description": description,
+                "Shape": list(matrix.shape),
+            }
+            if labels:
+                sidecar["Labels"] = labels
+            
+            with open(json_path, 'w') as f:
+                json.dump(sidecar, f, indent=2)
+            
             return data_path
         except Exception as e:
-            self._logger.warning(f"Could not save data to disk: {e}")
+            self._logger.warning(f"Could not save matrix to disk: {e}")
             return None
     
     def set_command_line(self, command: str) -> None:
@@ -1147,10 +1172,17 @@ class ParticipantReportGenerator:
                 corr_fig_id = self._get_unique_figure_id()
                 corr_img_data = self._figure_to_base64(corr_fig)
                 
-                # Save figure and correlation data to disk
+                # Save figure to figures dir
                 self._save_figure_to_disk(corr_fig, 'confounds_correlation.png')
+                
+                # Save correlation matrix as .npy to connectivity_data dir
                 if corr_df is not None:
-                    self._save_data_to_disk(corr_df, 'confounds_correlation.tsv')
+                    self._save_matrix_to_disk(
+                        corr_df.values,
+                        'confounds_correlation.npy',
+                        labels=list(corr_df.columns),
+                        description="Pearson correlation matrix between confound regressors"
+                    )
                 
                 plt.close(corr_fig)
                 
@@ -1882,6 +1914,11 @@ class ParticipantReportGenerator:
         self.figures_dir = output_path / "figures"
         self.figures_dir.mkdir(parents=True, exist_ok=True)
         self._logger.debug(f"  Figures directory: {self.figures_dir}")
+        
+        # Set up connectivity data directory
+        self.connectivity_data_dir = output_path / "connectivity_data"
+        self.connectivity_data_dir.mkdir(parents=True, exist_ok=True)
+        self._logger.debug(f"  Connectivity data directory: {self.connectivity_data_dir}")
         
         # Build all sections (this will save figures to figures_dir)
         sections_html = ""
