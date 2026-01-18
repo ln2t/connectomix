@@ -449,23 +449,27 @@ def _build_cli_command(
     str
         CLI command with generic path placeholders.
     """
-    parts = ["connectomix", "<rawdata>", "<derivatives>", "participant"]
+    parts = ["connectomix <rawdata> <derivatives> participant"]
     
-    # Add participant label
-    if 'subject' in file_entities:
-        parts.append(f"-p {file_entities['subject']}")
+    # Add participant label (check both 'subject' and 'sub' keys)
+    subject = file_entities.get('subject') or file_entities.get('sub')
+    if subject:
+        parts.append(f"-p {subject}")
     
     # Add task
-    if 'task' in file_entities:
-        parts.append(f"-t {file_entities['task']}")
+    task = file_entities.get('task')
+    if task:
+        parts.append(f"-t {task}")
     
     # Add session if present
-    if 'session' in file_entities:
-        parts.append(f"-s {file_entities['session']}")
+    session = file_entities.get('session') or file_entities.get('ses')
+    if session:
+        parts.append(f"-s {session}")
     
     # Add run if present
-    if 'run' in file_entities:
-        parts.append(f"-r {file_entities['run']}")
+    run = file_entities.get('run')
+    if run:
+        parts.append(f"-r {run}")
     
     # Add method
     parts.append(f"--method {config.method}")
@@ -474,14 +478,10 @@ def _build_cli_command(
     if config.method in ["roiToRoi", "seedToSeed"] and config.atlas:
         parts.append(f"--atlas {config.atlas}")
     
-    # Add denoising options
+    # Add denoising options - show ALL confounds for full reproducibility
     if config.confounds:
-        # Show abbreviated confounds list
-        if len(config.confounds) <= 3:
-            confounds_str = ",".join(config.confounds)
-        else:
-            confounds_str = f"{config.confounds[0]},...,{config.confounds[-1]}"
-        parts.append(f"--confounds '{confounds_str}'")
+        confounds_str = " ".join(config.confounds)
+        parts.append(f"--confounds {confounds_str}")
     
     if config.high_pass:
         parts.append(f"--high-pass {config.high_pass}")
@@ -510,7 +510,8 @@ def _build_cli_command(
     if config.label:
         parts.append(f"--label {config.label}")
     
-    return " \\\n    ".join(parts)
+    # Join with spaces - each option on same line for clean display
+    return " ".join(parts)
 
 
 def _generate_participant_report(
