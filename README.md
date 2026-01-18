@@ -22,11 +22,12 @@
 ### Key Features
 
 - 🧠 **Four connectivity methods**: seed-to-voxel, ROI-to-voxel, seed-to-seed, ROI-to-ROI
+- � **Four connectivity measures**: correlation, covariance, partial correlation, precision
 - 📊 **Two analysis levels**: participant-level and group-level statistical inference
 - ⏱️ **Temporal censoring**: condition-based analysis for task fMRI, motion scrubbing
 - 🔧 **Flexible preprocessing**: predefined denoising strategies or custom confound selection
 - 📋 **BIDS-compliant**: standardized input/output structure
-- 📄 **HTML reports**: interactive quality assurance visualizations
+- 📄 **HTML reports**: connectivity matrices, connectome plots, denoising QA histograms
 
 ### Technology Stack
 
@@ -477,17 +478,25 @@ output_dir/
 │       └── config_TIMESTAMP.json     # Configuration backups
 ├── sub-01/
 │   ├── figures/                      # Report figures
-│   │   ├── connectivity_matrix.png
+│   │   ├── connectivity_correlation.png
+│   │   ├── connectivity_covariance.png
+│   │   ├── connectivity_partial-correlation.png
+│   │   ├── connectivity_precision.png
+│   │   ├── connectome_correlation.png      # Glass brain plots
+│   │   ├── histogram_correlation.png       # Value distributions
 │   │   ├── confounds_timeseries.png
 │   │   ├── confounds_correlation.png
-│   │   ├── confounds_correlation.tsv
+│   │   ├── denoising-histogram.png         # Before/after denoising
 │   │   └── temporal_censoring.png
 │   ├── func/                         # Denoised functional data
 │   │   ├── sub-01_task-rest_desc-denoised_bold.nii.gz
 │   │   └── sub-01_task-rest_desc-denoised_bold.json
-│   ├── connectivity_data/            # Connectivity matrices
-│   │   ├── sub-01_task-rest_desc-schaefer_correlation.npy
-│   │   └── sub-01_task-rest_desc-schaefer_correlation.json
+│   ├── connectivity_data/            # Connectivity matrices & time series
+│   │   ├── sub-01_task-rest_atlas-schaefer_desc-correlation_connectivity.npy
+│   │   ├── sub-01_task-rest_atlas-schaefer_desc-covariance_connectivity.npy
+│   │   ├── sub-01_task-rest_atlas-schaefer_desc-partial-correlation_connectivity.npy
+│   │   ├── sub-01_task-rest_atlas-schaefer_desc-precision_connectivity.npy
+│   │   └── sub-01_task-rest_atlas-schaefer_timeseries.npy
 │   └── sub-01_task-rest_desc-schaefer_report.html
 ├── sub-02/
 │   └── ...
@@ -500,6 +509,18 @@ output_dir/
             ├── clusterTable.tsv
             └── report.html
 ```
+
+### HTML Report Contents
+
+Each participant-level HTML report includes:
+
+| Section | Contents |
+|---------|----------|
+| **Summary** | Subject info, processing parameters, key metrics |
+| **Denoising** | Confound time series, inter-correlation matrix, before/after histogram |
+| **Temporal Censoring** | Volume counts, censoring reasons, visual mask (if enabled) |
+| **Connectivity** | For each measure: matrix heatmap, connectome glass brain, value histogram |
+| **References** | Relevant citations for methods used |
 
 ---
 

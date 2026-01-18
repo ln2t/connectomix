@@ -12,12 +12,13 @@ All core functionality is implemented and working:
 - ✅ BIDS I/O and file discovery
 - ✅ Preprocessing (resampling, denoising, temporal censoring)
 - ✅ All four connectivity methods
+- ✅ Four connectivity measures (correlation, covariance, partial correlation, precision)
 - ✅ Statistics (GLM, permutation testing, thresholding, clustering)
 - ✅ Pipeline orchestration (participant and group levels)
-- ✅ HTML report generation
+- ✅ HTML report generation with visualizations
 - ✅ Atlas management
 - ✅ CLI with comprehensive options
-- ✅ README documentation
+- ✅ README documentation with connectivity measures guide
 
 See **STATUS.md** for detailed module breakdown.
 
@@ -118,10 +119,16 @@ See **CLAUDE.md** for coding guidelines:
 ### v3.0.0 (January 2026)
 - Complete rewrite of Connectomix
 - Four connectivity methods (seed-to-voxel, ROI-to-voxel, seed-to-seed, ROI-to-ROI)
+- **Four connectivity measures** for ROI-to-ROI: correlation, covariance, partial correlation, precision
+- Time series extraction and saving (*.npy files)
 - Participant and group-level pipelines
 - Temporal censoring for task fMRI
 - Motion scrubbing (FD-based)
-- Comprehensive HTML reports
+- Comprehensive HTML reports with:
+  - Connectivity matrices with theoretical explanations
+  - Connectome glass brain visualizations
+  - Denoising QA histograms (before/after comparison)
+  - Downloadable figures
 - BIDS-compliant I/O
 - 12 built-in atlases
 

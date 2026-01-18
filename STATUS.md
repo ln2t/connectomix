@@ -11,8 +11,12 @@ Connectomix v3.0.0 is **feature-complete and production-ready**. All modules (co
 **Recent additions:**
 - ✅ Temporal censoring for task fMRI (condition-based analysis)
 - ✅ Motion scrubbing (FD-based volume censoring)
+- ✅ **Four connectivity measures**: correlation, covariance, partial correlation, precision
+- ✅ **Connectome glass brain visualizations** in reports
+- ✅ **Denoising QA histograms** (before/after comparison)
+- ✅ Time series saving to .npy files
 - ✅ Comprehensive HTML reports with figures
-- ✅ Complete README.md documentation
+- ✅ Complete README.md documentation with connectivity guide
 
 ## Completed Modules ✅
 
@@ -49,10 +53,12 @@ Connectomix v3.0.0 is **feature-complete and production-ready**. All modules (co
   - Standalone validation functions
   - Type checking and range validation
 
-- **`matrix.py`** (~160 lines)
+- **`matrix.py`** (~220 lines)
   - sym_matrix_to_vec() and vec_to_sym_matrix()
   - compute_connectivity_matrix()
+  - **compute_all_connectivity_matrices()** - all four measures
   - fisher_transform() and inverse
+  - CONNECTIVITY_KINDS constant
 
 - **`exceptions.py`** (~25 lines)
   - Custom exception hierarchy
@@ -63,13 +69,16 @@ Connectomix v3.0.0 is **feature-complete and production-ready**. All modules (co
   - plot_stat_map(), plot_glass_brain()
   - plot_seeds(), plot_cluster_locations()
 
-- **`reports.py`** (~1900 lines)
+- **`reports.py`** (~2500 lines)
   - ParticipantReportGenerator class
   - Professional HTML reports with CSS/JS
-  - Connectivity matrix visualization
+  - Connectivity matrix visualization with theoretical explanations
+  - **Connectome glass brain plots** (nilearn plot_connectome)
+  - **Connectivity value histograms** for each measure
   - Confounds time series plots
   - Confounds correlation matrix
-  - **Temporal censoring section**
+  - **Denoising QA histogram** (before/after comparison)
+  - **Temporal censoring section** with visualization
   - Downloadable figures
 
 ### 3. BIDS I/O (`connectomix/io/`) - 4 files, ~560 lines
@@ -84,10 +93,11 @@ Connectomix v3.0.0 is **feature-complete and production-ready**. All modules (co
   - resample_to_reference()
   - save_geometry_info()
 
-- **`denoising.py`** (~270 lines)
+- **`denoising.py`** (~340 lines)
   - denoise_image() using nilearn.clean_img
   - Parameter validation for reusing existing files
   - Quality metrics: tSNR, noise reduction
+  - **compute_denoising_histogram_data()** for QA visualization
 
 - **`canica.py`** (~90 lines)
   - run_canica_atlas() for data-driven atlas generation
@@ -107,7 +117,10 @@ Connectomix v3.0.0 is **feature-complete and production-ready**. All modules (co
 - **`seed_to_voxel.py`** (~140 lines) - Seed-based voxelwise connectivity
 - **`roi_to_voxel.py`** (~130 lines) - ROI-based voxelwise connectivity
 - **`seed_to_seed.py`** (~75 lines) - Seed correlation matrices
-- **`roi_to_roi.py`** (~90 lines) - Atlas-based connectivity matrices
+- **`roi_to_roi.py`** (~150 lines)
+  - Atlas-based connectivity matrices
+  - **Four connectivity measures**: correlation, covariance, partial correlation, precision
+  - Time series extraction and saving
 
 ### 6. Statistics (`connectomix/statistics/`) - 4 files, ~800 lines
 - **`glm.py`** (~320 lines) - Second-level GLM, design matrices
