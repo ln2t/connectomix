@@ -1491,8 +1491,11 @@ class ParticipantReportGenerator:
     def _create_censoring_plot(self) -> Optional[plt.Figure]:
         """Create temporal censoring visualization.
         
-        When condition selection is active, shows a multi-row plot with
-        each condition's mask. Otherwise shows the global censoring mask.
+        When condition selection is active, shows a multi-row plot with:
+        1. Global censoring mask (motion, initial drop, etc.)
+        2. Each condition's mask
+        3. Combined/union mask
+        Otherwise shows the global censoring mask only.
         """
         if self.censoring_summary is None:
             return None
@@ -1500,26 +1503,44 @@ class ParticipantReportGenerator:
         try:
             conditions = self.censoring_summary.get('conditions', {})
             global_mask = np.array(self.censoring_summary.get('mask', []))
+            global_censoring = self.censoring_summary.get('global_censoring', {})
             
             if len(global_mask) == 0:
                 return None
             
             n_volumes = len(global_mask)
             
-            # If conditions exist, show condition-specific masks
+            # If conditions exist, show global + condition-specific masks
             if conditions:
-                # Create multi-row figure for conditions
-                n_rows = len(conditions) + 1  # +1 for combined/union mask
+                # Create multi-row figure: global + conditions + combined
+                n_rows = len(conditions) + 2  # +1 for global, +1 for combined
                 fig, axes = plt.subplots(n_rows, 1, figsize=(14, 1.5 * n_rows), 
                                         sharex=True, squeeze=False)
                 axes = axes.flatten()
                 
+                # Row 0: Global censoring mask (motion, initial drop)
+                ax = axes[0]
+                colors = np.zeros((1, n_volumes, 3))
+                colors[0, global_mask, :] = [0.3, 0.7, 0.9]   # Light blue for passed global
+                colors[0, ~global_mask, :] = [0.5, 0.5, 0.5]  # Gray for globally censored
+                
+                ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])
+                ax.set_yticks([])
+                ax.set_ylabel('Global\\n(motion)', fontsize=9, rotation=0, ha='right', va='center')
+                
+                global_retained = global_censoring.get('n_retained', int(np.sum(global_mask)))
+                global_frac = global_censoring.get('fraction_retained', global_retained/n_volumes)
+                ax.text(n_volumes * 0.98, 0.5, f'{global_retained}/{n_volumes} ({global_frac:.1%})',
+                       ha='right', va='center', fontsize=8,
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                ax.set_title('Temporal Censoring Masks', fontsize=12, fontweight='bold')
+                
                 # Calculate combined mask (union of all conditions)
                 combined_mask = np.zeros(n_volumes, dtype=bool)
                 
-                # Plot each condition
+                # Rows 1 to N: Plot each condition
                 for idx, (cond_name, cond_info) in enumerate(sorted(conditions.items())):
-                    ax = axes[idx]
+                    ax = axes[idx + 1]  # Offset by 1 for global row
                     n_vols = cond_info.get('n_volumes', 0)
                     cond_frac = cond_info.get('fraction', 0)
                     
@@ -1532,21 +1553,21 @@ class ParticipantReportGenerator:
                         cond_mask = np.zeros(n_volumes, dtype=bool)
                         cond_mask[:n_vols] = True
                     
-                    # Create colors
+                    # Create colors: green for in-condition, light gray for out-of-condition
                     colors = np.zeros((1, n_volumes, 3))
                     colors[0, cond_mask, :] = [0.2, 0.8, 0.2]   # Green for in-condition
-                    colors[0, ~cond_mask, :] = [0.9, 0.2, 0.2]  # Red for excluded
+                    colors[0, ~cond_mask, :] = [0.85, 0.85, 0.85]  # Light gray for out-of-condition
                     
                     ax.imshow(colors, aspect='auto', extent=[0, n_volumes, 0, 1])
                     ax.set_yticks([])
-                    ax.set_ylabel(cond_name, fontsize=9, rotation=0, ha='right', va='center')
+                    ax.set_ylabel(f'{cond_name}', fontsize=9, rotation=0, ha='right', va='center')
                     ax.text(n_volumes * 0.98, 0.5, f'{n_vols}/{n_volumes} ({cond_frac:.1%})',
                            ha='right', va='center', fontsize=8,
                            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
                     
                     combined_mask |= cond_mask
                 
-                # Show combined/union mask in last row
+                # Last row: Show combined/union mask
                 ax = axes[-1]
                 colors = np.zeros((1, n_volumes, 3))
                 colors[0, combined_mask, :] = [0.2, 0.6, 0.9]   # Blue for union
@@ -1564,17 +1585,18 @@ class ParticipantReportGenerator:
                        ha='right', va='center', fontsize=8,
                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
                 
-                axes[0].set_title('Condition-Based Temporal Censoring', fontsize=12, fontweight='bold')
-                
                 # Add legend
                 from matplotlib.patches import Patch
                 legend_elements = [
+                    Patch(facecolor=[0.3, 0.7, 0.9], label='Passed global (motion OK)'),
+                    Patch(facecolor=[0.5, 0.5, 0.5], label='Globally censored (motion)'),
                     Patch(facecolor=[0.2, 0.8, 0.2], label='In condition'),
+                    Patch(facecolor=[0.85, 0.85, 0.85], label='Out of condition'),
+                    Patch(facecolor=[0.2, 0.6, 0.9], label='Used (union)'),
                     Patch(facecolor=[0.9, 0.2, 0.2], label='Excluded'),
-                    Patch(facecolor=[0.2, 0.6, 0.9], label='Union (used)'),
                 ]
                 fig.legend(handles=legend_elements, loc='upper right', fontsize=8, 
-                          bbox_to_anchor=(0.99, 0.99))
+                          bbox_to_anchor=(0.99, 0.99), ncol=2)
                 
             else:
                 # Simple global mask plot
