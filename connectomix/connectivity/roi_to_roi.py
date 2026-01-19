@@ -105,8 +105,10 @@ def compute_roi_to_roi_all_measures(
     base_filename: str,
     logger: Optional[logging.Logger] = None,
     roi_names: Optional[List[str]] = None,
+    roi_coords: Optional[np.ndarray] = None,
+    coordinate_space: str = "MNI152NLin2009cAsym",
     save_timeseries: bool = True,
-) -> Tuple[np.ndarray, Dict[str, Path], Optional[Path]]:
+) -> Tuple[np.ndarray, Dict[str, np.ndarray], Dict[str, Path], Optional[Path], List[str]]:
     """Compute all ROI-to-ROI connectivity matrices and save timeseries.
     
     Extracts ROI time series once and computes all connectivity measures:
@@ -120,13 +122,17 @@ def compute_roi_to_roi_all_measures(
         base_filename: Base filename for outputs (without extension)
         logger: Optional logger instance
         roi_names: Optional list of ROI names
+        roi_coords: Optional array of ROI centroid coordinates (N, 3) in MNI space
+        coordinate_space: Name of the MNI coordinate space (for metadata)
         save_timeseries: Whether to save the raw time series
     
     Returns:
         Tuple of:
             - time_series: Extracted time series array (n_timepoints, n_regions)
+            - matrices: Dict mapping connectivity kind to matrix
             - output_paths: Dict mapping connectivity kind to output path
             - timeseries_path: Path to saved timeseries (or None if not saved)
+            - roi_names: List of ROI names used
     
     Raises:
         ConnectivityError: If analysis fails
@@ -177,6 +183,11 @@ def compute_roi_to_roi_all_measures(
                 'NumberOfTimepoints': n_timepoints,
                 'Shape': [n_timepoints, n_regions],
             }
+            # Add coordinates if available
+            if roi_coords is not None:
+                ts_sidecar['ROICoordinates'] = roi_coords.tolist()
+                ts_sidecar['CoordinateSpace'] = coordinate_space
+            
             with open(timeseries_path.with_suffix('.json'), 'w') as f:
                 json.dump(ts_sidecar, f, indent=2)
             
@@ -205,6 +216,11 @@ def compute_roi_to_roi_all_measures(
                 'MatrixShape': list(matrix.shape),
                 'Description': f'ROI-to-ROI {kind} matrix using {atlas_name} atlas'
             }
+            
+            # Add coordinates if available
+            if roi_coords is not None:
+                metadata['ROICoordinates'] = roi_coords.tolist()
+                metadata['CoordinateSpace'] = coordinate_space
             
             save_matrix_with_sidecar(matrix, output_path, metadata)
             output_paths[kind] = output_path

@@ -332,10 +332,20 @@ custom_conn = np.corrcoef(timeseries.T)  # 100 × 100 correlation
   "NumberOfRegions": 100,
   "Dtype": "float64",
   "CreationTime": "2026-01-19T14:32:15.123456",
-  "ROINames": ["7Networks_LH_Vis_1", "7Networks_LH_Vis_2", ... ],
+  "ROINames": ["7Networks_LH_Vis_1", "7Networks_LH_Vis_2", "..." ],
+  "ROICoordinates": [
+    [-22.5, -94.2, -12.1],
+    [-14.3, -82.7, -8.4],
+    "..."
+  ],
+  "CoordinateSpace": "MNI152NLin2009cAsym",
   "Shape": [100, 100]
 }
 ```
+
+**Key fields for group-level connectome visualization**:
+- `ROICoordinates`: Array of [x, y, z] MNI coordinates for each ROI centroid (same order as matrix rows/columns). Required by `nilearn.plotting.plot_connectome()` to position nodes on glass brain visualizations.
+- `CoordinateSpace`: The MNI space name (e.g., "MNI152NLin2009cAsym") for documentation and reproducibility.
 
 **Example content for time series**:
 ```json
@@ -350,6 +360,12 @@ custom_conn = np.corrcoef(timeseries.T)  # 100 × 100 correlation
   "LowPassFrequency": 0.08,
   "DenoisingStrategy": "csfwm_6p",
   "TemporalCensoringApplied": false,
+  "ROICoordinates": [
+    [-22.5, -94.2, -12.1],
+    [-14.3, -82.7, -8.4],
+    "..."
+  ],
+  "CoordinateSpace": "MNI152NLin2009cAsym",
   "Shape": [350, 100],
   "Dtype": "float64",
   "CreationTime": "2026-01-19T14:32:15.123456"
@@ -361,6 +377,7 @@ custom_conn = np.corrcoef(timeseries.T)  # 100 × 100 correlation
 - Check `HighPassFrequency`, `LowPassFrequency`, `DenoisingStrategy` for consistency
 - Track `TemporalCensoringApplied` and `NumberOfTimepoints` for censoring awareness
 - Use `ROINames` for anatomical labeling in results
+- Use `ROICoordinates` for connectome visualization (glass brain plots)
 
 ---
 
@@ -743,6 +760,7 @@ for sub_dir in Path('/output').glob('sub-*'):
 | **Naming Convention** | BIDS-compliant with entities: sub, ses, task, run, space, condition, atlas, desc |
 | **Methods** | ROI-to-ROI, Seed-to-Voxel, ROI-to-Voxel, Seed-to-Seed |
 | **Standard Atlases** | Schaefer 2018 (100/200 parcels), AAL (116), Harvard-Oxford (96) |
+| **ROI Coordinates** | MNI centroids in JSON sidecar (`ROICoordinates` field) for connectome plots |
 | **Temporal Censoring** | Condition-specific outputs with condition- entity in filename |
 | **Quality Control** | HTML reports with figures, metadata JSON, before/after histograms |
 | **Metadata Location** | .json files alongside data with comprehensive processing information |
@@ -760,4 +778,5 @@ for sub_dir in Path('/output').glob('sub-*'):
 6. **Check HTML reports** for quality and identify subjects with unusual patterns
 7. **Consider multiple connectivity measures** in exploratory analyses to test robustness
 8. **Document data provenance** (preprocessing version, atlas, denoising strategy) for reproducibility
+9. **Use ROICoordinates** from JSON sidecars for connectome glass brain visualizations
 

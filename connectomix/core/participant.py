@@ -180,6 +180,7 @@ def run_participant_pipeline(
         # === Step 4: Generate CanICA atlas if needed ===
         atlas_img = None
         atlas_labels = None
+        atlas_coords = None
         
         if config.method == "roiToRoi" and config.atlas == "canica":
             log_section(logger, "CanICA Atlas Generation")
@@ -197,10 +198,13 @@ def run_participant_pipeline(
             )
             
             logger.info(f"Generated CanICA atlas with {len(atlas_labels)} regions")
+            # For CanICA, compute coordinates from the generated atlas
+            from nilearn.plotting import find_parcellation_cut_coords
+            atlas_coords = find_parcellation_cut_coords(atlas_img)
         
         elif config.method == "roiToRoi":
-            # Load standard atlas
-            atlas_img, atlas_labels = _load_standard_atlas(config.atlas, logger)
+            # Load standard atlas with coordinates
+            atlas_img, atlas_labels, atlas_coords = _load_standard_atlas(config.atlas, logger)
         
         # === Step 5: Load seeds if needed ===
         seeds_coords = None
@@ -353,6 +357,7 @@ def run_participant_pipeline(
                             seeds_names=seeds_names,
                             atlas_img=atlas_img,
                             atlas_labels=atlas_labels,
+                            atlas_coords=atlas_coords,
                             logger=logger,
                         )
                         outputs['connectivity'].extend(connectivity_paths_cond)
@@ -379,6 +384,7 @@ def run_participant_pipeline(
                         seeds_names=seeds_names,
                         atlas_img=atlas_img,
                         atlas_labels=atlas_labels,
+                        atlas_coords=atlas_coords,
                         logger=logger,
                     )
                     outputs['connectivity'].extend(connectivity_paths_single)
@@ -907,8 +913,21 @@ def _get_output_path(
 def _load_standard_atlas(
     atlas_name: str,
     logger: logging.Logger,
-) -> Tuple[nib.Nifti1Image, List[str]]:
-    """Load a standard atlas."""
+) -> Tuple[nib.Nifti1Image, List[str], np.ndarray]:
+    """Load a standard atlas with ROI coordinates.
+    
+    Args:
+        atlas_name: Name of the atlas to load.
+        logger: Logger instance.
+    
+    Returns:
+        Tuple of (atlas_img, labels, coordinates) where:
+            - atlas_img: NIfTI image with parcellation
+            - labels: List of region names
+            - coordinates: Array of shape (N, 3) with MNI coordinates for each ROI centroid
+    """
+    from nilearn.plotting import find_parcellation_cut_coords
+    
     logger.info(f"Loading atlas: {atlas_name}")
     
     if atlas_name.startswith("schaefer2018"):
@@ -960,9 +979,13 @@ def _load_standard_atlas(
     # Final sanity check: remove any 'Background' entries
     labels = [l for l in labels if l.lower() != 'background']
     
-    logger.info(f"Loaded {atlas_name} atlas with {len(labels)} regions")
+    # Compute ROI centroid coordinates using nilearn
+    coords = find_parcellation_cut_coords(atlas_img)
     
-    return atlas_img, list(labels)
+    logger.info(f"Loaded {atlas_name} atlas with {len(labels)} regions")
+    logger.debug(f"  ROI coordinates shape: {coords.shape}")
+    
+    return atlas_img, list(labels), coords
 
 
 def _compute_connectivity(
@@ -975,6 +998,7 @@ def _compute_connectivity(
     seeds_names: Optional[List[str]],
     atlas_img: Optional[nib.Nifti1Image],
     atlas_labels: Optional[List[str]],
+    atlas_coords: Optional[np.ndarray],
     logger: logging.Logger,
 ) -> Tuple[List[Path], Optional[Dict[str, np.ndarray]], Optional[List[str]]]:
     """Compute connectivity using the specified method.
@@ -1070,6 +1094,9 @@ def _compute_connectivity(
             sub_dir = sub_dir / f"ses-{file_entities['ses']}"
         connectivity_data_dir = sub_dir / "connectivity_data"
         
+        # Determine coordinate space from file entities
+        coordinate_space = file_entities.get('space', 'MNI152NLin2009cAsym')
+        
         # Compute all connectivity measures and save timeseries
         time_series, matrices, matrix_paths, ts_path, roi_names = compute_roi_to_roi_all_measures(
             func_img=denoised_img,
@@ -1079,6 +1106,8 @@ def _compute_connectivity(
             base_filename=base_filename,
             logger=logger,
             roi_names=atlas_labels,
+            roi_coords=atlas_coords,
+            coordinate_space=coordinate_space,
             save_timeseries=True,
         )
         
