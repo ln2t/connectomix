@@ -131,6 +131,17 @@ def create_parser() -> argparse.ArgumentParser:
       {Colors.YELLOW}# Include global signal regression{Colors.END}
       connectomix /data/bids /data/output participant --denoising gs_csfwm_12p
     
+    {Colors.BOLD}Selecting Atlas and Method:{Colors.END}
+    
+      {Colors.YELLOW}# Use AAL atlas for ROI-to-ROI connectivity{Colors.END}
+      connectomix /data/bids /data/output participant --atlas aal --method roiToRoi
+    
+      {Colors.YELLOW}# Use Schaefer 200-parcel atlas{Colors.END}
+      connectomix /data/bids /data/output participant --atlas schaefer2018n200
+    
+      {Colors.YELLOW}# Seed-to-voxel connectivity (requires seeds_file in config){Colors.END}
+      connectomix /data/bids /data/output participant --method seedToVoxel -c config.yaml
+    
     {Colors.BOLD}Verbose Output:{Colors.END}
     
       {Colors.YELLOW}# Enable debug-level logging{Colors.END}
@@ -444,28 +455,26 @@ def create_parser() -> argparse.ArgumentParser:
     )
     
     # =========================================================================
-    # OPTIONAL ARGUMENTS - Participant Analysis
+    # OPTIONAL ARGUMENTS - Analysis Method & Atlas
     # =========================================================================
-    participant_opts = parser.add_argument_group(
-        f'{Colors.BOLD}Participant Analysis Options{Colors.END}',
-        "Options specific to participant-level connectivity analysis."
+    analysis_opts = parser.add_argument_group(
+        f'{Colors.BOLD}Analysis Options{Colors.END}',
+        "Connectivity method and atlas selection (applies to both participant and group level)."
     )
     
-    participant_opts.add_argument(
-        "--participant-atlas",
+    analysis_opts.add_argument(
+        "--atlas",
         metavar="ATLAS",
-        dest="participant_atlas",
-        help="Atlas for ROI-to-ROI connectivity (participant level). "
+        help="Atlas for ROI-to-ROI connectivity. "
              "Available: schaefer2018n100, schaefer2018n200, aal, harvardoxford. "
-             "Default: schaefer2018n100. Can also be specified in config file.",
+             "Default: schaefer2018n100.",
     )
     
-    participant_opts.add_argument(
-        "--participant-method",
+    analysis_opts.add_argument(
+        "--method",
         metavar="METHOD",
-        dest="participant_method",
         choices=["seedToVoxel", "roiToVoxel", "seedToSeed", "roiToRoi"],
-        help="Connectivity method for participant-level analysis. "
+        help="Connectivity method. "
              "Choices: %(choices)s. Default: roiToRoi.",
     )
     
@@ -484,23 +493,6 @@ def create_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path to participant-level connectomix outputs. "
              "Required for group analysis if not in default location.",
-    )
-    
-    group_opts.add_argument(
-        "--atlas",
-        metavar="ATLAS",
-        default="schaefer2018n100",
-        help="Atlas used in participant-level analysis (default: schaefer2018n100). "
-             "Must match the atlas used in participant-level outputs.",
-    )
-    
-    group_opts.add_argument(
-        "--method",
-        metavar="METHOD",
-        choices=["seedToVoxel", "roiToVoxel", "seedToSeed", "roiToRoi"],
-        default="roiToRoi",
-        help="Connectivity method used in participant-level analysis "
-             "(default: roiToRoi). Group tangent analysis requires roiToRoi.",
     )
     
     return parser

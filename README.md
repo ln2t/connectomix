@@ -70,6 +70,9 @@ connectomix /data/bids /data/output participant
 # With specific subject and task
 connectomix /data/bids /data/output participant -p 01 -t rest
 
+# With custom atlas and connectivity method
+connectomix /data/bids /data/output participant --atlas aal --method roiToRoi
+
 # With configuration file
 connectomix /data/bids /data/output participant -c config.yaml
 
@@ -98,6 +101,8 @@ connectomix /data/bids /data/output participant \
 | `--run` | `-r` | Run to process | `-r 1` |
 | `--space` | | MNI space to use | `--space MNI152NLin2009cAsym` |
 | `--config` | `-c` | Config file path | `-c my_config.yaml` |
+| `--atlas` | | Atlas for ROI connectivity | `--atlas schaefer2018n200` |
+| `--method` | | Connectivity method | `--method roiToRoi` |
 | `--denoising` | | Predefined strategy | `--denoising csfwm_6p` |
 | `--derivatives` | `-d` | Derivative locations | `-d fmriprep=/path` |
 | `--label` | | Custom output label | `--label myanalysis` |

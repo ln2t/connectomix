@@ -72,10 +72,10 @@ def main():
                 config.confounds = get_denoising_strategy(args.denoising)
             if args.label:
                 config.label = args.label
-            if hasattr(args, 'participant_atlas') and args.participant_atlas:
-                config.atlas = args.participant_atlas
-            if hasattr(args, 'participant_method') and args.participant_method:
-                config.method = args.participant_method
+            if args.atlas:
+                config.atlas = args.atlas
+            if args.method:
+                config.method = args.method
             
             # Handle temporal censoring CLI options
             _configure_temporal_censoring(args, config, logger)
