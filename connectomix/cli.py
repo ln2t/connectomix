@@ -444,6 +444,32 @@ def create_parser() -> argparse.ArgumentParser:
     )
     
     # =========================================================================
+    # OPTIONAL ARGUMENTS - Participant Analysis
+    # =========================================================================
+    participant_opts = parser.add_argument_group(
+        f'{Colors.BOLD}Participant Analysis Options{Colors.END}',
+        "Options specific to participant-level connectivity analysis."
+    )
+    
+    participant_opts.add_argument(
+        "--participant-atlas",
+        metavar="ATLAS",
+        dest="participant_atlas",
+        help="Atlas for ROI-to-ROI connectivity (participant level). "
+             "Available: schaefer2018n100, schaefer2018n200, aal, harvardoxford. "
+             "Default: schaefer2018n100. Can also be specified in config file.",
+    )
+    
+    participant_opts.add_argument(
+        "--participant-method",
+        metavar="METHOD",
+        dest="participant_method",
+        choices=["seedToVoxel", "roiToVoxel", "seedToSeed", "roiToRoi"],
+        help="Connectivity method for participant-level analysis. "
+             "Choices: %(choices)s. Default: roiToRoi.",
+    )
+    
+    # =========================================================================
     # OPTIONAL ARGUMENTS - Group Analysis
     # =========================================================================
     group_opts = parser.add_argument_group(

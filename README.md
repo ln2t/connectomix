@@ -510,6 +510,93 @@ output_dir/
             └── report.html
 ```
 
+### Connectivity Data Files
+
+Each connectivity matrix (`.npy`) has an accompanying JSON sidecar with metadata:
+
+```json
+{
+    "ConnectivityMeasure": "correlation",
+    "AtlasName": "schaefer2018n100",
+    "NumRegions": 100,
+    "MatrixShape": [100, 100],
+    "ROILabels": ["7Networks_LH_Vis_1", "7Networks_LH_Vis_2", "..."],
+    "ROICoordinates": [[-22.0, -93.0, -9.0], [-26.0, -81.0, -11.0], "..."],
+    "CoordinateSpace": "MNI152NLin2009cAsym",
+    "fMRIPrepVersion": "23.1.0",
+    "EffectiveVolumeCount": 180,
+    "HighPass": 0.01,
+    "LowPass": 0.08
+}
+```
+
+**ROICoordinates** are MNI centroids (x, y, z) for each ROI, enabling connectome glass brain visualization with tools like nilearn's `plot_connectome()`.
+
+**Atlas matrix shapes:**
+| Atlas | Regions | Matrix Shape |
+|-------|---------|--------------|
+| `schaefer2018n100` | 100 | 100 × 100 |
+| `schaefer2018n200` | 200 | 200 × 200 |
+| `aal` | 116 | 116 × 116 |
+| `harvardoxford` | 96 | 96 × 96 |
+| `canica` | Custom | N × N (user-defined) |
+
+### Loading Connectivity Data
+
+```python
+import numpy as np
+import json
+from pathlib import Path
+
+# Load connectivity matrix
+conn_file = Path('sub-01/connectivity_data/sub-01_task-rest_atlas-schaefer_desc-correlation_connectivity.npy')
+connectivity = np.load(conn_file)
+
+# Load metadata from JSON sidecar
+json_file = conn_file.with_suffix('.json')
+with open(json_file) as f:
+    metadata = json.load(f)
+
+# Access ROI coordinates for connectome plotting
+roi_coords = np.array(metadata['ROICoordinates'])
+roi_labels = metadata['ROILabels']
+
+# Plot connectome using nilearn
+from nilearn.plotting import plot_connectome
+plot_connectome(connectivity, roi_coords, 
+                edge_threshold='95%', 
+                node_size=20,
+                title=f"Subject 01 - {metadata['ConnectivityMeasure']}")
+```
+
+### Vectorization for Machine Learning
+
+Connectivity matrices can be vectorized for group analysis or machine learning:
+
+```python
+def matrix_to_vector(matrix):
+    """Convert symmetric matrix to upper triangle vector."""
+    indices = np.triu_indices(matrix.shape[0], k=1)
+    return matrix[indices]
+
+def vector_to_matrix(vector, n_regions):
+    """Reconstruct symmetric matrix from vector."""
+    matrix = np.zeros((n_regions, n_regions))
+    indices = np.triu_indices(n_regions, k=1)
+    matrix[indices] = vector
+    matrix = matrix + matrix.T
+    return matrix
+
+# For group analysis: stack all subjects
+n_regions = 100
+n_subjects = 50
+connectivity_vectors = np.zeros((n_subjects, n_regions*(n_regions-1)//2))
+
+for i, sub_dir in enumerate(Path('/output').glob('sub-*')):
+    conn = np.load(sub_dir / 'connectivity_data' / '*_desc-correlation_connectivity.npy')
+    connectivity_vectors[i] = matrix_to_vector(conn)
+```
+
 ### HTML Report Contents
 
 Each participant-level HTML report includes:
