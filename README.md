@@ -230,7 +230,11 @@ The precision matrix is the inverse of the covariance matrix. It encodes conditi
 
 ### Using a Custom Atlas
 
-Connectomix allows you to use a custom parcellation atlas for ROI-to-ROI or ROI-to-voxel analysis. There are two ways to specify a custom atlas:
+Connectomix allows you to use a custom parcellation atlas for ROI-to-ROI or ROI-to-voxel analysis. A custom atlas requires:
+
+1. **A parcellation NIfTI file** — 3D image where each ROI has a unique non-zero integer label (background = 0)
+2. **(Optional) A labels file** — human-readable ROI names
+3. **(Optional) MNI coordinates** — for connectome (glass brain) visualizations
 
 #### Option 1: Provide a Direct Path
 
@@ -238,48 +242,93 @@ Pass the full path to a NIfTI parcellation file:
 
 ```bash
 connectomix /data/bids /data/output participant \
-  --atlas /path/to/my_custom_atlas.nii.gz
+  --atlas /path/to/my_atlas.nii.gz
 ```
 
-The atlas file must be a 3D NIfTI image where each ROI is represented by a unique non-zero integer label (background = 0). ROI names will be automatically generated as `ROI_1`, `ROI_2`, etc., based on the integer labels found in the image.
+If you have a labels file, name it with the **same basename** as your NIfTI file:
+- `my_atlas.nii.gz` → `my_atlas.csv`, `my_atlas.tsv`, `my_atlas.txt`, or `my_atlas.json`
 
 #### Option 2: Place the Atlas in Nilearn's Data Directory
 
-Nilearn caches downloaded atlases in a data directory (by default `~/nilearn_data`, or the path specified by the `NILEARN_DATA` environment variable). You can place your custom atlas there and reference it by folder name.
+Create a folder in `~/nilearn_data` (or `$NILEARN_DATA`) with your atlas:
 
-**Steps:**
+```bash
+mkdir -p ~/nilearn_data/my_custom_atlas
+cp /path/to/atlas.nii.gz ~/nilearn_data/my_custom_atlas/
+cp /path/to/labels.csv ~/nilearn_data/my_custom_atlas/
+```
 
-1. Create a folder for your atlas inside `~/nilearn_data`:
-   ```bash
-   mkdir -p ~/nilearn_data/my_custom_atlas
-   ```
+Then reference it by folder name:
 
-2. Copy your parcellation NIfTI file into the folder:
-   ```bash
-   cp /path/to/my_atlas.nii.gz ~/nilearn_data/my_custom_atlas/maps.nii.gz
-   ```
+```bash
+connectomix /data/bids /data/output participant --atlas my_custom_atlas
+```
 
-3. (Optional) Add a labels file for human-readable ROI names. Supported formats:
-   - `labels.txt` — one label per line
-   - `labels.json` — JSON array of strings
-   - `labels.npy` — NumPy array of strings
+#### Supported Label File Formats
 
-   Example `labels.txt`:
-   ```
-   LeftHippocampus
-   RightHippocampus
-   LeftAmygdala
-   RightAmygdala
-   ```
+Connectomix supports multiple formats for specifying ROI names and coordinates:
 
-4. Run Connectomix with your atlas name:
-   ```bash
-   connectomix /data/bids /data/output participant --atlas my_custom_atlas
-   ```
+**CSV with coordinates (recommended for connectome plots):**
 
-Connectomix will search `~/nilearn_data` (or `$NILEARN_DATA`) for a folder matching the atlas name and load the first NIfTI file it finds.
+```csv
+x,y,z,name,network
+-53.28,-8.88,32.36,L Auditory,Auditory
+53.47,-6.49,27.52,R Auditory,Auditory
+-0.15,51.42,7.58,Frontal DMN,DMN
+```
 
-> **Tip:** The exact `--atlas` value you provide will be recorded in output filenames, JSON sidecars, and the HTML report for full reproducibility.
+Columns `x`, `y`, `z` specify MNI coordinates for each ROI centroid. These are used for:
+- Glass brain / connectome visualizations
+- Spatial reference in JSON sidecars
+
+**TSV (like Schaefer atlas):**
+
+```tsv
+1	7Networks_LH_Vis_1	120	18	131	0
+2	7Networks_LH_Vis_2	120	18	132	0
+```
+
+The second column is used as the ROI name.
+
+**Plain text (one label per line):**
+
+```text
+LeftHippocampus
+RightHippocampus
+LeftAmygdala
+RightAmygdala
+```
+
+**JSON array:**
+
+```json
+["LeftHippocampus", "RightHippocampus", "LeftAmygdala", "RightAmygdala"]
+```
+
+**JSON with coordinates:**
+
+```json
+{
+  "labels": ["L Auditory", "R Auditory", "Frontal DMN"],
+  "coordinates": [[-53.28, -8.88, 32.36], [53.47, -6.49, 27.52], [-0.15, 51.42, 7.58]]
+}
+```
+
+#### File Naming Convention
+
+Labels files are searched in this priority order:
+
+1. **Same basename as NIfTI**: `my_atlas.csv` for `my_atlas.nii.gz`
+2. **Generic labels file**: `labels.csv`, `labels.tsv`, `labels.txt`, `labels.json`
+
+#### What Happens Without a Labels File?
+
+If no labels file is found, Connectomix will:
+1. Extract unique integer values from the parcellation image
+2. Generate labels as `ROI_1`, `ROI_2`, etc.
+3. Compute ROI centroid coordinates automatically using nilearn
+
+> **Tip:** For publication-quality connectome plots, provide a CSV with MNI coordinates and meaningful ROI names.
 
 ---
 
@@ -292,6 +341,7 @@ Temporal censoring removes specific timepoints (volumes) from fMRI data before c
 3. **Dummy scan removal**: Discard initial volumes during scanner equilibration
 
 **By default, temporal censoring is disabled.** Enable it with CLI options or configuration.
+
 
 ### Condition-Based Analysis (Task fMRI)
 

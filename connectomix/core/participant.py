@@ -913,6 +913,178 @@ def _get_output_path(
     return sub_dir / filename
 
 
+def _load_custom_atlas_labels(
+    nifti_path: Path,
+    logger: logging.Logger,
+    search_folder: Optional[Path] = None,
+) -> Tuple[Optional[List[str]], Optional[np.ndarray]]:
+    """Load labels and optionally coordinates from a custom atlas labels file.
+    
+    Searches for labels files in the following order:
+    1. Same basename as NIfTI file (e.g., my_atlas.csv for my_atlas.nii.gz)
+    2. Generic labels.* files in the search folder
+    
+    Supported formats:
+    - CSV with columns: x, y, z, name (and optionally network)
+    - TSV with columns: index, name (second column is used as label)
+    - TXT with one label per line
+    - JSON array of label strings
+    - NPY numpy array of strings
+    
+    Args:
+        nifti_path: Path to the NIfTI atlas file
+        logger: Logger instance
+        search_folder: Optional folder to search for labels.* files
+    
+    Returns:
+        Tuple of (labels, coordinates) where:
+            - labels: List of ROI names, or None if not found
+            - coordinates: Array of shape (N, 3) with MNI coordinates, or None
+    """
+    import csv
+    
+    nifti_path = Path(nifti_path)
+    
+    # Build list of candidate label files
+    # Priority 1: Same basename as NIfTI (e.g., atlas.csv for atlas.nii.gz)
+    basename = nifti_path.name
+    # Remove .nii.gz or .nii extension
+    if basename.endswith('.nii.gz'):
+        stem = basename[:-7]
+    elif basename.endswith('.nii'):
+        stem = basename[:-4]
+    else:
+        stem = nifti_path.stem
+    
+    parent = nifti_path.parent
+    
+    candidates = []
+    # Check for basename.{csv,tsv,txt,json,npy}
+    for ext in ['.csv', '.tsv', '.txt', '.json', '.npy']:
+        candidates.append(parent / f"{stem}{ext}")
+    
+    # Priority 2: Generic labels.* in same folder
+    for ext in ['.csv', '.tsv', '.txt', '.json', '.npy']:
+        candidates.append(parent / f"labels{ext}")
+    
+    # Priority 3: Generic labels.* in search_folder (if different from parent)
+    if search_folder and search_folder != parent:
+        for ext in ['.csv', '.tsv', '.txt', '.json', '.npy']:
+            candidates.append(search_folder / f"labels{ext}")
+        # Also check for basename-style in search folder
+        for ext in ['.csv', '.tsv', '.txt', '.json', '.npy']:
+            candidates.append(search_folder / f"{stem}{ext}")
+    
+    labels = None
+    coords = None
+    
+    for labels_file in candidates:
+        if not labels_file.exists():
+            continue
+        
+        logger.debug(f"  Found labels file: {labels_file}")
+        
+        try:
+            suffix = labels_file.suffix.lower()
+            
+            if suffix == '.csv':
+                # CSV format - check for x,y,z,name columns (like MSDL)
+                df = pd.read_csv(labels_file)
+                cols_lower = [c.lower().strip() for c in df.columns]
+                
+                # Check for coordinate columns
+                has_coords = all(c in cols_lower for c in ['x', 'y', 'z'])
+                
+                # Find name column
+                name_col = None
+                for col in df.columns:
+                    if col.lower().strip() == 'name':
+                        name_col = col
+                        break
+                
+                if name_col:
+                    labels = df[name_col].astype(str).str.strip().tolist()
+                    
+                    if has_coords:
+                        # Extract coordinates
+                        x_col = [c for c in df.columns if c.lower().strip() == 'x'][0]
+                        y_col = [c for c in df.columns if c.lower().strip() == 'y'][0]
+                        z_col = [c for c in df.columns if c.lower().strip() == 'z'][0]
+                        coords = np.array([
+                            df[x_col].values,
+                            df[y_col].values,
+                            df[z_col].values
+                        ]).T
+                        logger.debug(f"    Loaded {len(labels)} labels with coordinates from CSV")
+                    else:
+                        logger.debug(f"    Loaded {len(labels)} labels from CSV (no coordinates)")
+                else:
+                    # Fallback: use first column as labels
+                    labels = df.iloc[:, 0].astype(str).str.strip().tolist()
+                    logger.debug(f"    Loaded {len(labels)} labels from first CSV column")
+                break
+                    
+            elif suffix == '.tsv':
+                # TSV format - like Schaefer: index, name, r, g, b, a
+                df = pd.read_csv(labels_file, sep='\t', header=None)
+                if df.shape[1] >= 2:
+                    # Second column is typically the label name
+                    labels = df.iloc[:, 1].astype(str).str.strip().tolist()
+                else:
+                    labels = df.iloc[:, 0].astype(str).str.strip().tolist()
+                logger.debug(f"    Loaded {len(labels)} labels from TSV")
+                break
+                
+            elif suffix == '.txt':
+                # Plain text - one label per line, or TSV-like format
+                with open(labels_file, 'r') as f:
+                    lines = [l.strip() for l in f if l.strip()]
+                
+                # Check if it's tab-separated (like Schaefer)
+                if lines and '\t' in lines[0]:
+                    # Parse as TSV - second column is label
+                    labels = []
+                    for line in lines:
+                        parts = line.split('\t')
+                        if len(parts) >= 2:
+                            labels.append(parts[1].strip())
+                        else:
+                            labels.append(parts[0].strip())
+                else:
+                    # Simple one-label-per-line
+                    labels = lines
+                logger.debug(f"    Loaded {len(labels)} labels from TXT")
+                break
+                
+            elif suffix == '.json':
+                with open(labels_file, 'r') as f:
+                    data = json.load(f)
+                
+                if isinstance(data, list):
+                    labels = [str(l).strip() for l in data]
+                elif isinstance(data, dict):
+                    # Check for labels key
+                    if 'labels' in data:
+                        labels = [str(l).strip() for l in data['labels']]
+                    if 'coordinates' in data or 'coords' in data:
+                        coord_key = 'coordinates' if 'coordinates' in data else 'coords'
+                        coords = np.array(data[coord_key])
+                logger.debug(f"    Loaded {len(labels) if labels else 0} labels from JSON")
+                break
+                
+            elif suffix == '.npy':
+                arr = np.load(labels_file, allow_pickle=True)
+                labels = [str(l).strip() for l in arr.tolist()]
+                logger.debug(f"    Loaded {len(labels)} labels from NPY")
+                break
+                
+        except Exception as e:
+            logger.warning(f"    Failed to parse labels file {labels_file}: {e}")
+            continue
+    
+    return labels, coords
+
+
 def _load_standard_atlas(
     atlas_name: str,
     logger: logging.Logger,
@@ -977,23 +1149,26 @@ def _load_standard_atlas(
         # Attempt to load a custom atlas. The user may provide either:
         #  - a path to a NIfTI file
         #  - the name of a folder placed inside Nilearn's data directory
-        #  - the name of a custom atlas that matches a folder in NILEARN_DATA
         #
         # Try loading as a direct path first
         atlas_path = Path(atlas_name)
         if atlas_path.exists():
             try:
                 atlas_img = nib.load(str(atlas_path))
-                # Derive labels from unique integer values in the atlas image
-                data = np.asarray(atlas_img.dataobj)
-                unique_vals = np.unique(data.astype(int))
-                unique_vals = unique_vals[unique_vals != 0]
-                labels = [f"ROI_{int(v)}" for v in sorted(unique_vals.tolist())]
+                # Try to load labels and coordinates from accompanying file
+                labels, custom_coords = _load_custom_atlas_labels(atlas_path, logger)
+                if labels is None:
+                    # Derive labels from unique integer values in the atlas image
+                    data = np.asarray(atlas_img.dataobj)
+                    unique_vals = np.unique(data.astype(int))
+                    unique_vals = unique_vals[unique_vals != 0]
+                    labels = [f"ROI_{int(v)}" for v in sorted(unique_vals.tolist())]
                 logger.info(f"Loaded custom atlas from path: {atlas_path}")
             except Exception as e:
                 raise ConnectomixError(f"Failed to load atlas from path '{atlas_path}': {e}")
         else:
             # Search Nilearn data directory for a folder matching atlas_name
+            custom_coords = None
             nilearn_data = os.environ.get('NILEARN_DATA')
             if nilearn_data:
                 search_dirs = [Path(nilearn_data)]
@@ -1020,31 +1195,9 @@ def _load_standard_atlas(
             if found_file:
                 try:
                     atlas_img = nib.load(str(found_file))
-                    # Try to load labels if present (labels.txt / labels.json)
-                    labels = None
-                    labels_txt = None
-                    if found_folder:
-                        # common label file names
-                        for cand in ['labels.txt', 'labels.json', 'labels.npy']:
-                            p = found_folder / cand
-                            if p.exists():
-                                labels_txt = p
-                                break
-
-                    if labels_txt:
-                        try:
-                            if labels_txt.suffix == '.json':
-                                with open(labels_txt, 'r') as f:
-                                    labels = json.load(f)
-                            elif labels_txt.suffix == '.npy':
-                                labels = list(np.load(labels_txt))
-                            else:
-                                # plain text (one label per line)
-                                with open(labels_txt, 'r') as f:
-                                    labels = [l.strip() for l in f if l.strip()]
-                        except Exception:
-                            labels = None
-
+                    # Try to load labels and coordinates
+                    labels, custom_coords = _load_custom_atlas_labels(found_file, logger, search_folder=found_folder)
+                    
                     if labels is None:
                         data = np.asarray(atlas_img.dataobj)
                         unique_vals = np.unique(data.astype(int))
@@ -1059,15 +1212,20 @@ def _load_standard_atlas(
                     f"Unknown atlas: {atlas_name}\n"
                     f"Available atlases: schaefer2018n100, schaefer2018n200, aal, harvardoxford\n"
                     f"If you want to use a custom atlas, either pass a path to a NIfTI file or place the atlas\n"
-                    f"in your Nilearn data directory (see NILEARN_DATA or ~/nilearn_data) and mimic Nilearn's dataset\n"
-                    f"structure. Example: ~/nilearn_data/{atlas_name}/maps.nii.gz and optional labels.txt/json."
+                    f"in your Nilearn data directory (see NILEARN_DATA or ~/nilearn_data).\n"
+                    f"See README for details on creating custom atlases with labels and coordinates."
                 )
     
     # Final sanity check: remove any 'Background' entries
     labels = [l for l in labels if l.lower() != 'background']
     
-    # Compute ROI centroid coordinates using nilearn
-    coords = find_parcellation_cut_coords(atlas_img)
+    # Compute ROI centroid coordinates using nilearn (or use custom coords if provided)
+    if 'custom_coords' in dir() and custom_coords is not None:
+        coords = custom_coords
+        logger.info(f"  Using coordinates from labels file ({len(coords)} ROIs)")
+    else:
+        coords = find_parcellation_cut_coords(atlas_img)
+        logger.debug(f"  Computed ROI coordinates from parcellation")
     
     logger.info(f"Loaded {atlas_name} atlas with {len(labels)} regions")
     logger.debug(f"  ROI coordinates shape: {coords.shape}")
