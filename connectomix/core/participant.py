@@ -11,6 +11,9 @@ from typing import Dict, List, Optional, Tuple
 import nibabel as nib
 import numpy as np
 import pandas as pd
+import os
+import json
+import glob
 
 from connectomix.config.defaults import ParticipantConfig
 from connectomix.config.loader import save_config
@@ -971,10 +974,94 @@ def _load_standard_atlas(
         labels = [l for l in labels if l != 'Background']
         
     else:
-        raise ConnectomixError(
-            f"Unknown atlas: {atlas_name}\n"
-            f"Available atlases: schaefer2018n100, schaefer2018n200, aal, harvardoxford"
-        )
+        # Attempt to load a custom atlas. The user may provide either:
+        #  - a path to a NIfTI file
+        #  - the name of a folder placed inside Nilearn's data directory
+        #  - the name of a custom atlas that matches a folder in NILEARN_DATA
+        #
+        # Try loading as a direct path first
+        atlas_path = Path(atlas_name)
+        if atlas_path.exists():
+            try:
+                atlas_img = nib.load(str(atlas_path))
+                # Derive labels from unique integer values in the atlas image
+                data = np.asarray(atlas_img.dataobj)
+                unique_vals = np.unique(data.astype(int))
+                unique_vals = unique_vals[unique_vals != 0]
+                labels = [f"ROI_{int(v)}" for v in sorted(unique_vals.tolist())]
+                logger.info(f"Loaded custom atlas from path: {atlas_path}")
+            except Exception as e:
+                raise ConnectomixError(f"Failed to load atlas from path '{atlas_path}': {e}")
+        else:
+            # Search Nilearn data directory for a folder matching atlas_name
+            nilearn_data = os.environ.get('NILEARN_DATA')
+            if nilearn_data:
+                search_dirs = [Path(nilearn_data)]
+            else:
+                search_dirs = [Path.home() / 'nilearn_data']
+
+            found_file = None
+            found_folder = None
+            for base in search_dirs:
+                if not base.exists():
+                    continue
+                # Look for folders that start with atlas_name (case-insensitive)
+                for entry in base.glob(f"**/{atlas_name}*"):
+                    if entry.is_dir():
+                        # Find plausible nifti files inside
+                        nifti_candidates = list(entry.rglob('*.nii')) + list(entry.rglob('*.nii.gz'))
+                        if nifti_candidates:
+                            found_file = nifti_candidates[0]
+                            found_folder = entry
+                            break
+                if found_file:
+                    break
+
+            if found_file:
+                try:
+                    atlas_img = nib.load(str(found_file))
+                    # Try to load labels if present (labels.txt / labels.json)
+                    labels = None
+                    labels_txt = None
+                    if found_folder:
+                        # common label file names
+                        for cand in ['labels.txt', 'labels.json', 'labels.npy']:
+                            p = found_folder / cand
+                            if p.exists():
+                                labels_txt = p
+                                break
+
+                    if labels_txt:
+                        try:
+                            if labels_txt.suffix == '.json':
+                                with open(labels_txt, 'r') as f:
+                                    labels = json.load(f)
+                            elif labels_txt.suffix == '.npy':
+                                labels = list(np.load(labels_txt))
+                            else:
+                                # plain text (one label per line)
+                                with open(labels_txt, 'r') as f:
+                                    labels = [l.strip() for l in f if l.strip()]
+                        except Exception:
+                            labels = None
+
+                    if labels is None:
+                        data = np.asarray(atlas_img.dataobj)
+                        unique_vals = np.unique(data.astype(int))
+                        unique_vals = unique_vals[unique_vals != 0]
+                        labels = [f"ROI_{int(v)}" for v in sorted(unique_vals.tolist())]
+
+                    logger.info(f"Loaded custom atlas from Nilearn data dir: {found_file}")
+                except Exception as e:
+                    raise ConnectomixError(f"Failed to load atlas from Nilearn data dir '{found_file}': {e}")
+            else:
+                raise ConnectomixError(
+                    f"Unknown atlas: {atlas_name}\n"
+                    f"Available atlases: schaefer2018n100, schaefer2018n200, aal, harvardoxford\n"
+                    f"If you want to use a custom atlas, either pass a path to a NIfTI file or place the atlas\n"
+                    f"in your Nilearn data directory (see NILEARN_DATA or ~/nilearn_data) and mimic Nilearn's dataset\n"
+                    f"structure. Example: ~/nilearn_data/{atlas_name}/maps.nii.gz and optional labels.txt/json."
+                )
     
     # Final sanity check: remove any 'Background' entries
     labels = [l for l in labels if l.lower() != 'background']
