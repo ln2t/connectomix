@@ -228,6 +228,59 @@ The precision matrix is the inverse of the covariance matrix. It encodes conditi
 | `harvardoxford` | 96 | Harvard-Oxford cortical + subcortical |
 | `canica` | Custom | Data-driven ICA (computed from your data) |
 
+### Using a Custom Atlas
+
+Connectomix allows you to use a custom parcellation atlas for ROI-to-ROI or ROI-to-voxel analysis. There are two ways to specify a custom atlas:
+
+#### Option 1: Provide a Direct Path
+
+Pass the full path to a NIfTI parcellation file:
+
+```bash
+connectomix /data/bids /data/output participant \
+  --atlas /path/to/my_custom_atlas.nii.gz
+```
+
+The atlas file must be a 3D NIfTI image where each ROI is represented by a unique non-zero integer label (background = 0). ROI names will be automatically generated as `ROI_1`, `ROI_2`, etc., based on the integer labels found in the image.
+
+#### Option 2: Place the Atlas in Nilearn's Data Directory
+
+Nilearn caches downloaded atlases in a data directory (by default `~/nilearn_data`, or the path specified by the `NILEARN_DATA` environment variable). You can place your custom atlas there and reference it by folder name.
+
+**Steps:**
+
+1. Create a folder for your atlas inside `~/nilearn_data`:
+   ```bash
+   mkdir -p ~/nilearn_data/my_custom_atlas
+   ```
+
+2. Copy your parcellation NIfTI file into the folder:
+   ```bash
+   cp /path/to/my_atlas.nii.gz ~/nilearn_data/my_custom_atlas/maps.nii.gz
+   ```
+
+3. (Optional) Add a labels file for human-readable ROI names. Supported formats:
+   - `labels.txt` — one label per line
+   - `labels.json` — JSON array of strings
+   - `labels.npy` — NumPy array of strings
+
+   Example `labels.txt`:
+   ```
+   LeftHippocampus
+   RightHippocampus
+   LeftAmygdala
+   RightAmygdala
+   ```
+
+4. Run Connectomix with your atlas name:
+   ```bash
+   connectomix /data/bids /data/output participant --atlas my_custom_atlas
+   ```
+
+Connectomix will search `~/nilearn_data` (or `$NILEARN_DATA`) for a folder matching the atlas name and load the first NIfTI file it finds.
+
+> **Tip:** The exact `--atlas` value you provide will be recorded in output filenames, JSON sidecars, and the HTML report for full reproducibility.
+
 ---
 
 ## Temporal Censoring

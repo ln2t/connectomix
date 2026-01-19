@@ -1075,6 +1075,13 @@ class ParticipantReportGenerator:
         
         method_desc = method_descriptions.get(self.config.method, self.config.method)
         
+        # Determine atlas display value for overview
+        atlas_overview = getattr(self.config, 'atlas', 'N/A')
+        if atlas_overview and atlas_overview != 'N/A':
+            standard_atlases = ['schaefer2018n100', 'schaefer2018n200', 'aal', 'harvardoxford', 'canica']
+            if atlas_overview.lower() not in [a.lower() for a in standard_atlases]:
+                atlas_overview = f"{atlas_overview} (custom)"
+        
         html = f'''
         <div class="section" id="overview">
             <h2>📊 Analysis Overview</h2>
@@ -1085,7 +1092,7 @@ class ParticipantReportGenerator:
                     <div class="metric-label">Analysis Method</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{getattr(self.config, 'atlas', 'N/A')}</div>
+                    <div class="metric-value">{atlas_overview}</div>
                     <div class="metric-label">Atlas</div>
                 </div>
                 <div class="metric-card">
@@ -1130,7 +1137,19 @@ class ParticipantReportGenerator:
         # Method-specific parameters
         method_params = []
         if self.config.method in ["roiToRoi", "roiToVoxel"]:
-            method_params.append(("Atlas", getattr(self.config, 'atlas', 'N/A')))
+            atlas_value = getattr(self.config, 'atlas', 'N/A')
+            # Determine if this is a standard atlas or custom
+            standard_atlases = ['schaefer2018n100', 'schaefer2018n200', 'aal', 'harvardoxford', 'canica']
+            if atlas_value and atlas_value.lower() not in [a.lower() for a in standard_atlases]:
+                # Custom atlas - check if it looks like a path
+                from pathlib import Path
+                if Path(atlas_value).exists():
+                    atlas_display = f"{atlas_value} (custom path)"
+                else:
+                    atlas_display = f"{atlas_value} (custom, from Nilearn data dir)"
+            else:
+                atlas_display = atlas_value
+            method_params.append(("Atlas", atlas_display))
         if self.config.method in ["seedToVoxel", "seedToSeed"]:
             method_params.append(("Seeds file", str(getattr(self.config, 'seeds_file', 'N/A'))))
             method_params.append(("Sphere radius", f"{getattr(self.config, 'radius', 5.0)} mm"))
