@@ -57,6 +57,217 @@ connectomix --version
 - Python 3.8+
 - fMRIPrep-preprocessed data (BIDS derivatives)
 
+### Manual Atlas Dataset Download
+
+When Connectomix uses standard atlases (Schaefer, AAL, Harvard-Oxford), nilearn automatically downloads them on first use. However, **in environments with SSL certificate issues or without internet access**, you can manually download and cache these datasets.
+
+#### Why Manual Download?
+
+- **SSL/Certificate issues**: Some networks block SSL connections or have certificate verification failures
+- **Offline environments**: Air-gapped systems without internet access
+- **Network restrictions**: Firewalls blocking downloads from GitHub, GIN, or FSL servers
+- **Reproducibility**: Pre-cache atlases for guaranteed availability
+
+#### Where Connectomix Looks for Atlases
+
+Connectomix (via nilearn) searches for atlas data in this order:
+
+1. `$NILEARN_DATA` environment variable (if set)
+2. `~/.cache/nilearn_data` (nilearn default cache)
+3. `~/nilearn_data` (alternative cache location)
+
+#### Manual Setup Steps
+
+##### 1. Create the Cache Directory
+
+```bash
+# Using nilearn's default location
+mkdir -p ~/.cache/nilearn_data
+
+# OR use an alternative location and set the environment variable
+mkdir -p ~/nilearn_data
+export NILEARN_DATA=~/nilearn_data
+```
+
+##### 2. Download Schaefer 2018 Atlas
+
+**Download URLs:**
+- 100 parcels: https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
+- 100 parcels labels: https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order.txt
+- 200 parcels: (replace `100Parcels` with `200Parcels` in the URL above)
+
+**Installation:**
+
+```bash
+# Create Schaefer directory
+mkdir -p ~/.cache/nilearn_data/schaefer_2018
+
+# Download 100-parcel version
+cd ~/.cache/nilearn_data/schaefer_2018
+
+# Using wget
+wget https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
+wget https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order.txt
+
+# OR using curl
+curl -O https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
+curl -O https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order.txt
+```
+
+##### 3. Download AAL Atlas
+
+**Download URL:**
+- AAL SPM12: https://www.gin.cnrs.fr/wp-content/uploads/aal_for_SPM12.tar.gz
+- AAL v3.2: https://www.gin.cnrs.fr/wp-content/uploads/AAL3v2_for_SPM12.tar.gz
+
+**Installation:**
+
+```bash
+# Create AAL directory
+mkdir -p ~/.cache/nilearn_data/aal_SPM12
+
+# Download and extract
+cd ~/.cache/nilearn_data
+
+# Using wget
+wget https://www.gin.cnrs.fr/wp-content/uploads/aal_for_SPM12.tar.gz
+tar -xzf aal_for_SPM12.tar.gz -C aal_SPM12/
+
+# OR using curl
+curl -O https://www.gin.cnrs.fr/wp-content/uploads/aal_for_SPM12.tar.gz
+tar -xzf aal_for_SPM12.tar.gz -C aal_SPM12/
+
+# Verify the structure
+ls aal_SPM12/aal/atlas/
+# Should contain: AAL.nii, AAL.xml, ROI_MNI_V4.txt, ROI_MNI_V4.xml
+```
+
+##### 4. Download Harvard-Oxford Atlas
+
+Harvard-Oxford is typically distributed as part of FSL. The easiest way is to extract it from the FSL distribution or download directly.
+
+**From FSL GitHub:**
+
+```bash
+# Create FSL directory
+mkdir -p ~/.cache/nilearn_data/fsl/data/atlases/HarvardOxford
+
+cd ~/.cache/nilearn_data/fsl/data/atlases/HarvardOxford
+
+# Download Harvard-Oxford cortical atlas (2mm resolution)
+wget https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/data/HarvardOxford-cort-maxprob-thr25-2mm.nii.gz
+
+# Download Harvard-Oxford subcortical atlas
+wget https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/data/HarvardOxford-sub-maxprob-thr25-2mm.nii.gz
+
+# Download XML labels (from FSL repository)
+wget https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/Atlases/HarvardOxford-Cortical.xml -O ./HarvardOxford-Cortical.xml
+```
+
+**From local FSL installation (if FSL is already installed):**
+
+```bash
+# Copy from FSL installation
+cp -r $FSLDIR/data/atlases/HarvardOxford ~/.cache/nilearn_data/fsl/data/atlases/
+```
+
+#### Verify the Installation
+
+Test that Connectomix can access the cached atlases:
+
+```bash
+# This will use the cached schaefer2018n100 atlas
+connectomix /data/bids /data/output participant --atlas schaefer2018n100
+
+# This will use the cached AAL atlas
+connectomix /data/bids /data/output participant --atlas aal
+
+# This will use the cached Harvard-Oxford atlas
+connectomix /data/bids /data/output participant --atlas harvardoxford
+```
+
+If Connectomix finds the cached datasets, it will proceed without attempting to download.
+
+#### Troubleshooting
+
+**Atlas not found error:**
+
+```
+Unknown atlas: schaefer2018n100
+```
+
+Check that files are in the correct location:
+
+```bash
+# For Schaefer
+ls ~/.cache/nilearn_data/schaefer_2018/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
+
+# For AAL
+ls ~/.cache/nilearn_data/aal_SPM12/aal/atlas/AAL.nii
+
+# For Harvard-Oxford
+ls ~/.cache/nilearn_data/fsl/data/atlases/HarvardOxford/HarvardOxford-cort-maxprob-thr25-2mm.nii.gz
+```
+
+**Using a custom cache location:**
+
+```bash
+# Set environment variable before running Connectomix
+export NILEARN_DATA=/custom/atlas/path
+connectomix /data/bids /data/output participant --atlas schaefer2018n100
+```
+
+#### Handling SSL Certificate Errors
+
+If you encounter SSL certificate errors when nilearn attempts to download atlases:
+
+**Option 1: Bypass SSL verification (temporary workaround)**
+
+```bash
+# Disable SSL verification for downloads (not recommended for security reasons)
+export PYTHONHTTPSVERIFY=0
+connectomix /data/bids /data/output participant --atlas schaefer2018n100
+```
+
+**Option 2: Point to custom CA certificates**
+
+```bash
+# If your institution provides custom CA certificates
+export REQUESTS_CA_BUNDLE=/path/to/ca-bundle.crt
+connectomix /data/bids /data/output participant --atlas schaefer2018n100
+```
+
+**Option 3: Use manual downloads (recommended)**
+
+This is the most robust solution - manually download atlases using `wget` or `curl` (which may handle SSL differently than Python), then cache them locally.
+
+#### Docker/Container Usage
+
+If running Connectomix in a Docker container, pre-populate the atlas cache in the image:
+
+```dockerfile
+FROM python:3.9
+
+# Install Connectomix
+RUN git clone https://github.com/ln2t/connectomix.git && \
+    cd connectomix && \
+    pip install -e .
+
+# Pre-download atlases at build time
+RUN mkdir -p ~/.cache/nilearn_data/schaefer_2018 && \
+    curl -o ~/.cache/nilearn_data/schaefer_2018/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz \
+    https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz && \
+    curl -o ~/.cache/nilearn_data/schaefer_2018/Schaefer2018_100Parcels_7Networks_order.txt \
+    https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order.txt
+```
+
+Then run the container with the pre-cached data:
+
+```bash
+docker run -v ~/.cache/nilearn_data:/root/.cache/nilearn_data -v /data:/data myimage \
+  connectomix /data/bids /data/output participant --atlas schaefer2018n100
+```
+
 ---
 
 ## Quick Start
