@@ -410,12 +410,14 @@ def create_parser() -> argparse.ArgumentParser:
     
     censoring.add_argument(
         "--fd-threshold",
-        metavar="MM",
+        metavar="CM",
         type=float,
         dest="fd_threshold",
-        help="Enable motion censoring. Remove volumes with framewise displacement "
-             "above this threshold (in mm). Typical values: 0.2-0.5mm. "
-             "Uses 'framewise_displacement' column from fMRIPrep confounds.",
+        help=("Enable motion censoring. Remove volumes with framewise displacement "
+              "above this threshold. Note: fMRIPrep reports FD values in centimeters (cm), "
+              "so this argument expects a value in cm. Typical FD thresholds reported in the "
+              "literature are 0.2–0.5 cm. Uses the 'framewise_displacement' "
+              "column from fMRIPrep confounds."),
     )
     
     censoring.add_argument(

@@ -178,28 +178,15 @@ Connectomix v3.0.0 is **feature-complete and production-ready**. All modules (co
 Complete temporal censoring system for task fMRI and motion scrubbing:
 
 **Condition-based analysis:**
-- Parse BIDS events.tsv files automatically
-- Compute separate connectivity per experimental condition
-- Output files with `condition-{name}` entity
-- Support for baseline periods and transition buffers
 
 **Motion scrubbing:**
-- FD-based volume censoring using fMRIPrep's `framewise_displacement`
-- Configurable FD threshold (typical: 0.2-0.5mm)
-- Extend censoring to adjacent volumes
 
 **Dummy scan removal:**
-- Drop initial volumes during scanner equilibration
 
 **CLI options:**
 ```bash
---conditions COND [COND ...]  # Enable condition selection
---events-file FILE            # Custom events.tsv path
---include-baseline            # Include inter-trial intervals
---transition-buffer SEC       # Buffer around condition boundaries
---fd-threshold MM             # Enable motion censoring
---fd-extend N                 # Extend censoring ±N volumes
---drop-initial N              # Drop first N volumes
+-- Configurable FD threshold (typical: 0.2-0.5 cm as reported by fMRIPrep)
+--fd-threshold CM             # Enable motion censoring (value in cm; fMRIPrep reports FD in cm)
 ```
 
 ### 2. Geometric Consistency ✅
