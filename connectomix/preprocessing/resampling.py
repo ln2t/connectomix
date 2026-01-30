@@ -147,11 +147,13 @@ def resample_to_reference(
     logger.info(f"Resampling {img_name}")
     
     try:
-        # Resample
+        # Resample with explicit parameters to avoid FutureWarnings
         resampled = image.resample_to_img(
             img,
             reference,
-            interpolation=interpolation
+            interpolation=interpolation,
+            force_resample=True,
+            copy_header=True
         )
         
         # Round affine to avoid numerical precision issues
