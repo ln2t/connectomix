@@ -39,8 +39,9 @@ Connectomix v3.0.0 is **feature-complete and production-ready**. All modules (co
   - Alpha, positive value, file, directory validation
   - Comprehensive error reporting
 
-- **`strategies.py`** (~95 lines)
-  - 7 predefined denoising strategies
+- **`strategies.py`** (~170 lines)
+  - DenoisingStrategySpec dataclass with confounds + optional censoring params
+  - 9 predefined denoising strategies (including simpleGSR and scrubbing5)
   - Strategy descriptions and documentation
 
 ### 2. Utilities (`connectomix/utils/`) - 6 files, ~2200 lines
@@ -187,6 +188,7 @@ Complete temporal censoring system for task fMRI and motion scrubbing:
 ```bash
 -- Configurable FD threshold (typical: 0.2-0.5 cm as reported by fMRIPrep)
 --fd-threshold CM             # Enable motion censoring (value in cm; fMRIPrep reports FD in cm)
+--scrub N                     # Keep only contiguous segments of ≥N volumes after motion censoring
 ```
 
 ### 2. Geometric Consistency ✅
@@ -206,7 +208,8 @@ Checks **ALL** functional images in the dataset to ensure group-level analysis c
 
 ### 5. Flexible Configuration ✅
 - JSON and YAML support
-- Predefined denoising strategies
+- 9 predefined denoising strategies (including simpleGSR and scrubbing5)
+- scrubbing5 strategy includes built-in FD censoring + segment filtering
 - Comprehensive validation
 
 ### 6. BIDS Compliance ✅

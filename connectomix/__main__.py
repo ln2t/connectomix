@@ -14,7 +14,7 @@ from connectomix.config.defaults import (
     MotionCensoringConfig,
 )
 from connectomix.config.loader import load_config_file
-from connectomix.config.strategies import get_denoising_strategy
+from connectomix.config.strategies import get_denoising_strategy, DenoisingStrategySpec
 from connectomix.core.participant import run_participant_pipeline
 from connectomix.core.group import run_group_pipeline
 from connectomix.core.version import __version__
@@ -67,9 +67,37 @@ def main():
             if args.space:
                 config.spaces = [args.space]
             if args.denoising:
-                # store requested strategy and apply it to confounds
+                # Get strategy specification
+                strategy_spec = get_denoising_strategy(args.denoising)
+                
+                # Check for rigid strategy conflicts
+                if strategy_spec.is_rigid:
+                    has_manual_fd = hasattr(args, 'fd_threshold') and args.fd_threshold is not None
+                    has_manual_scrub = hasattr(args, 'scrub') and args.scrub and args.scrub > 0
+                    if has_manual_fd or has_manual_scrub:
+                        raise ValueError(
+                            f"The '{args.denoising}' denoising strategy includes its own "
+                            f"censoring parameters (FD threshold={strategy_spec.fd_threshold} cm, "
+                            f"scrub={strategy_spec.min_segment_length}) and cannot be combined "
+                            f"with --fd-threshold or --scrub. Use a different strategy or "
+                            f"remove the manual censoring options."
+                        )
+                
+                # Apply strategy
                 config.denoising_strategy = args.denoising
-                config.confounds = get_denoising_strategy(args.denoising)
+                config.confounds = strategy_spec.confounds
+                
+                # Apply strategy censoring parameters if defined
+                if strategy_spec.fd_threshold is not None:
+                    config.temporal_censoring.enabled = True
+                    config.temporal_censoring.motion_censoring.enabled = True
+                    config.temporal_censoring.motion_censoring.fd_threshold = strategy_spec.fd_threshold
+                    config.temporal_censoring.motion_censoring.min_segment_length = strategy_spec.min_segment_length
+                    logger.info(f"Denoising strategy '{args.denoising}' includes censoring:")
+                    mm_equiv = strategy_spec.fd_threshold * 10.0
+                    logger.info(f"  FD threshold: {strategy_spec.fd_threshold} cm ({mm_equiv:.1f} mm)")
+                    if strategy_spec.min_segment_length > 0:
+                        logger.info(f"  Min segment length: {strategy_spec.min_segment_length} volumes")
             if args.label:
                 config.label = args.label
             if args.atlas:
@@ -144,6 +172,16 @@ def _configure_temporal_censoring(args, config: ParticipantConfig, logger: loggi
     has_conditions = hasattr(args, 'conditions') and args.conditions
     has_fd_threshold = hasattr(args, 'fd_threshold') and args.fd_threshold is not None
     has_drop_initial = hasattr(args, 'drop_initial') and args.drop_initial and args.drop_initial > 0
+    has_scrub = hasattr(args, 'scrub') and args.scrub and args.scrub > 0
+    
+    # Validate --scrub requires --fd-threshold
+    if has_scrub and not has_fd_threshold:
+        # Check if strategy already set fd_threshold
+        if not config.temporal_censoring.motion_censoring.enabled:
+            raise ValueError(
+                "--scrub requires --fd-threshold to be set. "
+                "Segment filtering only makes sense after motion censoring."
+            )
     
     if not (has_conditions or has_fd_threshold or has_drop_initial):
         return  # No censoring options specified
@@ -173,12 +211,22 @@ def _configure_temporal_censoring(args, config: ParticipantConfig, logger: loggi
     if has_fd_threshold:
         config.temporal_censoring.motion_censoring.enabled = True
         config.temporal_censoring.motion_censoring.fd_threshold = args.fd_threshold
-        logger.info(f"  Motion censoring: FD > {args.fd_threshold}mm")
+        # Show both cm (internal units) and mm (more common in the literature)
+        try:
+            mm_equiv = float(args.fd_threshold) * 10.0
+            logger.info(f"  Motion censoring: FD > {args.fd_threshold} cm ({mm_equiv:.2f} mm)")
+        except Exception:
+            logger.info(f"  Motion censoring: FD > {args.fd_threshold} cm")
         
         if hasattr(args, 'fd_extend') and args.fd_extend > 0:
             config.temporal_censoring.motion_censoring.extend_before = args.fd_extend
             config.temporal_censoring.motion_censoring.extend_after = args.fd_extend
             logger.info(f"  Motion extend: ±{args.fd_extend} volumes")
+    
+    # Segment filtering (scrub)
+    if has_scrub:
+        config.temporal_censoring.motion_censoring.min_segment_length = args.scrub
+        logger.info(f"  Segment filtering: min {args.scrub} contiguous volumes")
     
     # Drop initial volumes
     if has_drop_initial:

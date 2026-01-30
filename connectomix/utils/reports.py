@@ -1576,7 +1576,20 @@ class ParticipantReportGenerator:
                 # Format reason for display
                 if reason.startswith('motion_fd>'):
                     fd_thresh = reason.replace('motion_fd>', '')
-                    label = f'Motion censoring (FD > {fd_thresh}mm)'
+                    # fd_thresh may include a unit (e.g. '0.5cm') or be numeric
+                    try:
+                        # Try parse numeric part and show both cm and mm
+                        if fd_thresh.endswith('cm'):
+                            val = float(fd_thresh[:-2])
+                            mm_val = val * 10.0
+                            label = f'Motion censoring (FD > {val} cm ({mm_val:.2f} mm))'
+                        else:
+                            val = float(fd_thresh)
+                            mm_val = val * 10.0
+                            label = f'Motion censoring (FD > {val} cm ({mm_val:.2f} mm))'
+                    except Exception:
+                        # Fallback: display raw string
+                        label = f'Motion censoring (FD > {fd_thresh})'
                 else:
                     label = reason_labels.get(reason, reason)
                 

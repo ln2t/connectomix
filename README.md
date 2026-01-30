@@ -92,8 +92,8 @@ export NILEARN_DATA=~/nilearn_data
 ##### 2. Download Schaefer 2018 Atlas
 
 **Download URLs:**
-- 100 parcels: https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
-- 100 parcels labels: https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order.txt
+- 100 parcels: https://raw.githubusercontent.com/ThomasYeoLab/CBIG/v0.14.3-Update_Yeo2011_Schaefer2018_labelname/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/MNI/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
+- 100 parcels labels: https://raw.githubusercontent.com/ThomasYeoLab/CBIG/v0.14.3-Update_Yeo2011_Schaefer2018_labelname/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/MNI/Schaefer2018_100Parcels_7Networks_order.txt
 - 200 parcels: (replace `100Parcels` with `200Parcels` in the URL above)
 
 **Installation:**
@@ -106,12 +106,12 @@ mkdir -p ~/.cache/nilearn_data/schaefer_2018
 cd ~/.cache/nilearn_data/schaefer_2018
 
 # Using wget
-wget https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
-wget https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order.txt
+wget https://raw.githubusercontent.com/ThomasYeoLab/CBIG/v0.14.3-Update_Yeo2011_Schaefer2018_labelname/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/MNI/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
+wget https://raw.githubusercontent.com/ThomasYeoLab/CBIG/v0.14.3-Update_Yeo2011_Schaefer2018_labelname/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/MNI/Schaefer2018_100Parcels_7Networks_order.txt
 
 # OR using curl
-curl -O https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
-curl -O https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order.txt
+curl -O https://raw.githubusercontent.com/ThomasYeoLab/CBIG/v0.14.3-Update_Yeo2011_Schaefer2018_labelname/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/MNI/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz
+curl -O https://raw.githubusercontent.com/ThomasYeoLab/CBIG/v0.14.3-Update_Yeo2011_Schaefer2018_labelname/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/MNI/Schaefer2018_100Parcels_7Networks_order.txt
 ```
 
 ##### 3. Download AAL Atlas
@@ -256,9 +256,9 @@ RUN git clone https://github.com/ln2t/connectomix.git && \
 # Pre-download atlases at build time
 RUN mkdir -p ~/.cache/nilearn_data/schaefer_2018 && \
     curl -o ~/.cache/nilearn_data/schaefer_2018/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz \
-    https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz && \
+    https://raw.githubusercontent.com/ThomasYeoLab/CBIG/v0.14.3-Update_Yeo2011_Schaefer2018_labelname/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/MNI/Schaefer2018_100Parcels_7Networks_order_FSLMNI152_2mm.nii.gz && \
     curl -o ~/.cache/nilearn_data/schaefer_2018/Schaefer2018_100Parcels_7Networks_order.txt \
-    https://raw.githubusercontent.com/ThomasYeoLab/CBIG/master/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/Updates/Schaefer2018_100Parcels_7Networks_order.txt
+    https://raw.githubusercontent.com/ThomasYeoLab/CBIG/v0.14.3-Update_Yeo2011_Schaefer2018_labelname/stable_projects/brain_parcellation/Schaefer2018_LocalGlobal/Parcellations/MNI/Schaefer2018_100Parcels_7Networks_order.txt
 ```
 
 Then run the container with the pre-cached data:
@@ -618,6 +618,8 @@ Remove high-motion volumes based on framewise displacement:
 connectomix /data/bids /data/output participant --fd-threshold 0.5
 
 # Also censor ±1 volume around high-FD timepoints
+# Note: fMRIPrep's `framewise_displacement` values are in centimeters (cm).
+# The CLI expects the threshold in cm. Example: 0.5 -> 0.5 cm = 5.0 mm
 connectomix /data/bids /data/output participant --fd-threshold 0.5 --fd-extend 1
 ```
 
@@ -649,9 +651,12 @@ connectomix /data/bids /data/output participant -t faces \
 | `--events-file FILE` | Path to events.tsv | auto-detect |
 | `--include-baseline` | Include inter-trial intervals (same as adding 'baseline' to --conditions) | false |
 | `--transition-buffer SEC` | Exclude N seconds around transitions | 0 |
-| `--fd-threshold MM` | Remove volumes with FD > threshold | (disabled) |
+| `--fd-threshold CM` | Remove volumes with FD > threshold (value in cm; fMRIPrep reports FD in cm) | (disabled) |
 | `--fd-extend N` | Also remove ±N volumes around high-FD | 0 |
+| `--scrub N` | Keep only continuous segments of ≥N volumes after motion censoring | 0 (disabled) |
 | `--drop-initial N` | Drop first N volumes | 0 |
+
+**Note on `--scrub`:** After motion censoring, short isolated segments of kept volumes may be unreliable for connectivity estimation. The `--scrub` option removes any contiguous segment shorter than N volumes. For example, `--scrub 5` ensures all remaining data segments have at least 5 consecutive volumes.
 
 ### Quality Control
 
@@ -756,6 +761,32 @@ Use predefined strategies with `--denoising` or define custom confounds:
 | `gs_csfwm_12p` | Global + CSF + WM + 12 motion | Very aggressive |
 | `csfwm_24p` | CSF + WM + 24 motion | With derivatives and squares |
 | `compcor_6p` | 6 aCompCor + 6 motion | CompCor-based |
+| `simpleGSR` | Global + CSF + WM + 24 motion | Full global signal regression |
+| `scrubbing5` | CSF/WM derivatives + 24 motion + censoring | **Includes FD=0.5cm + scrub=5** |
+
+#### The `scrubbing5` Strategy
+
+The `scrubbing5` strategy is special: it includes not only confound regression but also **volume censoring** parameters:
+
+- **Confounds:** CSF (with derivatives), WM (with derivatives), 24 motion parameters
+- **FD threshold:** 0.5 cm (automatically enabled)
+- **Segment filtering:** Minimum 5 contiguous volumes (automatically enabled)
+
+This strategy is **rigid** — you cannot combine it with manual `--fd-threshold` or `--scrub` options. If you need different censoring parameters, use a different strategy (like `csfwm_24p`) and set the censoring options manually:
+
+```bash
+# Use scrubbing5 with its built-in censoring (FD=0.5cm, scrub=5)
+connectomix /data/bids /data/output participant --denoising scrubbing5
+
+# ERROR: Cannot combine scrubbing5 with manual censoring options
+# connectomix ... --denoising scrubbing5 --fd-threshold 0.3  # Will fail!
+
+# Instead, use a different strategy with manual options
+connectomix /data/bids /data/output participant \
+  --denoising csfwm_24p \
+  --fd-threshold 0.3 \
+  --scrub 3
+```
 
 #### Wildcard Support
 
@@ -1030,9 +1061,10 @@ Reduce `n_permutations` (e.g., 5000) or increase `n_jobs` for parallelization.
 | `condition_selection.include_baseline` | bool | false | Include baseline |
 | `condition_selection.transition_buffer` | float | 0 | Buffer (seconds) |
 | `motion_censoring.enabled` | bool | false | Enable FD censoring |
-| `motion_censoring.fd_threshold` | float | 0.5 | FD threshold (mm) |
+| `motion_censoring.fd_threshold` | float | 0.5 | FD threshold (cm) — fMRIPrep reports FD in cm (e.g., 0.5 = 0.5 cm = 5 mm) |
 | `motion_censoring.extend_before` | int | 0 | Extend before |
 | `motion_censoring.extend_after` | int | 0 | Extend after |
+| `motion_censoring.min_segment_length` | int | 0 | Min contiguous segment length (scrub); 0=disabled |
 | `min_volumes_retained` | int | 50 | Minimum volumes |
 | `min_fraction_retained` | float | 0.3 | Minimum fraction |
 

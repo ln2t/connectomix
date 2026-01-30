@@ -47,16 +47,19 @@ class MotionCensoringConfig:
     
     Attributes:
         enabled: Whether motion censoring is enabled.
-        fd_threshold: Framewise displacement threshold in mm.
+        fd_threshold: Framewise displacement threshold in cm (fMRIPrep reports FD in cm).
         fd_column: Column name for FD in confounds file.
         extend_before: Also censor N volumes before high-motion.
         extend_after: Also censor N volumes after high-motion.
+        min_segment_length: Minimum contiguous segment length to keep (scrubbing).
+            If > 0, continuous segments shorter than this are also censored.
     """
     enabled: bool = False
     fd_threshold: float = 0.5
     fd_column: str = "framewise_displacement"
     extend_before: int = 0
     extend_after: int = 0
+    min_segment_length: int = 0
 
 
 @dataclass
@@ -219,12 +222,74 @@ class TemporalCensor:
                 if self.mask[i]:  # Only count if not already censored
                     n_censored += 1
                 self.mask[i] = False
-                self._add_censoring_reason(i, f"motion_fd>{mc.fd_threshold}")
+                # Include unit (cm) in the censoring reason string for clarity
+                self._add_censoring_reason(i, f"motion_fd>{mc.fd_threshold}cm")
         
-        self._logger.info(
-            f"Temporal censoring: marked {n_censored} volumes for motion "
-            f"(FD > {mc.fd_threshold}mm)"
-        )
+        try:
+            mm_equiv = float(mc.fd_threshold) * 10.0
+            self._logger.info(
+                f"Temporal censoring: marked {n_censored} volumes for motion "
+                f"(FD > {mc.fd_threshold} cm ({mm_equiv:.2f} mm))"
+            )
+        except Exception:
+            self._logger.info(
+                f"Temporal censoring: marked {n_censored} volumes for motion "
+                f"(FD > {mc.fd_threshold} cm)"
+            )
+        return n_censored
+    
+    def apply_segment_filtering(self, min_segment_length: int) -> int:
+        """Remove continuous segments shorter than min_segment_length.
+        
+        After motion censoring, this method identifies contiguous runs of
+        kept volumes (mask == True) and censors any segments that are
+        shorter than the specified minimum length. This ensures only
+        sufficiently long continuous data segments are used for connectivity.
+        
+        Args:
+            min_segment_length: Minimum number of contiguous volumes required.
+                Segments shorter than this will be censored.
+        
+        Returns:
+            Number of additional volumes censored due to short segments.
+        """
+        if min_segment_length <= 0:
+            return 0
+        
+        n_censored = 0
+        
+        # Find contiguous segments of kept volumes
+        segment_start = None
+        segments = []  # List of (start, end) tuples
+        
+        for i in range(self.n_volumes):
+            if self.mask[i]:
+                if segment_start is None:
+                    segment_start = i
+            else:
+                if segment_start is not None:
+                    segments.append((segment_start, i))
+                    segment_start = None
+        
+        # Handle segment at the end
+        if segment_start is not None:
+            segments.append((segment_start, self.n_volumes))
+        
+        # Censor segments that are too short
+        for start, end in segments:
+            segment_length = end - start
+            if segment_length < min_segment_length:
+                for i in range(start, end):
+                    self.mask[i] = False
+                    self._add_censoring_reason(i, f"segment_too_short<{min_segment_length}")
+                    n_censored += 1
+        
+        if n_censored > 0:
+            self._logger.info(
+                f"Temporal censoring: marked {n_censored} additional volumes "
+                f"(segments shorter than {min_segment_length} volumes)"
+            )
+        
         return n_censored
     
     def apply_condition_selection(

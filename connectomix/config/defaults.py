@@ -11,16 +11,19 @@ class MotionCensoringConfig:
     
     Attributes:
         enabled: Whether motion censoring is enabled.
-        fd_threshold: Framewise displacement threshold in mm.
+        fd_threshold: Framewise displacement threshold in cm (fMRIPrep reports FD in cm).
         fd_column: Column name for FD in confounds file.
         extend_before: Also censor N volumes before high-motion.
         extend_after: Also censor N volumes after high-motion.
+        min_segment_length: Minimum contiguous segment length to keep (scrubbing).
+            If > 0, continuous segments shorter than this are also censored.
     """
     enabled: bool = False
     fd_threshold: float = 0.5
     fd_column: str = "framewise_displacement"
     extend_before: int = 0
     extend_after: int = 0
+    min_segment_length: int = 0
 
 
 @dataclass

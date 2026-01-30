@@ -431,6 +431,19 @@ def create_parser() -> argparse.ArgumentParser:
     )
     
     censoring.add_argument(
+        "--scrub",
+        metavar="N",
+        type=int,
+        dest="scrub",
+        default=0,
+        help="Minimum contiguous segment length to keep after motion censoring. "
+             "If N > 0, continuous segments of kept volumes shorter than N are also "
+             "censored. This ensures only sufficiently long data segments remain for "
+             "reliable connectivity estimation. Default: 0 (disabled). "
+             "Requires --fd-threshold to be set.",
+    )
+    
+    censoring.add_argument(
         "--drop-initial",
         metavar="N",
         type=int,
@@ -449,9 +462,11 @@ def create_parser() -> argparse.ArgumentParser:
     preproc.add_argument(
         "--denoising",
         metavar="STRATEGY",
-        choices=["minimal", "csfwm_6p", "csfwm_12p", "gs_csfwm_6p", "gs_csfwm_12p", "csfwm_24p", "compcor_6p"],
+        choices=["minimal", "csfwm_6p", "csfwm_12p", "gs_csfwm_6p", "gs_csfwm_12p", "csfwm_24p", "compcor_6p", "simpleGSR", "scrubbing5"],
         help="Use a predefined denoising strategy. Choices: "
              "%(choices)s. "
+             "Note: 'scrubbing5' includes FD censoring (0.5 cm) and segment filtering "
+             "(min 5 volumes) and cannot be combined with --fd-threshold or --scrub. "
              "See DENOISING STRATEGIES section below for details. "
              "Can also be specified in config file.",
     )

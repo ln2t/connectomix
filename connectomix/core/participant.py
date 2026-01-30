@@ -756,6 +756,11 @@ def _apply_temporal_censoring(
     if config.temporal_censoring.motion_censoring.enabled:
         confounds_df = pd.read_csv(confounds_path, sep='\t')
         censor.apply_motion_censoring(confounds_df)
+        
+        # Apply segment filtering (scrubbing) if configured
+        min_seg = config.temporal_censoring.motion_censoring.min_segment_length
+        if min_seg > 0:
+            censor.apply_segment_filtering(min_seg)
     
     # Apply condition selection
     if config.temporal_censoring.condition_selection.enabled:

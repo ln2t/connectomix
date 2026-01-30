@@ -518,7 +518,7 @@ When motion censoring is enabled with `--fd-threshold`, the JSON metadata includ
 {
   "TemporalCensoringApplied": true,
   "CensoringType": "motion_censoring",
-  "FramewiseDisplacementThreshold": 0.5,
+  "FramewiseDisplacementThreshold": 0.5,  # units: cm (fMRIPrep reports FD in cm)
   "FramewiseDisplacementExtendBefore": 1,
   "FramewiseDisplacementExtendAfter": 1,
   "OriginalNumberOfTimepoints": 420,
