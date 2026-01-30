@@ -165,18 +165,19 @@ def run_participant_pipeline(
         # === Step 3: Geometric consistency check ===
         log_section(logger, "Geometric Consistency")
         
+        # Get ALL functional files for geometry check (not just selected)
+        all_func_files = _get_all_functional_files(layout, entities, logger)
+        
         # Determine reference image and path FIRST (before consistency check)
+        # The reference should be from ALL files in dataset for consistency across participants
         if config.reference_functional_file == "first_functional_file":
-            reference_path = Path(files['func'][0])
+            reference_path = Path(all_func_files[0])
             reference_img = nib.load(reference_path)
-            logger.info(f"Using first functional file as reference: {reference_path.name}")
+            logger.info(f"Using first functional file from dataset as reference: {reference_path.name}")
         else:
             reference_path = Path(config.reference_functional_file)
             reference_img = nib.load(reference_path)
             logger.info(f"Using custom reference: {reference_path}")
-        
-        # Get ALL functional files for geometry check (not just selected)
-        all_func_files = _get_all_functional_files(layout, entities, logger)
         
         # Check consistency using the same reference that will be used for resampling
         is_consistent, geometries = check_geometric_consistency(
