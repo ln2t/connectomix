@@ -172,13 +172,21 @@ def run_participant_pipeline(
             all_func_files, logger
         )
         
-        # Determine reference image
+        # Determine reference image and path
         if config.reference_functional_file == "first_functional_file":
-            reference_img = nib.load(files['func'][0])
-            logger.info(f"Using first functional file as reference")
+            reference_path = Path(files['func'][0])
+            reference_img = nib.load(reference_path)
+            logger.info(f"Using first functional file as reference: {reference_path.name}")
         else:
-            reference_img = nib.load(config.reference_functional_file)
-            logger.info(f"Using custom reference: {config.reference_functional_file}")
+            reference_path = Path(config.reference_functional_file)
+            reference_img = nib.load(reference_path)
+            logger.info(f"Using custom reference: {reference_path}")
+        
+        # Log reference geometry at INFO level if resampling will be needed
+        if not is_consistent:
+            ref_shape = reference_img.shape[:3]
+            ref_voxel = [float(reference_img.header.get_zooms()[i]) for i in range(3)]
+            logger.info(f"Reference geometry: shape={ref_shape}, voxel size={ref_voxel} mm")
         
         # === Step 4: Generate CanICA atlas if needed ===
         atlas_img = None
@@ -236,8 +244,15 @@ def run_participant_pipeline(
             # Extract entities from filename
             file_entities = _extract_entities_from_path(func_path)
             
+            # Add denoising strategy to entities if using a predefined strategy
+            if config.denoising_strategy:
+                file_entities['denoise'] = config.denoising_strategy
+            
             # Track all connectivity outputs for this file
             connectivity_paths = []
+            
+            # Track resampling info for report
+            resampling_info_for_report = None
             
             with timer(logger, f"  Subject {file_entities.get('sub', 'unknown')}"):
                 # --- Resample if needed ---
@@ -247,6 +262,9 @@ def run_participant_pipeline(
                         label=config.label, subfolder="func"
                     )
                     
+                    # Load original image before resampling (for geometry tracking)
+                    original_img = nib.load(func_path)
+                    
                     func_img = resample_to_reference(
                         func_path,
                         reference_img,
@@ -255,11 +273,31 @@ def run_participant_pipeline(
                     )
                     outputs['resampled'].append(resampled_path)
                     
-                    # Save geometry info with source JSON for TR metadata
+                    # Build resampling info for report
+                    resampling_info_for_report = {
+                        'resampled': True,
+                        'reference_file': str(reference_path),
+                        'original_shape': list(original_img.shape[:3]),
+                        'original_voxel_size': [float(original_img.header.get_zooms()[i]) for i in range(3)],
+                        'reference_shape': list(reference_img.shape[:3]),
+                        'reference_voxel_size': [float(reference_img.header.get_zooms()[i]) for i in range(3)],
+                        'final_shape': list(func_img.shape[:3]),
+                        'final_voxel_size': [float(func_img.header.get_zooms()[i]) for i in range(3)],
+                    }
+                    
+                    # Save geometry info with full resampling provenance
                     geometry_path = resampled_path.with_suffix('').with_suffix('.json')
                     if not geometry_path.exists():
                         source_json = func_path.with_suffix('').with_suffix('.json')
-                        save_geometry_info(func_img, geometry_path, source_json=source_json)
+                        save_geometry_info(
+                            img=func_img,
+                            output_path=geometry_path,
+                            reference_path=reference_path,
+                            reference_img=reference_img,
+                            original_path=func_path,
+                            original_img=original_img,
+                            source_json=source_json,
+                        )
                     
                     # Use resampled path for denoising
                     input_for_denoise = resampled_path
@@ -426,6 +464,7 @@ def run_participant_pipeline(
                     connectivity_matrices=connectivity_matrices_for_report,
                     roi_names=roi_names_for_report,
                     denoising_histogram_data=denoising_histogram_data,
+                    resampling_info=resampling_info_for_report,
                 )
         
         # === Summary ===
@@ -537,6 +576,7 @@ def _generate_participant_report(
     connectivity_matrices: Optional[Dict[str, np.ndarray]] = None,
     roi_names: Optional[List[str]] = None,
     denoising_histogram_data: Optional[Dict] = None,
+    resampling_info: Optional[Dict] = None,
 ) -> Optional[Path]:
     """Generate HTML report for a participant analysis.
     
@@ -566,6 +606,8 @@ def _generate_participant_report(
         Dictionary mapping connectivity kind to matrix (for roiToRoi method).
     roi_names : list or None
         List of ROI names for connectivity matrices.
+    resampling_info : dict or None
+        Information about resampling performed (reference, original geometry, etc.).
     
     Returns
     -------
@@ -658,6 +700,7 @@ def _generate_participant_report(
             censoring_summary=censoring_summary,
             condition=condition,
             censoring=censoring,
+            resampling_info=resampling_info,
         )
         
         # Add denoising histogram data if available
@@ -901,7 +944,7 @@ def _get_output_path(
     # Build filename
     parts = []
     
-    entity_order = ['sub', 'ses', 'task', 'run', 'space', 'censoring', 'condition', 'method', 'atlas', 'seed', 'roi']
+    entity_order = ['sub', 'ses', 'task', 'run', 'space', 'denoise', 'censoring', 'condition', 'method', 'atlas', 'seed', 'roi']
     for key in entity_order:
         if key in entities and entities[key]:
             parts.append(f"{key}-{entities[key]}")
@@ -1330,7 +1373,7 @@ def _compute_connectivity(
         
         # Build base filename for all outputs
         base_parts = []
-        entity_order = ['sub', 'ses', 'task', 'run', 'space', 'censoring', 'condition', 'method', 'atlas']
+        entity_order = ['sub', 'ses', 'task', 'run', 'space', 'denoise', 'censoring', 'condition', 'method', 'atlas']
         for key in entity_order:
             if key in file_entities and file_entities[key]:
                 base_parts.append(f"{key}-{file_entities[key]}")

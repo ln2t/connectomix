@@ -759,6 +759,7 @@ class ParticipantReportGenerator:
         censoring_summary: Optional[Dict[str, Any]] = None,
         condition: Optional[str] = None,
         censoring: Optional[str] = None,
+        resampling_info: Optional[Dict[str, Any]] = None,
     ):
         """Initialize report generator.
         
@@ -781,6 +782,7 @@ class ParticipantReportGenerator:
             censoring_summary: Summary of temporal censoring applied
             condition: Condition name for filename (when --conditions is used)
             censoring: Censoring method entity for filename (e.g., 'fd05')
+            resampling_info: Information about resampling performed (reference, original geometry, etc.)
         """
         self.subject_id = subject_id
         self.session = session
@@ -829,6 +831,9 @@ class ParticipantReportGenerator:
         
         # Temporal censoring summary
         self.censoring_summary: Optional[Dict[str, Any]] = censoring_summary
+        
+        # Resampling info
+        self.resampling_info: Optional[Dict[str, Any]] = resampling_info
         
         self._logger.debug(f"Initialized report generator for {subject_id}")
     
@@ -1177,6 +1182,83 @@ class ParticipantReportGenerator:
         '''
         return html
     
+    def _build_resampling_section(self) -> str:
+        """Build resampling information section."""
+        # Only show if resampling was performed
+        if not self.resampling_info or not self.resampling_info.get('resampled', False):
+            return ""
+        
+        self.toc_items.append(("resampling", "Resampling"))
+        
+        info = self.resampling_info
+        
+        # Format geometry information
+        def format_shape(shape):
+            if shape:
+                return f"{shape[0]} × {shape[1]} × {shape[2]}"
+            return "N/A"
+        
+        def format_voxel_size(voxels):
+            if voxels:
+                return f"{voxels[0]:.2f} × {voxels[1]:.2f} × {voxels[2]:.2f} mm"
+            return "N/A"
+        
+        original_shape = format_shape(info.get('original_shape'))
+        original_voxel = format_voxel_size(info.get('original_voxel_size'))
+        reference_shape = format_shape(info.get('reference_shape'))
+        reference_voxel = format_voxel_size(info.get('reference_voxel_size'))
+        final_shape = format_shape(info.get('final_shape'))
+        final_voxel = format_voxel_size(info.get('final_voxel_size'))
+        
+        reference_file = info.get('reference_file', 'N/A')
+        if reference_file != 'N/A':
+            # Show just the filename for readability
+            from pathlib import Path
+            reference_file = Path(reference_file).name
+        
+        html = f'''
+        <div class="section" id="resampling">
+            <h2>🔄 Resampling</h2>
+            
+            <div class="info-box warning">
+                <strong>⚠️ Resampling Applied:</strong> This image was resampled to match a common 
+                reference geometry for group-level compatibility.
+            </div>
+            
+            <h3>Geometry Comparison</h3>
+            <table class="param-table">
+                <tr>
+                    <th>Property</th>
+                    <th>Original</th>
+                    <th>Reference</th>
+                    <th>After Resampling</th>
+                </tr>
+                <tr>
+                    <td><strong>Shape (voxels)</strong></td>
+                    <td>{original_shape}</td>
+                    <td>{reference_shape}</td>
+                    <td>{final_shape}</td>
+                </tr>
+                <tr>
+                    <td><strong>Voxel Size</strong></td>
+                    <td>{original_voxel}</td>
+                    <td>{reference_voxel}</td>
+                    <td>{final_voxel}</td>
+                </tr>
+            </table>
+            
+            <h3>Reference Image</h3>
+            <p><code>{reference_file}</code></p>
+            
+            <p class="note">
+                <em>Note:</em> Resampling uses linear interpolation via nilearn's 
+                <code>resample_to_img</code>. The full reference affine matrix is saved 
+                in the JSON sidecar of the resampled file.
+            </p>
+        </div>
+        '''
+        return html
+    
     def _build_confounds_section(self) -> str:
         """Build confounds/denoising section."""
         self.toc_items.append(("denoising", "Denoising"))
@@ -1184,11 +1266,25 @@ class ParticipantReportGenerator:
         confounds_list = "</li><li>".join(self.config.confounds)
         n_confounds = len(self.config.confounds)
         
+        # Check if a predefined denoising strategy was used
+        strategy_name = getattr(self.config, 'denoising_strategy', None)
+        
+        # Build strategy info card if applicable
+        strategy_card = ""
+        if strategy_name:
+            strategy_card = f'''
+                <div class="metric-card">
+                    <div class="metric-value" style="font-size: 1.2rem;">{strategy_name}</div>
+                    <div class="metric-label">Predefined Strategy</div>
+                </div>
+            '''
+        
         html = f'''
         <div class="section" id="denoising">
             <h2>🧹 Denoising Strategy</h2>
             
             <div class="metrics-grid">
+                {strategy_card}
                 <div class="metric-card">
                     <div class="metric-value">{n_confounds}</div>
                     <div class="metric-label">Confound Regressors</div>
@@ -2468,6 +2564,7 @@ class ParticipantReportGenerator:
         sections_html = ""
         sections_html += self._build_overview_section()
         sections_html += self._build_parameters_section()
+        sections_html += self._build_resampling_section()
         sections_html += self._build_confounds_section()
         sections_html += self._build_censoring_section()
         sections_html += self._build_connectivity_section()
@@ -2521,8 +2618,13 @@ class ParticipantReportGenerator:
 '''
         
         # Build report filename
+        # Get denoising strategy if set
+        denoising_strategy = getattr(self.config, 'denoising_strategy', None)
+        
         if self.subject_id.startswith('sub-'):
             filename = self.subject_id
+            if denoising_strategy:
+                filename += f"_denoise-{denoising_strategy}"
             if self.censoring:
                 filename += f"_censoring-{self.censoring}"
             if self.condition:
@@ -2539,6 +2641,8 @@ class ParticipantReportGenerator:
                 filename_parts.append(f"ses-{self.session}")
             if self.task:
                 filename_parts.append(f"task-{self.task}")
+            if denoising_strategy:
+                filename_parts.append(f"denoise-{denoising_strategy}")
             if self.censoring:
                 filename_parts.append(f"censoring-{self.censoring}")
             if self.condition:

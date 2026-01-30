@@ -169,14 +169,20 @@ def save_geometry_info(
     img: nib.Nifti1Image,
     output_path: Path,
     reference_path: Optional[Path] = None,
+    reference_img: Optional[nib.Nifti1Image] = None,
+    original_path: Optional[Path] = None,
+    original_img: Optional[nib.Nifti1Image] = None,
     source_json: Optional[Path] = None,
 ) -> None:
     """Save geometric information and metadata to JSON file.
     
     Args:
-        img: NIfTI image
+        img: NIfTI image (the resampled/output image)
         output_path: Path for JSON file
         reference_path: Path to reference image if resampling was used
+        reference_img: Reference NIfTI image (for saving its affine)
+        original_path: Path to the original image before resampling
+        original_img: Original NIfTI image (for saving its geometry)
         source_json: Path to source JSON sidecar to copy metadata from
     """
     geometry = {
@@ -186,8 +192,34 @@ def save_geometry_info(
             float(img.header.get_zooms()[i]) 
             for i in range(min(3, len(img.header.get_zooms())))
         ],
-        'ReferenceUsed': str(reference_path) if reference_path else None,
     }
+    
+    # Add resampling information if applicable
+    if reference_path is not None:
+        geometry['Resampled'] = True
+        geometry['ReferenceUsed'] = str(reference_path)
+        
+        # Add reference affine if reference image provided
+        if reference_img is not None:
+            geometry['ReferenceAffine'] = np.round(reference_img.affine, decimals=6).tolist()
+            geometry['ReferenceShape'] = list(reference_img.shape[:3])
+            geometry['ReferenceVoxelSize_mm'] = [
+                float(reference_img.header.get_zooms()[i])
+                for i in range(min(3, len(reference_img.header.get_zooms())))
+            ]
+        
+        # Add original geometry if original image provided
+        if original_path is not None:
+            geometry['OriginalFile'] = str(original_path)
+        if original_img is not None:
+            geometry['OriginalShape'] = list(original_img.shape[:3])
+            geometry['OriginalAffine'] = np.round(original_img.affine, decimals=6).tolist()
+            geometry['OriginalVoxelSize_mm'] = [
+                float(original_img.header.get_zooms()[i])
+                for i in range(min(3, len(original_img.header.get_zooms())))
+            ]
+    else:
+        geometry['Resampled'] = False
     
     # Try to get TR from image header
     zooms = img.header.get_zooms()

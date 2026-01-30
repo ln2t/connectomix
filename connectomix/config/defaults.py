@@ -121,6 +121,7 @@ class ParticipantConfig:
     label: Optional[str] = None
     
     # Preprocessing/denoising
+    denoising_strategy: Optional[str] = None  # Name of predefined denoising strategy (if used)
     confounds: List[str] = field(default_factory=lambda: [
         "csf", "white_matter",
         "trans_x", "trans_y", "trans_z", 

@@ -123,7 +123,7 @@ def build_bids_path(
     entity_order = [
         'subject', 'session', 'task', 'acquisition', 'ceagent',
         'reconstruction', 'direction', 'run', 'echo', 'space',
-        'condition', 'method', 'seed', 'roi', 'data', 'atlas', 'analysis',
+        'denoise', 'condition', 'method', 'seed', 'roi', 'data', 'atlas', 'analysis',
         'desc', 'threshold', 'stat'
     ]
     

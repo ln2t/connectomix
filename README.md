@@ -750,7 +750,9 @@ n_jobs: 4
 
 ### Denoising Strategies
 
-Use predefined strategies with `--denoising` or define custom confounds:
+Use predefined strategies with `--denoising` or define custom confounds.
+
+The `simpleGSR` and `scrubbing5` strategies are based on Wang et al. (2024) *"Continuous evaluation of denoising strategies in resting-state fMRI connectivity using fMRIPrep and Nilearn"* ([PLoS Computational Biology](https://doi.org/10.1371/journal.pcbi.1011942)). **Which to choose?** Use `simpleGSR` when you need a continuous time series (required for autoregressive models, spectral analysis). Use `scrubbing5` when denoising quality is prioritized over temporal continuity, especially for high-motion datasets.
 
 | Strategy | Confounds | Description |
 |----------|-----------|-------------|
@@ -761,7 +763,7 @@ Use predefined strategies with `--denoising` or define custom confounds:
 | `gs_csfwm_12p` | Global + CSF + WM + 12 motion | Very aggressive |
 | `csfwm_24p` | CSF + WM + 24 motion | With derivatives and squares |
 | `compcor_6p` | 6 aCompCor + 6 motion | CompCor-based |
-| `simpleGSR` | Global + CSF + WM + 24 motion | Full global signal regression |
+| `simpleGSR` | Global + CSF + WM + 24 motion | Recommended for continuous time series |
 | `scrubbing5` | CSF/WM derivatives + 24 motion + censoring | **Includes FD=0.5cm + scrub=5** |
 
 #### The `scrubbing5` Strategy

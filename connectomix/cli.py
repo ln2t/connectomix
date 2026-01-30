@@ -182,6 +182,13 @@ def create_parser() -> argparse.ArgumentParser:
       {Colors.CYAN}gs_csfwm_12p{Colors.END}   Global signal + CSF + WM + 12 motion params
       {Colors.CYAN}csfwm_24p{Colors.END}      CSF + WM + 24 motion params (6 + deriv + squares)
       {Colors.CYAN}compcor_6p{Colors.END}     6 aCompCor components + 6 motion params
+      {Colors.CYAN}simpleGSR{Colors.END}      Global + CSF + WM + 24 motion (preserves time series)
+      {Colors.CYAN}scrubbing5{Colors.END}     CSF/WM derivatives + 24 motion + FD=0.5cm + scrub=5
+
+    {Colors.BOLD}Choosing between simpleGSR and scrubbing5 (Wang et al. 2024):{Colors.END}
+      • Use {Colors.CYAN}simpleGSR{Colors.END} for continuous time series (autoregressive, spectral analysis)
+      • Use {Colors.CYAN}scrubbing5{Colors.END} for high-motion data when denoising quality is priority
+      • Note: scrubbing5 is rigid (cannot combine with --fd-threshold or --scrub)
     
     {Colors.BOLD}WILDCARD SUPPORT:{Colors.END}
       Confound names support wildcards: {Colors.CYAN}*{Colors.END} matches any chars, {Colors.CYAN}?{Colors.END} matches one char
