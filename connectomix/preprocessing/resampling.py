@@ -13,7 +13,8 @@ from connectomix.utils.exceptions import PreprocessingError
 
 def check_geometric_consistency(
     func_files: List[Path],
-    logger: logging.Logger
+    logger: logging.Logger,
+    reference_file: Optional[Path] = None
 ) -> Tuple[bool, Dict[str, Dict[str, np.ndarray]]]:
     """Check if all functional images have consistent geometry.
     
@@ -23,6 +24,8 @@ def check_geometric_consistency(
     Args:
         func_files: List of paths to ALL functional images in dataset
         logger: Logger instance
+        reference_file: Path to the reference image to use for comparison.
+                       If None, uses the first image in func_files.
     
     Returns:
         Tuple of (is_consistent, geometry_dict)
@@ -37,10 +40,24 @@ def check_geometric_consistency(
     
     logger.info(f"Checking geometric consistency across {len(func_files)} image(s)")
     
-    # Collect geometry information
+    # Determine and load reference geometry first
+    if reference_file is not None:
+        # Use specified reference file
+        if reference_file not in func_files:
+            logger.warning(f"Reference file {reference_file.name} not in dataset - will be loaded separately")
+        ref_img = nib.load(reference_file)
+        reference_shape = ref_img.shape[:3]
+        reference_affine = np.round(ref_img.affine, decimals=6)
+        logger.debug(f"Reference geometry from {reference_file.name}: shape={reference_shape}, affine diagonal={np.diag(reference_affine)[:3]}")
+    else:
+        # Use first file as reference
+        ref_img = nib.load(func_files[0])
+        reference_shape = ref_img.shape[:3]
+        reference_affine = np.round(ref_img.affine, decimals=6)
+        logger.debug(f"Reference geometry from {func_files[0].name}: shape={reference_shape}, affine diagonal={np.diag(reference_affine)[:3]}")
+    
+    # Collect geometry information for all files
     geometries = {}
-    reference_shape = None
-    reference_affine = None
     
     for func_file in func_files:
         img = nib.load(func_file)
@@ -55,12 +72,6 @@ def check_geometric_consistency(
             'shape': shape,
             'affine': affine
         }
-        
-        # Set reference from first image
-        if reference_shape is None:
-            reference_shape = shape
-            reference_affine = affine
-            logger.debug(f"Reference geometry: shape={shape}, affine diagonal={np.diag(affine)[:3]}")
     
     # Check consistency
     is_consistent = True

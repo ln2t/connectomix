@@ -165,14 +165,7 @@ def run_participant_pipeline(
         # === Step 3: Geometric consistency check ===
         log_section(logger, "Geometric Consistency")
         
-        # Get ALL functional files for geometry check (not just selected)
-        all_func_files = _get_all_functional_files(layout, entities, logger)
-        
-        is_consistent, geometries = check_geometric_consistency(
-            all_func_files, logger
-        )
-        
-        # Determine reference image and path
+        # Determine reference image and path FIRST (before consistency check)
         if config.reference_functional_file == "first_functional_file":
             reference_path = Path(files['func'][0])
             reference_img = nib.load(reference_path)
@@ -181,6 +174,14 @@ def run_participant_pipeline(
             reference_path = Path(config.reference_functional_file)
             reference_img = nib.load(reference_path)
             logger.info(f"Using custom reference: {reference_path}")
+        
+        # Get ALL functional files for geometry check (not just selected)
+        all_func_files = _get_all_functional_files(layout, entities, logger)
+        
+        # Check consistency using the same reference that will be used for resampling
+        is_consistent, geometries = check_geometric_consistency(
+            all_func_files, logger, reference_file=reference_path
+        )
         
         # Log reference geometry at INFO level if resampling will be needed
         if not is_consistent:
