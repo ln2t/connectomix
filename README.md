@@ -294,6 +294,70 @@ connectomix /data/bids /data/output group -c group_config.yaml
 connectomix /data/bids /data/output participant -v
 ```
 
+### Input Data Requirements
+
+#### Minimal Input: fMRIPrep Derivatives Only
+
+**Good news:** Connectomix does **not require access to raw BIDS data**. You only need fMRIPrep-preprocessed outputs:
+
+```bash
+# This works! No rawdata needed
+connectomix /path/to/fmriprep /path/to/output participant
+```
+
+The key insight is that:
+- ✅ All preprocessing information needed for connectivity analysis is in fMRIPrep outputs
+- ✅ Confounds, anatomical masks, and preprocessing details are all available
+- ✅ You can run Connectomix from the fMRIPrep directory without the original BIDS rawdata
+- ✅ **No need for `--derivatives fmriprep=/path`** - just use the fMRIPrep path directly as your first argument
+
+#### When You DO Need Raw Data
+
+The only case where raw BIDS data is required is when using **condition-based temporal censoring** with `--conditions`:
+
+```bash
+# This requires raw task-events.tsv files
+connectomix /path/to/fmriprep /path/to/output participant \
+  --conditions "go,stop"
+```
+
+When raw data is not available, you can:
+1. **Provide the task-events file directly** (recommended):
+   ```bash
+   connectomix /path/to/fmriprep /path/to/output participant \
+     --task-events /path/to/task-events.tsv \
+     --conditions "go,stop"
+   ```
+
+2. **Skip condition-based censoring** and use motion-based censoring instead:
+   ```bash
+   connectomix /path/to/fmriprep /path/to/output participant \
+     --fd-threshold 0.5  # Motion censoring doesn't need raw data
+   ```
+
+#### BIDS Directory Structure
+
+For reference, here's a typical fMRIPrep output structure:
+
+```
+fmriprep/
+├── sub-01/
+│   ├── func/
+│   │   ├── sub-01_task-rest_space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz
+│   │   ├── sub-01_task-rest_space-MNI152NLin2009cAsym_desc-preproc_bold.json
+│   │   ├── sub-01_task-rest_desc-confounds_timeseries.tsv
+│   │   └── ...
+│   ├── anat/
+│   │   ├── sub-01_space-MNI152NLin2009cAsym_desc-preproc_T1w.nii.gz
+│   │   └── ...
+│   └── figures/
+├── sub-02/
+│   └── ...
+└── dataset_description.json
+```
+
+Connectomix only needs the `func/` and `anat/` directories - the raw BIDS data is optional.
+
 ### Specifying fMRIPrep Location
 
 ```bash
@@ -301,6 +365,8 @@ connectomix /data/bids /data/output participant -v
 connectomix /data/bids /data/output participant \
   --derivatives fmriprep=/path/to/fmriprep
 ```
+
+**Note:** In most cases, you can simply use the fMRIPrep directory as your first argument (see "Minimal Input" above).
 
 ### Common Command-Line Arguments
 
