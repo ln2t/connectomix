@@ -325,7 +325,7 @@ When raw data is not available, you can:
 1. **Provide the task-events file directly** (recommended):
    ```bash
    connectomix /path/to/fmriprep /path/to/output participant \
-     --task-events /path/to/task-events.tsv \
+     --events-file /path/to/task-events.tsv \
      --conditions "go,stop"
    ```
 
