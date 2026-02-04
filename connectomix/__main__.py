@@ -54,67 +54,79 @@ def main():
                 logger.info("Using default configuration")
                 config = ParticipantConfig()
             
-            # Override config with CLI arguments
-            if args.participant_label:
-                config.subject = [args.participant_label]
-            # Note: config uses plural field names for tasks/sessions/runs/spaces
-            if args.task:
-                config.tasks = [args.task]
-            if args.session:
-                config.sessions = [args.session]
-            if args.run:
-                config.runs = [args.run]
-            if args.space:
-                config.spaces = [args.space]
-            if args.denoising:
-                # Get strategy specification
-                strategy_spec = get_denoising_strategy(args.denoising)
-                
-                # Check for rigid strategy conflicts
-                if strategy_spec.is_rigid:
-                    has_manual_fd = hasattr(args, 'fd_threshold') and args.fd_threshold is not None
-                    has_manual_scrub = hasattr(args, 'scrub') and args.scrub and args.scrub > 0
-                    if has_manual_fd or has_manual_scrub:
-                        raise ValueError(
-                            f"The '{args.denoising}' denoising strategy includes its own "
-                            f"censoring parameters (FD threshold={strategy_spec.fd_threshold} cm, "
-                            f"scrub={strategy_spec.min_segment_length}) and cannot be combined "
-                            f"with --fd-threshold or --scrub. Use a different strategy or "
-                            f"remove the manual censoring options."
-                        )
-                
-                # Apply strategy
-                config.denoising_strategy = args.denoising
-                config.confounds = strategy_spec.confounds
-                
-                # Apply strategy censoring parameters if defined
-                if strategy_spec.fd_threshold is not None:
-                    config.temporal_censoring.enabled = True
-                    config.temporal_censoring.motion_censoring.enabled = True
-                    config.temporal_censoring.motion_censoring.fd_threshold = strategy_spec.fd_threshold
-                    config.temporal_censoring.motion_censoring.min_segment_length = strategy_spec.min_segment_length
-                    logger.info(f"Denoising strategy '{args.denoising}' includes censoring:")
-                    mm_equiv = strategy_spec.fd_threshold * 10.0
-                    logger.info(f"  FD threshold: {strategy_spec.fd_threshold} cm ({mm_equiv:.1f} mm)")
-                    if strategy_spec.min_segment_length > 0:
-                        logger.info(f"  Min segment length: {strategy_spec.min_segment_length} volumes")
-            if args.label:
-                config.label = args.label
-            if args.atlas:
-                config.atlas = args.atlas
-            if args.method:
-                config.method = args.method
+            # Get participant labels to process (convert to list if needed)
+            participant_labels = args.participant_label if args.participant_label else [None]
             
-            # Handle temporal censoring CLI options
-            _configure_temporal_censoring(args, config, logger)
-            
-            run_participant_pipeline(
-                bids_dir=args.bids_dir,
-                output_dir=args.output_dir,
-                config=config,
-                derivatives=derivatives_dict,
-                logger=logger,
-            )
+            # Loop over each participant label
+            for participant_label in participant_labels:
+                # Create fresh config for each participant
+                if args.config:
+                    config_dict = load_config_file(args.config)
+                    config = ParticipantConfig(**config_dict)
+                else:
+                    config = ParticipantConfig()
+                
+                # Override config with CLI arguments
+                if participant_label:
+                    config.subject = [participant_label]
+                # Note: config uses plural field names for tasks/sessions/runs/spaces
+                if args.task:
+                    config.tasks = [args.task]
+                if args.session:
+                    config.sessions = [args.session]
+                if args.run:
+                    config.runs = [args.run]
+                if args.space:
+                    config.spaces = [args.space]
+                if args.denoising:
+                    # Get strategy specification
+                    strategy_spec = get_denoising_strategy(args.denoising)
+                    
+                    # Check for rigid strategy conflicts
+                    if strategy_spec.is_rigid:
+                        has_manual_fd = hasattr(args, 'fd_threshold') and args.fd_threshold is not None
+                        has_manual_scrub = hasattr(args, 'scrub') and args.scrub and args.scrub > 0
+                        if has_manual_fd or has_manual_scrub:
+                            raise ValueError(
+                                f"The '{args.denoising}' denoising strategy includes its own "
+                                f"censoring parameters (FD threshold={strategy_spec.fd_threshold} cm, "
+                                f"scrub={strategy_spec.min_segment_length}) and cannot be combined "
+                                f"with --fd-threshold or --scrub. Use a different strategy or "
+                                f"remove the manual censoring options."
+                            )
+                    
+                    # Apply strategy
+                    config.denoising_strategy = args.denoising
+                    config.confounds = strategy_spec.confounds
+                    
+                    # Apply strategy censoring parameters if defined
+                    if strategy_spec.fd_threshold is not None:
+                        config.temporal_censoring.enabled = True
+                        config.temporal_censoring.motion_censoring.enabled = True
+                        config.temporal_censoring.motion_censoring.fd_threshold = strategy_spec.fd_threshold
+                        config.temporal_censoring.motion_censoring.min_segment_length = strategy_spec.min_segment_length
+                        logger.info(f"Denoising strategy '{args.denoising}' includes censoring:")
+                        mm_equiv = strategy_spec.fd_threshold * 10.0
+                        logger.info(f"  FD threshold: {strategy_spec.fd_threshold} cm ({mm_equiv:.1f} mm)")
+                        if strategy_spec.min_segment_length > 0:
+                            logger.info(f"  Min segment length: {strategy_spec.min_segment_length} volumes")
+                if args.label:
+                    config.label = args.label
+                if args.atlas:
+                    config.atlas = args.atlas
+                if args.method:
+                    config.method = args.method
+                
+                # Handle temporal censoring CLI options
+                _configure_temporal_censoring(args, config, logger)
+                
+                run_participant_pipeline(
+                    bids_dir=args.bids_dir,
+                    output_dir=args.output_dir,
+                    config=config,
+                    derivatives=derivatives_dict,
+                    logger=logger,
+                )
         else:  # group
             # Load or create group config
             if args.config:
@@ -129,7 +141,8 @@ def main():
             if hasattr(args, 'participant_derivatives') and args.participant_derivatives:
                 config.participant_derivatives = args.participant_derivatives
             if args.participant_label:
-                config.subjects = [args.participant_label]
+                # For group-level, participant_label is a list of labels
+                config.subjects = args.participant_label
             if args.task:
                 config.tasks = [args.task]
             if args.session:

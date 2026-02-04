@@ -328,8 +328,9 @@ def create_parser() -> argparse.ArgumentParser:
         "-p", "--participant-label",
         metavar="LABEL",
         dest="participant_label",
-        help="Process only this participant. Specify without 'sub-' prefix "
-             "(e.g., '01' not 'sub-01'). Can be a single label.",
+        nargs='+',
+        help="Process one or more participants. Specify without 'sub-' prefix "
+             "(e.g., '01' or '01 02 03', not 'sub-01'). Can be multiple labels.",
     )
     
     filters.add_argument(
