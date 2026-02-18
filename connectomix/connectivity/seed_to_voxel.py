@@ -176,12 +176,14 @@ def load_brain_mask(
     """Load brain mask from fmridenoiser masks folder with priority.
     
     Priority:
-    1. Task-matching mask (e.g., sub-01_task-rest_space-MNI_desc-brain_mask.nii.gz)
-    2. Generic mask without task (e.g., sub-01_space-MNI_desc-brain_mask.nii.gz)
+    1. Task-matching mask (e.g., sub-01_ses-01_task-rest_space-MNI_desc-brain_mask.nii.gz)
+    2. Generic mask without task (e.g., sub-01_ses-01_space-MNI_desc-brain_mask.nii.gz)
+    3. Task-matching mask without session (e.g., sub-01_task-rest_space-MNI_desc-brain_mask.nii.gz)
+    4. Generic mask without session (e.g., sub-01_space-MNI_desc-brain_mask.nii.gz)
     
     Args:
         masks_dir: Path to masks directory from fmridenoiser derivatives
-        file_entities: Dictionary with BIDS entities (sub, task, space, etc.)
+        file_entities: Dictionary with BIDS entities (sub, task, space, session, etc.)
         logger: Optional logger instance
     
     Returns:
@@ -198,12 +200,17 @@ def load_brain_mask(
     sub = file_entities.get('sub')
     task = file_entities.get('task')
     space = file_entities.get('space', 'MNI')
+    session = file_entities.get('session') or file_entities.get('ses')
     
     if not sub:
         raise ConnectivityError("Subject ID ('sub') required in file_entities")
     
     # Build base filename components
     base_parts = [f"sub-{sub}"]
+    
+    # Add session if present
+    if session:
+        base_parts.append(f"ses-{session}")
     
     # Try task-specific mask first if task is available
     if task:
@@ -226,17 +233,53 @@ def load_brain_mask(
             logger.debug(f"Loading generic brain mask: {generic_mask_path.name}")
         return nib.load(generic_mask_path)
     
+    # Fallback: Try without session if session was specified
+    fallback_task_mask_pattern = None
+    fallback_generic_mask_pattern = None
+    
+    if session:
+        base_parts_no_ses = [f"sub-{sub}"]
+        
+        if task:
+            fallback_task_parts = base_parts_no_ses + [f"task-{task}", f"space-{space}", "desc-brain_mask.nii.gz"]
+            fallback_task_mask_pattern = "_".join(fallback_task_parts)
+            fallback_task_mask_path = masks_dir / fallback_task_mask_pattern
+            
+            if fallback_task_mask_path.exists():
+                if logger:
+                    logger.debug(f"Loading task-specific brain mask (without session): {fallback_task_mask_path.name}")
+                return nib.load(fallback_task_mask_path)
+        
+        fallback_generic_parts = base_parts_no_ses + [f"space-{space}", "desc-brain_mask.nii.gz"]
+        fallback_generic_mask_pattern = "_".join(fallback_generic_parts)
+        fallback_generic_mask_path = masks_dir / fallback_generic_mask_pattern
+        
+        if fallback_generic_mask_path.exists():
+            if logger:
+                logger.debug(f"Loading generic brain mask (without session): {fallback_generic_mask_path.name}")
+            return nib.load(fallback_generic_mask_path)
+    
     # No mask found - list available files for debugging
     available_masks = list(masks_dir.glob("*brain_mask.nii.gz"))
     mask_names = [m.name for m in available_masks]
     
     error_msg = (
-        f"No brain mask found for sub={sub}, task={task}, space={space}\n"
+        f"No brain mask found for sub={sub}, ses={session}, task={task}, space={space}\n"
         f"Looked for:\n"
     )
+    search_count = 1
     if task:
-        error_msg += f"  1. {task_mask_pattern}\n"
-    error_msg += f"  2. {generic_mask_pattern}\n"
+        error_msg += f"  {search_count}. {task_mask_pattern}\n"
+        search_count += 1
+    error_msg += f"  {search_count}. {generic_mask_pattern}\n"
+    
+    if session and fallback_task_mask_pattern:
+        search_count += 1
+        error_msg += f"  {search_count}. {fallback_task_mask_pattern} (fallback without session)\n"
+    
+    if session and fallback_generic_mask_pattern:
+        search_count += 1
+        error_msg += f"  {search_count}. {fallback_generic_mask_pattern} (fallback without session)\n"
     
     if mask_names:
         error_msg += f"Available masks in {masks_dir}:\n  " + "\n  ".join(mask_names)
