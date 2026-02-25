@@ -1,6 +1,7 @@
 """Matrix operations for connectivity analysis."""
 
 import numpy as np
+import warnings
 from typing import Dict, List, Tuple
 
 from nilearn.connectome import ConnectivityMeasure
@@ -94,6 +95,54 @@ def vec_to_sym_matrix(vector: np.ndarray, n: int) -> np.ndarray:
     return matrix
 
 
+def check_matrix_symmetry(matrix: np.ndarray, kind: str = "connectivity") -> None:
+    """Check matrix symmetry with tiered tolerance levels.
+    
+    Performs symmetry check with strict tolerance first, then lenient tolerance
+    if strict check fails. Warns user if only lenient tolerance passes.
+    
+    Args:
+        matrix: Matrix to check for symmetry
+        kind: Description of matrix kind (for error messages)
+    
+    Raises:
+        ValueError: If matrix is not symmetric within any tolerance level
+        RuntimeWarning: If matrix is only symmetric within lenient tolerance
+    
+    Notes:
+        - Strict tolerance: atol=1e-8 (machine precision level)
+        - Lenient tolerance: atol=1e-5 (numerical precision after operations)
+    """
+    strict_tol = 1e-8
+    lenient_tol = 1e-5
+    
+    # Check strict symmetry
+    if np.allclose(matrix, matrix.T, atol=strict_tol):
+        return  # Perfect symmetry within strict tolerance
+    
+    # Check lenient symmetry
+    if np.allclose(matrix, matrix.T, atol=lenient_tol):
+        max_asymmetry = np.max(np.abs(matrix - matrix.T))
+        warnings.warn(
+            f"{kind} matrix is not perfectly symmetric (max asymmetry: {max_asymmetry:.2e}). "
+            f"This may be due to numerical precision loss during matrix inversion operations. "
+            f"The matrix is still considered valid (within tolerance={lenient_tol}), "
+            f"but you may want to investigate the data.",
+            RuntimeWarning,
+            stacklevel=2
+        )
+        return
+    
+    # Neither tolerance passed - raise error
+    max_asymmetry = np.max(np.abs(matrix - matrix.T))
+    raise ValueError(
+        f"{kind} matrix is not symmetric (max asymmetry: {max_asymmetry:.2e}). "
+        f"This exceeds both strict (atol={strict_tol}) and lenient (atol={lenient_tol}) tolerances. "
+        f"This indicates a potential problem with the connectivity computation."
+    )
+
+
+
 def compute_connectivity_matrix(
     time_series: np.ndarray,
     kind: str = "correlation"
@@ -109,18 +158,22 @@ def compute_connectivity_matrix(
             - 'precision': Inverse covariance (sparse direct connections)
     
     Returns:
-        Connectivity matrix of shape (n_regions, n_regions)
+        Connectivity matrix of shape (n_regions, n_regions).
     
     Raises:
         ValueError: If time_series has wrong shape or kind is invalid
+    
+    Notes:
+        Matrix symmetry should be validated using check_matrix_symmetry() after
+        computation, especially for 'partial correlation' and 'precision' which
+        involve matrix inversion and may exhibit numerical asymmetries.
     
     Example:
         >>> ts = np.random.randn(100, 5)  # 100 timepoints, 5 regions
         >>> conn = compute_connectivity_matrix(ts)
         >>> conn.shape
         (5, 5)
-        >>> np.allclose(conn, conn.T)  # Symmetric
-        True
+        >>> check_matrix_symmetry(conn)  # Validate symmetry
     """
     if time_series.ndim != 2:
         raise ValueError(
