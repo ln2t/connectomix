@@ -1,7 +1,8 @@
 """Configuration file loading utilities."""
 
+from dataclasses import is_dataclass
 from pathlib import Path
-from typing import Dict, Any, Type, TypeVar
+from typing import Dict, Any, Type, TypeVar, get_args, get_origin
 import json
 import yaml
 
@@ -92,16 +93,41 @@ def config_from_dict(
     filtered_data = {}
     for key, value in data.items():
         if key in valid_fields:
-            # Convert string paths to Path objects for specific fields
             field_type = config_class.__dataclass_fields__[key].type
-            if 'Path' in str(field_type) and isinstance(value, str):
-                filtered_data[key] = Path(value)
-            elif 'List[Path]' in str(field_type) and isinstance(value, list):
-                filtered_data[key] = [Path(v) if isinstance(v, str) else v for v in value]
-            else:
-                filtered_data[key] = value
+            filtered_data[key] = _convert_config_value(field_type, value)
     
     return config_class(**filtered_data)
+
+
+def _convert_config_value(field_type: Any, value: Any) -> Any:
+    """Convert config values to the type expected by a dataclass field."""
+    if value is None:
+        return None
+
+    origin = get_origin(field_type)
+    args = get_args(field_type)
+
+    if origin is list:
+        item_type = args[0] if args else Any
+        if isinstance(value, list):
+            return [_convert_config_value(item_type, item) for item in value]
+        return value
+
+    if origin in (dict, Dict):
+        return value
+
+    if origin is not None and type(None) in args:
+        non_none_args = [arg for arg in args if arg is not type(None)]
+        if len(non_none_args) == 1:
+            return _convert_config_value(non_none_args[0], value)
+
+    if is_dataclass(field_type) and isinstance(value, dict):
+        return config_from_dict(value, field_type)
+
+    if field_type is Path and isinstance(value, str):
+        return Path(value)
+
+    return value
 
 
 def save_config(config: Any, path: Path) -> None:

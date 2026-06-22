@@ -11,7 +11,7 @@ from connectomix.config.defaults import (
     ParticipantConfig,
     GroupConfig,
 )
-from connectomix.config.loader import load_config_file
+from connectomix.config.loader import load_config_file, config_from_dict
 from connectomix.core.participant import run_participant_pipeline
 from connectomix.core.group import run_group_pipeline
 from connectomix.core.version import __version__
@@ -46,7 +46,7 @@ def main():
             if args.config:
                 logger.info(f"Loading configuration from: {args.config}")
                 config_dict = load_config_file(args.config)
-                config = ParticipantConfig(**config_dict)
+                config = config_from_dict(config_dict, ParticipantConfig)
             else:
                 logger.info("Using default configuration")
                 config = ParticipantConfig()
@@ -66,7 +66,7 @@ def main():
                     # Create fresh config for each participant/condition combination
                     if args.config:
                         config_dict = load_config_file(args.config)
-                        config = ParticipantConfig(**config_dict)
+                        config = config_from_dict(config_dict, ParticipantConfig)
                     else:
                         config = ParticipantConfig()
                     
@@ -115,7 +115,7 @@ def main():
             if args.config:
                 logger.info(f"Loading configuration from: {args.config}")
                 config_dict = load_config_file(args.config)
-                config = GroupConfig(**config_dict)
+                config = config_from_dict(config_dict, GroupConfig)
             else:
                 logger.info("Using default configuration")
                 config = GroupConfig()
